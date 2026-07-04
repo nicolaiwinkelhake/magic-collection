@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { parseDeckList } from "@/lib/parseDeckList";
 import Image from "next/image";
 import {
   LineChart,
@@ -173,10 +174,7 @@ export function DeckDetailClient({
   }, [initialCards]);
 
   async function handleImport() {
-    const names = importText
-      .split("\n")
-      .map((line) => line.replace(/^\d+x?\s*/i, "").trim())
-      .filter(Boolean);
+    const names = parseDeckList(importText).map((e) => e.name);
 
     if (!names.length) return;
 
