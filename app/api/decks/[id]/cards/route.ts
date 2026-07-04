@@ -15,7 +15,6 @@ export async function POST(
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
 
-  // Sicherstellen, dass das Deck dem Nutzer gehört (RLS greift zusätzlich)
   const { data: deck } = await supabase
     .from("decks")
     .select("id")
@@ -30,8 +29,7 @@ export async function POST(
   const body = await request.json();
   const rawNames: string[] = body.names ?? [];
 
-  // Set-Code, Collector-Number und Kategorie-Tags serverseitig entfernen,
-  // damit Formate wie "Sol Ring (msc) 211 [Ramp]" korrekt aufgelöst werden.
+  // Set-Code, Collector-Number und Kategorie-Tags serverseitig entfernen
   const names = rawNames
     .map((n) =>
       n
@@ -95,7 +93,28 @@ export async function POST(
     }
     inserted = data?.length ?? rowsToInsert.length;
 
-    // Preisverlauf je Karte festhalten (für Einzelkarten-Charts)
+    // Karten auch in die Sammlung des Nutzers eintragen (falls noch nicht vorhanden)
+    const collectionRows = rowsToInsert.map((r) => ({
+      user_id: user.id,
+      scryfall_id: r.scryfall_id,
+      name: r.name,
+      image_url: r.image_url,
+      mana_cost: r.mana_cost,
+      cmc: r.cmc,
+      type_line: r.type_line,
+      colors: r.colors,
+      oracle_text: r.oracle_text,
+      quantity: 1,
+      foil: false,
+      price_eur: r.price_eur,
+      price_eur_foil: r.price_eur_foil,
+      price_updated_at: new Date().toISOString(),
+    }));
+    await supabase
+      .from("cards")
+      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
+
+    // Preisverlauf je Karte festhalten
     for (const r of rowsToInsert) {
       await supabase.rpc("record_card_price", {
         p_scryfall_id: r.scryfall_id,
@@ -122,7 +141,7 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
 
   const { cardId } = await request.json();
-  await supabase
+  const { error } = await supabase
     .from("deck_cards")
     .delete()
     .eq("id", cardId)
@@ -130,5 +149,6 @@ export async function DELETE(
     .eq("user_id", user.id)
     .eq("is_commander", false);
 
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

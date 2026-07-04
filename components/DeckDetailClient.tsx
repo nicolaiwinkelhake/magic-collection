@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { parseDeckList } from "@/lib/parseDeckList";
 import Image from "next/image";
 import {
@@ -136,11 +137,16 @@ export function DeckDetailClient({
   }
 
   async function removeDeckCard(cardId: string) {
-    await fetch(`/api/decks/${deck.id}/cards`, {
+    const res = await fetch(`/api/decks/${deck.id}/cards`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cardId }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(`Fehler beim Entfernen: ${data.error ?? res.status}`);
+      return;
+    }
     router.refresh();
   }
 
@@ -209,6 +215,9 @@ export function DeckDetailClient({
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      <Link href="/decks" className="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-white transition">
+        ← Zurück zu Decks
+      </Link>
       <header className="flex items-center gap-4">
         {deck.commander_image_url && (
           <Image
@@ -435,37 +444,84 @@ export function DeckDetailClient({
         </div>
       </div>
 
-      {/* Fehlende Karten aus der Sammlung */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <h2 className="font-medium mb-2">
-          Baubarkeit aus deiner Sammlung
-        </h2>
-        {initialCards.filter((c) => !c.is_commander).length === 0 ? (
-          <p className="text-sm text-zinc-500">Noch keine Karten im Deck.</p>
-        ) : missing.length === 0 ? (
-          <p className="text-sm text-emerald-400">
-            ✅ Du besitzt alle Karten dieses Decks.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm text-zinc-400 mb-2">
-              Dir fehlen {missing.length} Karten (Wert{" "}
-              <span className="text-emerald-400">
-                {formatEur(missing.reduce((s, c) => s + (c.price_eur ?? 0), 0))}
-              </span>
-              ):
-            </p>
-            <ul className="text-sm text-zinc-300 space-y-1">
-              {missing.map((c) => (
-                <li key={c.id} className="flex justify-between">
-                  <span>{c.name}</span>
-                  <span className="text-zinc-500">{formatEur(c.price_eur)}</span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
+      {/* Baubarkeit aus der Sammlung */}
+      {(() => {
+        const nonCommander = initialCards.filter((c) => !c.is_commander);
+        const total = nonCommander.length;
+        const owned = total - missing.length;
+        const missingValue = missing.reduce((s, c) => s + (c.price_eur ?? 0), 0);
+
+        function getCategory(typeLine: string): string {
+          if (typeLine?.includes("Land")) return "Land";
+          if (typeLine?.includes("Creature")) return "Kreatur";
+          if (typeLine?.includes("Instant")) return "Instant";
+          if (typeLine?.includes("Sorcery")) return "Hexerei";
+          if (typeLine?.includes("Enchantment")) return "Verzauberung";
+          if (typeLine?.includes("Artifact")) return "Artefakt";
+          if (typeLine?.includes("Planeswalker")) return "Planeswalker";
+          return "Sonstiges";
+        }
+
+        const grouped = missing.reduce<Record<string, typeof missing>>((acc, c) => {
+          const cat = getCategory(c.type_line ?? "");
+          if (!acc[cat]) acc[cat] = [];
+          acc[cat].push(c);
+          return acc;
+        }, {});
+
+        const categoryOrder = ["Land", "Kreatur", "Instant", "Hexerei", "Verzauberung", "Artefakt", "Planeswalker", "Sonstiges"];
+
+        return (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">Baubarkeit aus deiner Sammlung</h2>
+            {total === 0 ? (
+              <p className="text-sm text-zinc-500">Noch keine Karten im Deck.</p>
+            ) : (
+              <>
+                {/* Fortschrittsbalken */}
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-zinc-400">{owned} / {total} Karten vorhanden</span>
+                    {missing.length > 0 && (
+                      <span className="text-zinc-400">Fehlen: <span className="text-emerald-400">{formatEur(missingValue)}</span></span>
+                    )}
+                  </div>
+                  <div className="w-full bg-zinc-700 rounded-full h-2">
+                    <div
+                      className="bg-emerald-500 h-2 rounded-full transition-all"
+                      style={{ width: `${total > 0 ? (owned / total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                {missing.length === 0 ? (
+                  <p className="text-sm text-emerald-400">✅ Du besitzt alle Karten dieses Decks.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {categoryOrder
+                      .filter((cat) => grouped[cat]?.length)
+                      .map((cat) => (
+                        <div key={cat}>
+                          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1">
+                            {cat} ({grouped[cat].length})
+                          </h3>
+                          <ul className="text-sm text-zinc-300 space-y-0.5">
+                            {grouped[cat].map((c) => (
+                              <li key={c.id} className="flex justify-between">
+                                <span>{c.name}</span>
+                                <span className="text-zinc-500">{formatEur(c.price_eur)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Scryfall-basierte Kartenvorschläge */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
