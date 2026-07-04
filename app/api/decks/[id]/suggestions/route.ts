@@ -63,26 +63,33 @@ export async function GET(
   // und Freundes-Sammlungen abfragen, damit man sofort sieht, ob man die
   // Karte schon hat oder sie sich von einem Freund leihen könnte.
   const allSuggested = rawResult.flatMap((g) => g.cards);
-  const scryfallIds = Array.from(new Set(allSuggested.map((c) => c.id)));
   const names = Array.from(new Set(allSuggested.map((c) => c.name)));
+  const namesLower = names.map((n) => n.toLowerCase());
 
-  const ownedByScryfallId = new Map<string, number>();
-  const otherDecksByScryfallId = new Map<string, Map<string, string>>();
+  // Abgleich über den Kartennamen (nicht die Scryfall-Druck-ID!) – Scryfalls
+  // Vorschlags-Suche liefert oft eine andere Printing derselben Karte als
+  // die, die man besitzt/im Deck hat, daher würde ein ID-Abgleich meistens
+  // ins Leere laufen.
+  const ownedByName = new Map<string, number>();
+  const otherDecksByName = new Map<string, Map<string, string>>();
 
-  if (scryfallIds.length) {
+  if (namesLower.length) {
     const { data: ownedRows } = await supabase
       .from("cards")
-      .select("scryfall_id, quantity")
+      .select("name, quantity")
       .eq("user_id", user.id)
-      .in("scryfall_id", scryfallIds);
-    for (const r of ownedRows ?? []) ownedByScryfallId.set(r.scryfall_id, r.quantity);
+      .in("name", names);
+    for (const r of ownedRows ?? []) {
+      const key = r.name.toLowerCase();
+      ownedByName.set(key, (ownedByName.get(key) ?? 0) + r.quantity);
+    }
 
     const { data: otherDeckRows } = await supabase
       .from("deck_cards")
-      .select("scryfall_id, deck_id")
+      .select("name, deck_id")
       .eq("user_id", user.id)
       .neq("deck_id", params.id)
-      .in("scryfall_id", scryfallIds);
+      .in("name", names);
 
     const otherDeckIds = Array.from(new Set((otherDeckRows ?? []).map((r) => r.deck_id)));
     const deckNameById = new Map<string, string>();
@@ -97,9 +104,10 @@ export async function GET(
     for (const row of otherDeckRows ?? []) {
       const deckName = deckNameById.get(row.deck_id);
       if (!deckName) continue;
-      const map = otherDecksByScryfallId.get(row.scryfall_id) ?? new Map<string, string>();
+      const key = row.name.toLowerCase();
+      const map = otherDecksByName.get(key) ?? new Map<string, string>();
       map.set(row.deck_id, deckName);
-      otherDecksByScryfallId.set(row.scryfall_id, map);
+      otherDecksByName.set(key, map);
     }
   }
 
@@ -119,12 +127,15 @@ export async function GET(
 
   const result = rawResult.map((group) => ({
     ...group,
-    cards: group.cards.map((c) => ({
-      ...c,
-      ownedQuantity: ownedByScryfallId.get(c.id) ?? 0,
-      usedInDecks: Array.from(otherDecksByScryfallId.get(c.id)?.values() ?? []),
-      friendsOwning: friendsByName.get(c.name) ?? [],
-    })),
+    cards: group.cards.map((c) => {
+      const key = c.name.toLowerCase();
+      return {
+        ...c,
+        ownedQuantity: ownedByName.get(key) ?? 0,
+        usedInDecks: Array.from(otherDecksByName.get(key)?.values() ?? []),
+        friendsOwning: friendsByName.get(c.name) ?? [],
+      };
+    }),
   }));
 
   return NextResponse.json({ suggestions: result });
