@@ -41,6 +41,7 @@ export function DeckDetailClient({
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [replaceMode, setReplaceMode] = useState(false);
   const [ownership, setOwnership] = useState<FriendOwnership>({});
   const [loadingOwnership, setLoadingOwnership] = useState(false);
   const [suggestGroups, setSuggestGroups] = useState<
@@ -228,12 +229,15 @@ export function DeckDetailClient({
       setImportMessage("CSV konnte nicht gelesen werden. Bitte Moxfield-Format verwenden.");
       return;
     }
+    if (replaceMode && !confirm("Bestehende Deckliste wirklich durch diese Karten ersetzen? Der Commander bleibt erhalten.")) {
+      return;
+    }
     setImporting(true);
     setImportMessage(null);
     const res = await fetch(`/api/decks/${deck.id}/cards`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries }),
+      body: JSON.stringify({ entries, replace: replaceMode }),
     });
     const data = await res.json();
     setImporting(false);
@@ -250,6 +254,9 @@ export function DeckDetailClient({
 
   async function handleImport() {
     if (!importText.trim()) return;
+    if (replaceMode && !confirm("Bestehende Deckliste wirklich durch diese Karten ersetzen? Der Commander bleibt erhalten.")) {
+      return;
+    }
 
     // CSV in Textarea erkannt → automatisch als Moxfield-CSV behandeln
     const csvEntries = moxfieldCsvToEntries(importText);
@@ -259,7 +266,7 @@ export function DeckDetailClient({
       const res = await fetch(`/api/decks/${deck.id}/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: csvEntries }),
+        body: JSON.stringify({ entries: csvEntries, replace: replaceMode }),
       });
       const data = await res.json();
       setImporting(false);
@@ -284,7 +291,7 @@ export function DeckDetailClient({
     const res = await fetch(`/api/decks/${deck.id}/cards`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nameEntries }),
+      body: JSON.stringify({ nameEntries, replace: replaceMode }),
     });
 
     const data = await res.json();
@@ -418,6 +425,15 @@ export function DeckDetailClient({
                 />
               </label>
             </div>
+            <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={replaceMode}
+                onChange={(e) => setReplaceMode(e.target.checked)}
+                className="rounded"
+              />
+              Deckliste ersetzen (bestehende Nicht-Commander-Karten werden entfernt, Sammlungsmenge entsprechend reduziert)
+            </label>
             {importMessage && (
               <p className="text-sm text-zinc-300">{importMessage}</p>
             )}

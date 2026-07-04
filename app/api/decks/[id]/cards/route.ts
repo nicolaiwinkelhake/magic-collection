@@ -28,6 +28,50 @@ export async function POST(
 
   const body = await request.json();
 
+  // Bestehende Deckliste ersetzen statt ergänzen: alte (Nicht-Commander-)
+  // Deckkarten entfernen und ihre Menge aus der Sammlung wieder abziehen,
+  // bevor die neue Liste importiert wird. Verhindert doppelt gezählte
+  // Mengen bei versehentlichem erneutem Import derselben/geänderten Liste.
+  if (body.replace) {
+    const { data: oldCards } = await supabase
+      .from("deck_cards")
+      .select("id, scryfall_id")
+      .eq("deck_id", params.id)
+      .eq("user_id", user.id)
+      .eq("is_commander", false);
+
+    if (oldCards?.length) {
+      const oldQtyByScryfallId = new Map<string, number>();
+      for (const c of oldCards) {
+        oldQtyByScryfallId.set(c.scryfall_id, (oldQtyByScryfallId.get(c.scryfall_id) ?? 0) + 1);
+      }
+
+      const { data: collectionRowsForDeck } = await supabase
+        .from("cards")
+        .select("id, scryfall_id, quantity")
+        .eq("user_id", user.id)
+        .eq("foil", false)
+        .in("scryfall_id", Array.from(oldQtyByScryfallId.keys()));
+
+      for (const row of collectionRowsForDeck ?? []) {
+        const oldQty = oldQtyByScryfallId.get(row.scryfall_id) ?? 0;
+        const newQty = row.quantity - oldQty;
+        if (newQty <= 0) {
+          await supabase.from("cards").delete().eq("id", row.id);
+        } else {
+          await supabase.from("cards").update({ quantity: newQty }).eq("id", row.id);
+        }
+      }
+
+      await supabase
+        .from("deck_cards")
+        .delete()
+        .eq("deck_id", params.id)
+        .eq("user_id", user.id)
+        .eq("is_commander", false);
+    }
+  }
+
   // Pfad 1: Scryfall-IDs aus CSV-Import (Mengenangabe pro Zeile wird respektiert)
   if (body.entries?.length) {
     const entries: Array<{ scryfallId: string; name: string; quantity: number; foil: boolean }> = body.entries;
