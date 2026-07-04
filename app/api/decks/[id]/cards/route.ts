@@ -28,7 +28,18 @@ export async function POST(
   }
 
   const body = await request.json();
-  const names: string[] = body.names ?? [];
+  const rawNames: string[] = body.names ?? [];
+
+  // Set-Code, Collector-Number und Kategorie-Tags serverseitig entfernen,
+  // damit Formate wie "Sol Ring (msc) 211 [Ramp]" korrekt aufgelöst werden.
+  const names = rawNames
+    .map((n) =>
+      n
+        .replace(/\s*\([a-z0-9]+\)\s*\d*\s*/gi, " ")
+        .replace(/\s*\[[^\]]*\]/g, "")
+        .trim()
+    )
+    .filter(Boolean);
 
   if (!names.length) {
     return NextResponse.json({ error: "Keine Kartennamen übergeben" }, { status: 400 });
