@@ -22,14 +22,18 @@ export function CollectionClient({
   const router = useRouter();
   const supabase = createClient();
 
+  const [backfilling, setBackfilling] = useState(false);
+
   // Fehlende Metadaten (set_code, rarity) im Hintergrund nachfüllen
   useEffect(() => {
     const hasMissing = initialCards.some((c) => !c.set_code || !c.rarity);
     if (!hasMissing) return;
+    setBackfilling(true);
     fetch("/api/cards/fix-metadata", { method: "POST" })
       .then((r) => r.json())
       .then((d) => { if (d.updated > 0) router.refresh(); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setBackfilling(false));
   }, []);
 
   const [filters, setFilters] = useState<FilterState>({
@@ -134,6 +138,15 @@ export function CollectionClient({
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      {backfilling && (
+        <div className="flex items-center gap-2 bg-indigo-900/40 border border-indigo-700 rounded-lg px-4 py-2 text-sm text-indigo-300">
+          <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+          </svg>
+          Kartendaten werden von Scryfall aktualisiert…
+        </div>
+      )}
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">🪄 Magic Collection</h1>
         <div className="flex items-center gap-4 text-sm text-zinc-400">
