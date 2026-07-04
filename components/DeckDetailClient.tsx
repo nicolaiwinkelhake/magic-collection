@@ -136,7 +136,8 @@ export function DeckDetailClient({
     router.refresh();
   }
 
-  async function removeDeckCard(cardId: string) {
+  async function removeDeckCard(cardId: string, cardName: string) {
+    if (!confirm(`"${cardName}" wirklich aus dem Deck entfernen? Die Karte bleibt in deiner Sammlung.`)) return;
     const res = await fetch(`/api/decks/${deck.id}/cards`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -646,7 +647,7 @@ export function DeckDetailClient({
                 )}
                 {!card.is_commander && (
                   <button
-                    onClick={() => removeDeckCard(card.id)}
+                    onClick={() => removeDeckCard(card.id, card.name)}
                     title="Aus Deck entfernen"
                     className="absolute top-1 right-1 z-10 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
                   >
