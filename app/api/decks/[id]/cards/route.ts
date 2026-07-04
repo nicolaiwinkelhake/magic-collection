@@ -47,8 +47,23 @@ export async function POST(
 
   const results = await fetchCardsByNames(names);
 
+  // Bereits vorhandene Scryfall-IDs im Deck laden, um Duplikate zu verhindern
+  const { data: existingCards } = await supabase
+    .from("deck_cards")
+    .select("scryfall_id")
+    .eq("deck_id", params.id);
+  const existingIds = new Set((existingCards ?? []).map((c) => c.scryfall_id));
+
+  const duplicates: string[] = [];
   const rowsToInsert = results
-    .filter((r) => r.card)
+    .filter((r) => {
+      if (!r.card) return false;
+      if (existingIds.has(r.card.id)) {
+        duplicates.push(r.card.name);
+        return false;
+      }
+      return true;
+    })
     .map((r) => {
       const { eur, eurFoil } = getPrices(r.card!);
       return {
@@ -92,7 +107,7 @@ export async function POST(
 
   const notFound = results.filter((r) => !r.card).map((r) => r.name);
 
-  return NextResponse.json({ inserted, notFound });
+  return NextResponse.json({ inserted, notFound, duplicates });
 }
 
 // Einzelne Deckkarte entfernen (der Commander kann nicht gelöscht werden).

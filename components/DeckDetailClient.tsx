@@ -196,6 +196,9 @@ export function DeckDetailClient({
     }
 
     let msg = `${data.inserted} Karte(n) hinzugefügt.`;
+    if (data.duplicates?.length) {
+      msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+    }
     if (data.notFound?.length) {
       msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
     }
