@@ -81,8 +81,9 @@ export async function POST(
 
     let inserted = 0;
     if (rowsToInsert.length) {
-      const { data: insertedData } = await supabase.from("deck_cards").insert(rowsToInsert).select("id");
-      inserted = insertedData?.length ?? rowsToInsert.length;
+      const { data: insertedData, error: insertError } = await supabase.from("deck_cards").insert(rowsToInsert).select("id");
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+      inserted = insertedData?.length ?? 0;
       const collectionRows = rowsToInsert.map((r) => ({
         user_id: user.id, scryfall_id: r.scryfall_id, name: r.name, image_url: r.image_url,
         mana_cost: r.mana_cost, cmc: r.cmc, type_line: r.type_line, colors: r.colors,
