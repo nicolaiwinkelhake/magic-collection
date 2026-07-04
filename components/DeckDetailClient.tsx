@@ -210,8 +210,31 @@ export function DeckDetailClient({
   }
 
   async function handleImport() {
-    const names = parseDeckList(importText).map((e) => e.name);
+    if (!importText.trim()) return;
 
+    // CSV in Textarea erkannt → automatisch als Moxfield-CSV behandeln
+    const csvEntries = moxfieldCsvToEntries(importText);
+    if (csvEntries) {
+      setImporting(true);
+      setImportMessage(null);
+      const res = await fetch(`/api/decks/${deck.id}/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: csvEntries }),
+      });
+      const data = await res.json();
+      setImporting(false);
+      if (!res.ok) { setImportMessage(`Fehler: ${data.error}`); return; }
+      let msg = `${data.inserted} Karte(n) hinzugefügt.`;
+      if (data.duplicates?.length) msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+      if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+      setImportMessage(msg);
+      setImportText("");
+      router.refresh();
+      return;
+    }
+
+    const names = parseDeckList(importText).map((e) => e.name);
     if (!names.length) return;
 
     setImporting(true);
@@ -232,12 +255,8 @@ export function DeckDetailClient({
     }
 
     let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-    if (data.duplicates?.length) {
-      msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
-    }
-    if (data.notFound?.length) {
-      msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
-    }
+    if (data.duplicates?.length) msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+    if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
     setImportMessage(msg);
     setImportText("");
     router.refresh();
