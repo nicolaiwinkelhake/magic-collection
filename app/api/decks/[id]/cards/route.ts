@@ -59,15 +59,15 @@ export async function POST(
 
   let inserted = 0;
   if (rowsToInsert.length) {
-    const { error, count } = await supabase
+    const { error, data } = await supabase
       .from("deck_cards")
       .insert(rowsToInsert)
-      .select("id", { count: "exact" });
+      .select("id");
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    inserted = count ?? rowsToInsert.length;
+    inserted = data?.length ?? rowsToInsert.length;
 
     // Preisverlauf je Karte festhalten (für Einzelkarten-Charts)
     for (const r of rowsToInsert) {
