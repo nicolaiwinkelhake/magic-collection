@@ -123,7 +123,7 @@ export async function fetchGameChangerNames(): Promise<string[]> {
 
   // Paginierung folgen, falls die Liste je größer als eine Seite wird
   while (url) {
-    const res = await fetch(url, {
+    const res: Response = await fetch(url, {
       headers: { "User-Agent": "MagicCollectionApp/1.0" },
     });
     if (!res.ok) break;
