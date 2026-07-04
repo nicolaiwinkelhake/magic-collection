@@ -119,6 +119,11 @@ export function CollectionClient({
     [filteredCards]
   );
 
+  const totalCardCount = (cards: Card[]) =>
+    cards.reduce((sum, c) => sum + (c.quantity ?? 1), 0);
+  const filteredCount = useMemo(() => totalCardCount(filteredCards), [filteredCards]);
+  const overallCount = useMemo(() => totalCardCount(initialCards), [initialCards]);
+
   const formattedTotal = formatEur(totalValue);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -196,7 +201,7 @@ export function CollectionClient({
 
       <p className="text-sm text-zinc-500 flex items-center gap-3">
         <span>
-          {filteredCards.length} von {initialCards.length} Karten ·
+          {filteredCount} von {overallCount} Karten ({filteredCards.length} von {initialCards.length} Einträge) ·
           Gesamtwert:{" "}
           <span className="text-emerald-400 font-medium">
             {formattedTotal}
