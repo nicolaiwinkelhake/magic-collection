@@ -90,6 +90,17 @@ export async function POST(
       const { data: insertedData, error: insertError } = await supabase.from("deck_cards").insert(rowsToInsert).select("id");
       if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
       inserted = insertedData?.length ?? 0;
+
+      const relevantIds = Array.from(new Set(entries.filter((e) => scryfallMap.has(e.scryfallId)).map((e) => e.scryfallId)));
+      const { data: existingRows } = await supabase
+        .from("cards")
+        .select("scryfall_id,foil,quantity")
+        .eq("user_id", user.id)
+        .in("scryfall_id", relevantIds);
+      const existingQtyByKey = new Map<string, number>(
+        (existingRows ?? []).map((r) => [`${r.scryfall_id}_${r.foil}`, r.quantity as number])
+      );
+
       const collectionRows = entries
         .filter((e) => scryfallMap.has(e.scryfallId))
         .map((e) => {
@@ -98,6 +109,9 @@ export async function POST(
           const cardFaces = card.card_faces as Array<{ image_uris?: Record<string, string> }> | undefined;
           const imageUrl = imageUris?.normal ?? cardFaces?.[0]?.image_uris?.normal ?? null;
           const rawPrices = card.prices as Record<string, string | null> | undefined;
+          const key = `${e.scryfallId}_${e.foil}`;
+          const priorQty = existingQtyByKey.get(key) ?? 0;
+          existingQtyByKey.set(key, priorQty + e.quantity);
           return {
             user_id: user.id, scryfall_id: card.id, name: card.name, image_url: imageUrl,
             mana_cost: (card.mana_cost as string | null) ?? null,
@@ -106,13 +120,13 @@ export async function POST(
             oracle_text: (card.oracle_text as string | null) ?? null,
             rarity: card.rarity as string, set_code: card.set as string,
             collector_number: card.collector_number as string,
-            quantity: e.quantity, foil: e.foil,
+            quantity: priorQty + e.quantity, foil: e.foil,
             price_eur: rawPrices?.eur ? parseFloat(rawPrices.eur) : null,
             price_eur_foil: rawPrices?.eur_foil ? parseFloat(rawPrices.eur_foil) : null,
             price_updated_at: new Date().toISOString(),
           };
         });
-      await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
+      await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
     }
     const notFound = entries.filter((e) => !scryfallMap.has(e.scryfallId)).map((e) => e.name);
     return NextResponse.json({ inserted, notFound, repeated });
@@ -212,10 +226,24 @@ export async function POST(
     }
     inserted = data?.length ?? rowsToInsert.length;
 
-    // Karten auch in die Sammlung des Nutzers eintragen (falls noch nicht vorhanden)
+    // Karten auch in die Sammlung des Nutzers eintragen; bestehende Menge wird addiert
+    // statt bei Konflikt ignoriert zu werden (sonst zählen Karten aus mehreren Decks nicht doppelt)
+    const relevantIds = Array.from(new Set(collectionRows.map((r) => r.scryfall_id as string)));
+    const { data: existingRows } = await supabase
+      .from("cards")
+      .select("scryfall_id,foil,quantity")
+      .eq("user_id", user.id)
+      .in("scryfall_id", relevantIds);
+    const existingQtyByKey = new Map<string, number>(
+      (existingRows ?? []).map((r) => [`${r.scryfall_id}_${r.foil}`, r.quantity as number])
+    );
+    for (const row of collectionRows) {
+      const key = `${row.scryfall_id}_${row.foil}`;
+      row.quantity = (existingQtyByKey.get(key) ?? 0) + (row.quantity as number);
+    }
     await supabase
       .from("cards")
-      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
+      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
 
     // Preisverlauf je Karte festhalten (einmal pro Karte, unabhängig von der Menge)
     for (const p of priceRecords) {
