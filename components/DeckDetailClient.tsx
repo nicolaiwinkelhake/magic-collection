@@ -52,6 +52,7 @@ export function DeckDetailClient({
   >([]);
   const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [suggestLoaded, setSuggestLoaded] = useState(false);
+  const [suggestMsg, setSuggestMsg] = useState<{ text: string; type: "success" | "info" | "error" } | null>(null);
 
   async function loadSuggestions() {
     setLoadingSuggest(true);
@@ -66,11 +67,35 @@ export function DeckDetailClient({
   }
 
   async function addSuggestion(name: string) {
-    await fetch(`/api/decks/${deck.id}/cards`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ names: [name] }),
-    });
+    setSuggestMsg(null);
+
+    // Prüfen ob Karte in Sammlung vorhanden
+    const checkRes = await fetch(`/api/cards/check?name=${encodeURIComponent(name)}`);
+    const checkData = checkRes.ok ? await checkRes.json() : { owned: false };
+
+    if (checkData.owned) {
+      // Karte besitzen → nur zum Deck hinzufügen
+      await fetch(`/api/decks/${deck.id}/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names: [name] }),
+      });
+      setSuggestMsg({ text: `„${name}" ist in deiner Sammlung und wurde zum Deck hinzugefügt.`, type: "success" });
+    } else {
+      // Karte nicht in Sammlung → auf Wunschliste
+      const wishRes = await fetch("/api/wishlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names: name }),
+      });
+      const wishData = wishRes.ok ? await wishRes.json() : { added: 0 };
+      if (wishData.added > 0) {
+        setSuggestMsg({ text: `„${name}" ist nicht in deiner Sammlung und wurde zur Wunschliste hinzugefügt.`, type: "info" });
+      } else {
+        setSuggestMsg({ text: `„${name}" konnte nicht zur Wunschliste hinzugefügt werden.`, type: "error" });
+      }
+    }
+
     router.refresh();
   }
 
@@ -603,6 +628,16 @@ export function DeckDetailClient({
           Passend zur Farbidentität des Commanders, gefiltert nach den schwächsten
           Kategorien deines Decks. Quelle: Scryfall.
         </p>
+
+        {suggestMsg && (
+          <p className={`text-sm mt-2 px-3 py-2 rounded-md ${
+            suggestMsg.type === "success" ? "bg-emerald-900/40 text-emerald-300" :
+            suggestMsg.type === "info" ? "bg-indigo-900/40 text-indigo-300" :
+            "bg-red-900/40 text-red-300"
+          }`}>
+            {suggestMsg.text}
+          </p>
+        )}
 
         {loadingSuggest && (
           <p className="text-sm text-zinc-500 mt-3">Suche Vorschläge…</p>
