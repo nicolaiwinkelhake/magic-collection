@@ -18,12 +18,14 @@ export async function POST(request: Request) {
   const body = await request.json();
   const entries: Array<{ name: string; quantity?: number; foil?: boolean }> =
     body.entries ?? [];
+  const allowDuplicates: boolean = body.allowDuplicates ?? false;
 
   if (!entries.length) {
     return NextResponse.json({ error: "Keine Karten übergeben" }, { status: 400 });
   }
 
   const notFound: string[] = [];
+  const skipped: string[] = [];
   let imported = 0;
 
   // Eindeutige Namen einmal auflösen (spart Scryfall-Requests)
@@ -60,6 +62,10 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existing) {
+      if (!allowDuplicates) {
+        if (!skipped.includes(r.card.name)) skipped.push(r.card.name);
+        continue;
+      }
       await supabase
         .from("cards")
         .update({
@@ -104,5 +110,5 @@ export async function POST(request: Request) {
   // Tages-Snapshot des Gesamtwerts aktualisieren
   await supabase.rpc("snapshot_collection_value");
 
-  return NextResponse.json({ imported, notFound });
+  return NextResponse.json({ imported, notFound, skipped });
 }

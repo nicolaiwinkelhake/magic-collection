@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseDeckList } from "@/lib/parseDeckList";
 import { csvToEntries, moxfieldCsvToEntries } from "@/lib/csv";
@@ -12,6 +12,19 @@ export function ImportForm() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [allowDuplicates, setAllowDuplicates] = useState(false);
+
+  // Letztes Import-Ergebnis überlebt einen Seiten-Refresh (F5),
+  // damit die Liste "nicht gefundener" Karten nicht verloren geht.
+  useEffect(() => {
+    const saved = window.localStorage.getItem("import-last-message");
+    if (saved) setMessage(saved);
+  }, []);
+
+  function setPersistedMessage(msg: string) {
+    setMessage(msg);
+    window.localStorage.setItem("import-last-message", msg);
+  }
 
   async function sendEntries(entries: { name: string; quantity: number; foil: boolean }[]) {
     if (!entries.length) return;
@@ -21,7 +34,7 @@ export function ImportForm() {
     const res = await fetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries }),
+      body: JSON.stringify({ entries, allowDuplicates }),
     });
     const data = await res.json();
     setLoading(false);
@@ -31,8 +44,9 @@ export function ImportForm() {
       return;
     }
     let msg = `${data.imported} Karte(n) importiert.`;
+    if (data.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${data.skipped.join(", ")}`;
     if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
-    setMessage(msg);
+    setPersistedMessage(msg);
     setText("");
     router.refresh();
   }
@@ -59,11 +73,11 @@ export function ImportForm() {
       const data = await res.json();
       setLoading(false);
       if (!res.ok) {
-        setMessage(`Fehler: ${data.error}`);
+        setPersistedMessage(`Fehler: ${data.error}`);
       } else {
         let msg = `${data.imported} Karte(n) importiert.`;
         if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
-        setMessage(msg);
+        setPersistedMessage(msg);
         router.refresh();
       }
     } else {
@@ -117,6 +131,15 @@ export function ImportForm() {
               (Moxfield-CSV mit Scryfall-ID wird direkt importiert)
             </span>
           </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={allowDuplicates}
+              onChange={(e) => setAllowDuplicates(e.target.checked)}
+              className="rounded"
+            />
+            Duplikate zulassen (Menge bereits vorhandener Karten erhöhen statt überspringen)
+          </label>
           {message && <p className="text-sm text-zinc-300">{message}</p>}
         </div>
       )}
