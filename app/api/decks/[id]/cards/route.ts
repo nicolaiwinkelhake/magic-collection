@@ -74,7 +74,6 @@ export async function POST(
         cmc: card.cmc, type_line: card.type_line,
         colors: (card.colors as string[]) ?? [],
         oracle_text: (card.oracle_text as string | null) ?? null,
-        rarity: card.rarity, set_code: card.set,
         is_commander: false, price_eur: eur, price_eur_foil: eurFoil,
       });
     }
@@ -147,9 +146,6 @@ export async function POST(
         type_line: r.card!.type_line,
         colors: r.card!.colors ?? [],
         oracle_text: r.card!.oracle_text ?? null,
-        rarity: r.card!.rarity,
-        set_code: r.card!.set,
-        collector_number: r.card!.collector_number,
         is_commander: false,
         price_eur: eur,
         price_eur_foil: eurFoil,
