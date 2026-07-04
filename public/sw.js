@@ -2,11 +2,17 @@
 // Strategie:
 // - Navigationen (Seitenaufrufe): "network first" mit Offline-Fallback,
 //   damit Sammlungs-/Preisdaten immer aktuell sind, solange online.
-// - Statische Assets (Icons etc.): "cache first".
+// - Next.js-Build-Assets (/_next/static/...): "cache first" – diese Dateien
+//   sind pro Build content-gehasht und ändern ihren Namen bei jeder Änderung,
+//   daher unproblematisch dauerhaft cachebar.
+// - Alles andere (u.a. RSC-Datenanfragen bei Client-Navigation/router.refresh(),
+//   API-Routen) wird NICHT gecacht, sondern immer live vom Netz geladen –
+//   sonst würden Aktualisierungen nach Mutationen (Import, Löschen, ...)
+//   nicht ankommen, weil Next.js dafür GET-Requests an dieselbe URL schickt.
 // Karten- und Preisdaten werden bewusst NICHT dauerhaft gecacht, da sie
 // sich ändern – die App ist online gedacht, offline gibt es einen Hinweis.
 
-const CACHE = "magic-collection-v1";
+const CACHE = "magic-collection-v2";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/icon-512.png"];
 
@@ -40,9 +46,15 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Statische Same-Origin-Assets: cache first
+  // Nur content-gehashte Next.js-Build-Assets cache-first behandeln.
+  // Alles andere (RSC-Fetches, API-Routen, Bilder von Scryfall etc.)
+  // immer frisch vom Netz laden, um veraltete Daten zu vermeiden.
   const url = new URL(request.url);
-  if (url.origin === self.location.origin) {
+  const isBuildAsset =
+    url.origin === self.location.origin &&
+    url.pathname.startsWith("/_next/static/");
+
+  if (isBuildAsset) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
