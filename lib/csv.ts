@@ -46,7 +46,37 @@ function parseCsvRows(text: string): string[][] {
     row.push(field);
     rows.push(row);
   }
-  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+  // Moxfield wraps entire rows in quotes when a field contains a comma.
+  // Such rows parse as a single field containing the decoded inner CSV.
+  // Re-parse those single-field rows as CSV lines.
+  return rows
+    .filter((r) => r.some((c) => c.trim() !== ""))
+    .map((r) => {
+      if (r.length === 1 && r[0].includes(delim)) {
+        // re-parse the single field as a CSV row
+        const inner = r[0];
+        const cols: string[] = [];
+        let f = "";
+        let q = false;
+        for (let i = 0; i < inner.length; i++) {
+          const c = inner[i];
+          if (q) {
+            if (c === '"' && inner[i + 1] === '"') { f += '"'; i++; }
+            else if (c === '"') q = false;
+            else f += c;
+          } else if (c === '"') {
+            q = true;
+          } else if (c === delim) {
+            cols.push(f); f = "";
+          } else {
+            f += c;
+          }
+        }
+        cols.push(f);
+        return cols.length > 1 ? cols : r;
+      }
+      return r;
+    });
 }
 
 // Wandelt CSV in Import-Einträge. Sucht typische Spalten aus Moxfield,
