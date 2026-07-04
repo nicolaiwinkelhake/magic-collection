@@ -27,6 +27,77 @@ export async function POST(
   }
 
   const body = await request.json();
+
+  // Pfad 1: Scryfall-IDs aus CSV-Import
+  if (body.entries?.length) {
+    const entries: Array<{ scryfallId: string; name: string; quantity: number; foil: boolean }> = body.entries;
+    const SCRYFALL_BASE = "https://api.scryfall.com";
+    const CHUNK = 75;
+    const scryfallMap = new Map<string, Record<string, unknown>>();
+
+    for (let i = 0; i < entries.length; i += CHUNK) {
+      const chunk = entries.slice(i, i + CHUNK);
+      const res = await fetch(`${SCRYFALL_BASE}/cards/collection`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": "MagicCollectionApp/1.0" },
+        body: JSON.stringify({ identifiers: chunk.map((e) => ({ id: e.scryfallId })) }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const card of (data.data ?? []) as Record<string, unknown>[]) {
+        scryfallMap.set(card.id as string, card);
+      }
+      if (i + CHUNK < entries.length) await new Promise((r) => setTimeout(r, 100));
+    }
+
+    const { data: existingCards } = await supabase
+      .from("deck_cards").select("scryfall_id").eq("deck_id", params.id);
+    const existingIds = new Set((existingCards ?? []).map((c) => c.scryfall_id));
+
+    const duplicates: string[] = [];
+    const rowsToInsert: Record<string, unknown>[] = [];
+
+    for (const entry of entries) {
+      const card = scryfallMap.get(entry.scryfallId);
+      if (!card) continue;
+      if (existingIds.has(entry.scryfallId)) { duplicates.push(card.name as string); continue; }
+      const imageUris = card.image_uris as Record<string, string> | undefined;
+      const cardFaces = card.card_faces as Array<{ image_uris?: Record<string, string> }> | undefined;
+      const imageUrl = imageUris?.normal ?? cardFaces?.[0]?.image_uris?.normal ?? null;
+      const rawPrices = card.prices as Record<string, string | null> | undefined;
+      const eur = rawPrices?.eur ? parseFloat(rawPrices.eur) : null;
+      const eurFoil = rawPrices?.eur_foil ? parseFloat(rawPrices.eur_foil) : null;
+      rowsToInsert.push({
+        deck_id: params.id, user_id: user.id,
+        scryfall_id: card.id, name: card.name, image_url: imageUrl,
+        mana_cost: (card.mana_cost as string | null) ?? null,
+        cmc: card.cmc, type_line: card.type_line,
+        colors: (card.colors as string[]) ?? [],
+        oracle_text: (card.oracle_text as string | null) ?? null,
+        rarity: card.rarity, set_code: card.set, collector_number: card.collector_number,
+        is_commander: false, price_eur: eur, price_eur_foil: eurFoil,
+      });
+    }
+
+    let inserted = 0;
+    if (rowsToInsert.length) {
+      const { data: insertedData } = await supabase.from("deck_cards").insert(rowsToInsert).select("id");
+      inserted = insertedData?.length ?? rowsToInsert.length;
+      const collectionRows = rowsToInsert.map((r) => ({
+        user_id: user.id, scryfall_id: r.scryfall_id, name: r.name, image_url: r.image_url,
+        mana_cost: r.mana_cost, cmc: r.cmc, type_line: r.type_line, colors: r.colors,
+        oracle_text: r.oracle_text, rarity: r.rarity, set_code: r.set_code,
+        collector_number: r.collector_number, quantity: 1, foil: false,
+        price_eur: r.price_eur, price_eur_foil: r.price_eur_foil,
+        price_updated_at: new Date().toISOString(),
+      }));
+      await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
+    }
+    const notFound = entries.filter((e) => !scryfallMap.has(e.scryfallId)).map((e) => e.name);
+    return NextResponse.json({ inserted, notFound, duplicates });
+  }
+
+  // Pfad 2: Kartennamen (Textimport)
   const rawNames: string[] = body.names ?? [];
 
   // Set-Code, Collector-Number und Kategorie-Tags serverseitig entfernen

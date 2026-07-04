@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { parseDeckList } from "@/lib/parseDeckList";
+import { moxfieldCsvToEntries } from "@/lib/csv";
 import Image from "next/image";
 import {
   LineChart,
@@ -35,6 +36,7 @@ export function DeckDetailClient({
   valueHistory?: { captured_on: string; total_value_eur: number }[];
 }) {
   const router = useRouter();
+  const csvRef = useRef<HTMLInputElement>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -180,6 +182,33 @@ export function DeckDetailClient({
       .finally(() => setLoadingOwnership(false));
   }, [initialCards]);
 
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const content = await file.text();
+    const entries = moxfieldCsvToEntries(content);
+    if (!entries?.length) {
+      setImportMessage("CSV konnte nicht gelesen werden. Bitte Moxfield-Format verwenden.");
+      return;
+    }
+    setImporting(true);
+    setImportMessage(null);
+    const res = await fetch(`/api/decks/${deck.id}/cards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries }),
+    });
+    const data = await res.json();
+    setImporting(false);
+    if (!res.ok) { setImportMessage(`Fehler: ${data.error}`); return; }
+    let msg = `${data.inserted} Karte(n) hinzugefügt.`;
+    if (data.duplicates?.length) msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+    if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+    setImportMessage(msg);
+    if (csvRef.current) csvRef.current.value = "";
+    router.refresh();
+  }
+
   async function handleImport() {
     const names = parseDeckList(importText).map((e) => e.name);
 
@@ -306,13 +335,27 @@ export function DeckDetailClient({
               placeholder={"Sol Ring\n1x Arcane Signet\nSwords to Plowshares"}
               className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
             />
-            <button
-              onClick={handleImport}
-              disabled={importing || !importText.trim()}
-              className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
-            >
-              {importing ? "Importiere..." : "Hinzufügen"}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleImport}
+                disabled={importing || !importText.trim()}
+                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+              >
+                {importing ? "Importiere..." : "Hinzufügen"}
+              </button>
+              <span className="text-zinc-600 text-sm">oder</span>
+              <label className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm cursor-pointer">
+                {importing ? "Importiere..." : "Moxfield CSV wählen"}
+                <input
+                  ref={csvRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleCsvFile}
+                  disabled={importing}
+                  className="hidden"
+                />
+              </label>
+            </div>
             {importMessage && (
               <p className="text-sm text-zinc-300">{importMessage}</p>
             )}
