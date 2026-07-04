@@ -67,5 +67,37 @@ export async function POST(request: Request) {
     price_eur_foil: eurFoil,
   });
 
+  // Commander auch in die Sammlung eintragen; bestehende Menge wird addiert
+  const { data: existing } = await supabase
+    .from("cards")
+    .select("quantity")
+    .eq("user_id", user.id)
+    .eq("scryfall_id", card.id)
+    .eq("foil", false)
+    .maybeSingle();
+
+  await supabase.from("cards").upsert(
+    {
+      user_id: user.id,
+      scryfall_id: card.id,
+      name: card.name,
+      image_url: imageUrl,
+      mana_cost: card.mana_cost ?? null,
+      cmc: card.cmc,
+      type_line: card.type_line,
+      colors: card.colors ?? [],
+      oracle_text: card.oracle_text ?? null,
+      rarity: card.rarity,
+      set_code: card.set,
+      collector_number: card.collector_number,
+      quantity: (existing?.quantity ?? 0) + 1,
+      foil: false,
+      price_eur: eur,
+      price_eur_foil: eurFoil,
+      price_updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,scryfall_id,foil" }
+  );
+
   return NextResponse.json({ deck });
 }
