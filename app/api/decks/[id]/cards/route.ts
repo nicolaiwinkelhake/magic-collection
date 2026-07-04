@@ -83,14 +83,28 @@ export async function POST(
       const { data: insertedData, error: insertError } = await supabase.from("deck_cards").insert(rowsToInsert).select("id");
       if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
       inserted = insertedData?.length ?? 0;
-      const collectionRows = rowsToInsert.map((r) => ({
-        user_id: user.id, scryfall_id: r.scryfall_id, name: r.name, image_url: r.image_url,
-        mana_cost: r.mana_cost, cmc: r.cmc, type_line: r.type_line, colors: r.colors,
-        oracle_text: r.oracle_text, rarity: r.rarity, set_code: r.set_code,
-        collector_number: r.collector_number, quantity: 1, foil: false,
-        price_eur: r.price_eur, price_eur_foil: r.price_eur_foil,
-        price_updated_at: new Date().toISOString(),
-      }));
+      const collectionRows = entries
+        .filter((e) => scryfallMap.has(e.scryfallId) && !existingIds.has(e.scryfallId))
+        .map((e) => {
+          const card = scryfallMap.get(e.scryfallId)!;
+          const imageUris = card.image_uris as Record<string, string> | undefined;
+          const cardFaces = card.card_faces as Array<{ image_uris?: Record<string, string> }> | undefined;
+          const imageUrl = imageUris?.normal ?? cardFaces?.[0]?.image_uris?.normal ?? null;
+          const rawPrices = card.prices as Record<string, string | null> | undefined;
+          return {
+            user_id: user.id, scryfall_id: card.id, name: card.name, image_url: imageUrl,
+            mana_cost: (card.mana_cost as string | null) ?? null,
+            cmc: card.cmc, type_line: card.type_line,
+            colors: (card.colors as string[]) ?? [],
+            oracle_text: (card.oracle_text as string | null) ?? null,
+            rarity: card.rarity as string, set_code: card.set as string,
+            collector_number: card.collector_number as string,
+            quantity: e.quantity, foil: e.foil,
+            price_eur: rawPrices?.eur ? parseFloat(rawPrices.eur) : null,
+            price_eur_foil: rawPrices?.eur_foil ? parseFloat(rawPrices.eur_foil) : null,
+            price_updated_at: new Date().toISOString(),
+          };
+        });
       await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
     }
     const notFound = entries.filter((e) => !scryfallMap.has(e.scryfallId)).map((e) => e.name);
@@ -165,25 +179,30 @@ export async function POST(
     inserted = data?.length ?? rowsToInsert.length;
 
     // Karten auch in die Sammlung des Nutzers eintragen (falls noch nicht vorhanden)
-    const collectionRows = rowsToInsert.map((r) => ({
-      user_id: user.id,
-      scryfall_id: r.scryfall_id,
-      name: r.name,
-      image_url: r.image_url,
-      mana_cost: r.mana_cost,
-      cmc: r.cmc,
-      type_line: r.type_line,
-      colors: r.colors,
-      oracle_text: r.oracle_text,
-      rarity: r.rarity,
-      set_code: r.set_code,
-      collector_number: r.collector_number,
-      quantity: 1,
-      foil: false,
-      price_eur: r.price_eur,
-      price_eur_foil: r.price_eur_foil,
-      price_updated_at: new Date().toISOString(),
-    }));
+    const collectionRows = results
+      .filter((r) => r.card && !existingIds.has(r.card.id))
+      .map((r) => {
+        const { eur, eurFoil } = getPrices(r.card!);
+        return {
+          user_id: user.id,
+          scryfall_id: r.card!.id,
+          name: r.card!.name,
+          image_url: r.imageUrl,
+          mana_cost: r.card!.mana_cost ?? null,
+          cmc: r.card!.cmc,
+          type_line: r.card!.type_line,
+          colors: r.card!.colors ?? [],
+          oracle_text: r.card!.oracle_text ?? null,
+          rarity: r.card!.rarity,
+          set_code: r.card!.set,
+          collector_number: r.card!.collector_number,
+          quantity: 1,
+          foil: false,
+          price_eur: eur,
+          price_eur_foil: eurFoil,
+          price_updated_at: new Date().toISOString(),
+        };
+      });
     await supabase
       .from("cards")
       .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
