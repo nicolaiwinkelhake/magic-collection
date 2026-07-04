@@ -28,7 +28,7 @@ export function CollectionClient({
     rarity: "",
     type: "",
     set: "",
-    sort: "name",
+    sort: "color",
   });
 
   const availableSets = useMemo(() => {
@@ -66,8 +66,22 @@ export function CollectionClient({
     const priceOf = (c: Card) =>
       (c.foil ? c.price_eur_foil : c.price_eur) ?? 0;
 
+    // WUBRG-Reihenfolge: Weiß, Blau, Schwarz, Rot, Grün, Mehrfarbig, Farblos
+    const COLOR_ORDER: Record<string, number> = { W: 0, U: 1, B: 2, R: 3, G: 4 };
+    function colorRank(colors: string[] | null): number {
+      const c = colors ?? [];
+      if (c.length === 0) return 6; // farblos
+      if (c.length > 1) return 5;  // mehrfarbig
+      return COLOR_ORDER[c[0]] ?? 6;
+    }
+
     const sorted = [...result];
     switch (filters.sort) {
+      case "color":
+        sorted.sort((a, b) =>
+          colorRank(a.colors) - colorRank(b.colors) || a.name.localeCompare(b.name)
+        );
+        break;
       case "cmc":
         sorted.sort((a, b) => (a.cmc ?? 0) - (b.cmc ?? 0));
         break;

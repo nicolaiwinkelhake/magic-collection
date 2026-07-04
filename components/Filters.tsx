@@ -8,7 +8,7 @@ const COLOR_OPTIONS = [
   { code: "G", label: "Grün" },
 ];
 
-export type SortKey = "name" | "cmc" | "price" | "set";
+export type SortKey = "name" | "cmc" | "price" | "set" | "color";
 
 export type FilterState = {
   search: string;
@@ -100,6 +100,7 @@ export function Filters({
         className="rounded-md bg-zinc-800 px-3 py-2 outline-none"
         title="Sortierung"
       >
+        <option value="color">Sortieren: Farbe</option>
         <option value="name">Sortieren: Name</option>
         <option value="cmc">Sortieren: Manawert</option>
         <option value="price">Sortieren: Preis</option>
