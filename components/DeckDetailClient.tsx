@@ -48,7 +48,15 @@ export function DeckDetailClient({
     Array<{
       category: string;
       label: string;
-      cards: { id: string; name: string; imageUrl: string | null; eur: number | null }[];
+      cards: {
+        id: string;
+        name: string;
+        imageUrl: string | null;
+        eur: number | null;
+        ownedQuantity: number;
+        usedInDecks: string[];
+        friendsOwning: { friendEmail: string; quantity: number }[];
+      }[];
     }>
   >([]);
   const [loadingSuggest, setLoadingSuggest] = useState(false);
@@ -711,6 +719,25 @@ export function DeckDetailClient({
                     <span className="absolute top-1 left-1 bg-black/70 text-[10px] rounded px-1.5 py-0.5">
                       {formatEur(c.eur)}
                     </span>
+                  )}
+                  {(c.ownedQuantity > 0 || c.usedInDecks.length > 0 || c.friendsOwning.length > 0) && (
+                    <div className="p-1.5 space-y-1 bg-zinc-950">
+                      {c.ownedQuantity > 0 && (
+                        <p className="text-[10px] leading-tight text-emerald-400">
+                          In Sammlung ×{c.ownedQuantity}
+                        </p>
+                      )}
+                      {c.usedInDecks.length > 0 && (
+                        <p className="text-[10px] leading-tight text-amber-400">
+                          Auch in: {c.usedInDecks.join(", ")}
+                        </p>
+                      )}
+                      {c.friendsOwning.map((f) => (
+                        <p key={f.friendEmail} className="text-[10px] leading-tight text-indigo-300">
+                          Bei {f.friendEmail} ×{f.quantity}
+                        </p>
+                      ))}
+                    </div>
                   )}
                 </div>
               ))}
