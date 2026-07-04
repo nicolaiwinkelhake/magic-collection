@@ -1,0 +1,23 @@
+export type Card = {
+  id: string;
+  user_id: string;
+  scryfall_id: string;
+  name: string;
+  set_code: string | null;
+  collector_number: string | null;
+  image_url: string | null;
+  mana_cost: string | null;
+  cmc: number | null;
+  type_line: string | null;
+  colors: string[] | null;
+  rarity: string | null;
+  oracle_text: string | null;
+  quantity: number;
+  foil: boolean;
+  price_eur: number | null;
+  price_eur_foil: number | null;
+  price_updated_at: string | null;
+  condition: string;
+  language: string;
+  created_at: string;
+};
