@@ -158,6 +158,9 @@ export function CollectionClient({
           <a href="/decks" className="hover:text-indigo-400">
             Decks
           </a>
+          <a href="/ai-deck-generator" className="hover:text-indigo-400">
+            AI Deck Generator
+          </a>
           <a href="/scan" className="hover:text-indigo-400">
             Scannen
           </a>
