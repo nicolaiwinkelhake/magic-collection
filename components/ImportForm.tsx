@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseDeckList } from "@/lib/parseDeckList";
-import { csvToEntries } from "@/lib/csv";
+import { csvToEntries, moxfieldCsvToEntries } from "@/lib/csv";
 
 export function ImportForm() {
   const router = useRouter();
@@ -45,7 +45,31 @@ export function ImportForm() {
     const file = e.target.files?.[0];
     if (!file) return;
     const content = await file.text();
-    await sendEntries(csvToEntries(content));
+
+    // Moxfield-CSV mit Scryfall-IDs → schnelles Endpoint ohne Namens-Lookup
+    const moxEntries = moxfieldCsvToEntries(content);
+    if (moxEntries) {
+      setLoading(true);
+      setMessage(null);
+      const res = await fetch("/api/import-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries: moxEntries }),
+      });
+      const data = await res.json();
+      setLoading(false);
+      if (!res.ok) {
+        setMessage(`Fehler: ${data.error}`);
+      } else {
+        let msg = `${data.imported} Karte(n) importiert.`;
+        if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+        setMessage(msg);
+        router.refresh();
+      }
+    } else {
+      await sendEntries(csvToEntries(content));
+    }
+
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -90,7 +114,7 @@ export function ImportForm() {
               />
             </label>
             <span className="text-xs text-zinc-500">
-              (Moxfield / Archidekt / Deckbox)
+              (Moxfield-CSV mit Scryfall-ID wird direkt importiert)
             </span>
           </div>
           {message && <p className="text-sm text-zinc-300">{message}</p>}

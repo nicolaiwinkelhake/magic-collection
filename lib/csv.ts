@@ -83,6 +83,47 @@ export function csvToEntries(text: string): ParsedEntry[] {
   return entries;
 }
 
+export type MoxfieldEntry = {
+  scryfallId: string;
+  name: string;
+  quantity: number;
+  foil: boolean;
+};
+
+// Parst eine Moxfield-CSV mit "Scryfall ID"-Spalte.
+// Gibt null zurück wenn das Format nicht erkannt wird (kein Scryfall ID Header).
+export function moxfieldCsvToEntries(text: string): MoxfieldEntry[] | null {
+  const rows = parseCsvRows(text);
+  if (!rows.length) return null;
+
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const scryfallIdx = header.findIndex((h) =>
+    ["scryfall id", "scryfall_id", "scryfallid"].includes(h)
+  );
+  if (scryfallIdx === -1) return null;
+
+  const nameIdx = header.findIndex((h) =>
+    ["name", "card name", "card", "cardname"].includes(h)
+  );
+  const countIdx = header.findIndex((h) =>
+    ["count", "quantity", "qty", "amount"].includes(h)
+  );
+  const foilIdx = header.findIndex((h) =>
+    ["foil", "is foil", "finish", "printing"].includes(h)
+  );
+
+  return rows.slice(1).flatMap((r): MoxfieldEntry[] => {
+    const scryfallId = (r[scryfallIdx] ?? "").trim();
+    if (!scryfallId) return [];
+    const name = nameIdx >= 0 ? (r[nameIdx] ?? "").trim() : scryfallId;
+    const quantity =
+      countIdx >= 0 ? Math.max(1, parseInt(r[countIdx] || "1", 10) || 1) : 1;
+    const foilVal = foilIdx >= 0 ? (r[foilIdx] || "").trim().toLowerCase() : "";
+    const foil = ["foil", "true", "yes", "1", "etched"].includes(foilVal);
+    return [{ scryfallId, name, quantity, foil }];
+  });
+}
+
 // Serialisiert Sammlungskarten als CSV (kompatibel zum eigenen Import).
 export function entriesToCsv(
   cards: Array<{
