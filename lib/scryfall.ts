@@ -77,6 +77,7 @@ export function sleep(ms: number) {
 
 // Bulk-Import mehrerer Kartennamen (z. B. eine Zeile pro Karte aus einem Textfeld)
 export async function fetchCardsByNames(names: string[]) {
+  const trimmed = names.map((n) => n.trim()).filter(Boolean);
   const results: Array<{
     name: string;
     card: ScryfallCard | null;
@@ -84,15 +85,48 @@ export async function fetchCardsByNames(names: string[]) {
     error?: string;
   }> = [];
 
-  for (const name of names) {
-    const trimmed = name.trim();
-    if (!trimmed) continue;
-    const result = await fetchCardByName(trimmed);
-    results.push({ name: trimmed, ...result });
-    await sleep(100); // Scryfall-freundliches Tempo
+  // Scryfall /cards/collection erlaubt bis zu 75 Karten pro Request
+  const CHUNK = 75;
+  for (let i = 0; i < trimmed.length; i += CHUNK) {
+    const chunk = trimmed.slice(i, i + CHUNK);
+    const body = { identifiers: chunk.map((name) => ({ name })) };
+
+    const res = await fetch(`${SCRYFALL_BASE}/cards/collection`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "MagicCollectionApp/1.0",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      // Fallback: Einzelabfragen für diesen Chunk
+      for (const name of chunk) {
+        const result = await fetchCardByName(name);
+        results.push({ name, ...result });
+        await sleep(100);
+      }
+      continue;
+    }
+
+    const data = await res.json();
+    const found: ScryfallCard[] = data.data ?? [];
+    const notFound: Array<{ name: string }> = data.not_found ?? [];
+
+    for (const card of found) {
+      results.push({ name: card.name, card, imageUrl: getImageUrl(card) });
+    }
+    for (const nf of notFound) {
+      results.push({ name: nf.name, card: null, imageUrl: null, error: `Karte "${nf.name}" nicht gefunden` });
+    }
+
+    if (i + CHUNK < trimmed.length) await sleep(100);
   }
 
-  return results;
+  // Reihenfolge der Eingabe wiederherstellen
+  const resultMap = new Map(results.map((r) => [r.name.toLowerCase(), r]));
+  return trimmed.map((name) => resultMap.get(name.toLowerCase()) ?? { name, card: null, imageUrl: null });
 }
 
 export function getImageUrlPublic(card: ScryfallCard): string | null {
