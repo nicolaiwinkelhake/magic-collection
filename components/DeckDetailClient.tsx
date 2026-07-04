@@ -194,6 +194,18 @@ export function DeckDetailClient({
 
   const formattedValue = formatEur(totalValue);
 
+  // Identische Karten (gleiche Scryfall-ID) für die Anzeige stapeln
+  const stackedCards = useMemo(() => {
+    const groups = new Map<string, DeckCard[]>();
+    for (const card of initialCards) {
+      const key = `${card.scryfall_id}-${card.is_commander}`;
+      const list = groups.get(key);
+      if (list) list.push(card);
+      else groups.set(key, [card]);
+    }
+    return Array.from(groups.values());
+  }, [initialCards]);
+
   useEffect(() => {
     if (!initialCards.length) return;
     setLoadingOwnership(true);
@@ -227,7 +239,9 @@ export function DeckDetailClient({
     setImporting(false);
     if (!res.ok) { setImportMessage(`Fehler: ${data.error}`); return; }
     let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-    if (data.duplicates?.length) msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+    if (data.repeated?.length) {
+      msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
+    }
     if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
     setImportMessage(msg);
     if (csvRef.current) csvRef.current.value = "";
@@ -251,7 +265,9 @@ export function DeckDetailClient({
       setImporting(false);
       if (!res.ok) { setImportMessage(`Fehler: ${data.error}`); return; }
       let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-      if (data.duplicates?.length) msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+      if (data.repeated?.length) {
+        msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
+      }
       if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
       setImportMessage(msg);
       setImportText("");
@@ -259,8 +275,8 @@ export function DeckDetailClient({
       return;
     }
 
-    const names = parseDeckList(importText).map((e) => e.name);
-    if (!names.length) return;
+    const nameEntries = parseDeckList(importText);
+    if (!nameEntries.length) return;
 
     setImporting(true);
     setImportMessage(null);
@@ -268,7 +284,7 @@ export function DeckDetailClient({
     const res = await fetch(`/api/decks/${deck.id}/cards`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ names }),
+      body: JSON.stringify({ nameEntries }),
     });
 
     const data = await res.json();
@@ -280,7 +296,9 @@ export function DeckDetailClient({
     }
 
     let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-    if (data.duplicates?.length) msg += ` Bereits im Deck: ${data.duplicates.join(", ")}.`;
+    if (data.repeated?.length) {
+      msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
+    }
     if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
     setImportMessage(msg);
     setImportText("");
@@ -717,7 +735,9 @@ export function DeckDetailClient({
           )}
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {initialCards.map((card) => {
+          {stackedCards.map((group) => {
+            const card = group[0];
+            const count = group.length;
             const owners = ownership[card.name];
             return (
               <div
@@ -737,15 +757,20 @@ export function DeckDetailClient({
                     {card.name}
                   </div>
                 )}
+                {count > 1 && (
+                  <span className="absolute top-1 left-1 bg-indigo-600 text-xs font-semibold rounded-full px-2 py-0.5">
+                    ×{count}
+                  </span>
+                )}
                 {card.is_commander && (
-                  <span className="absolute top-1 left-1 bg-amber-600 text-xs rounded-full px-2 py-0.5">
+                  <span className={`absolute top-1 ${count > 1 ? "left-10" : "left-1"} bg-amber-600 text-xs rounded-full px-2 py-0.5`}>
                     Commander
                   </span>
                 )}
                 {!card.is_commander && (
                   <button
                     onClick={() => removeDeckCard(card.id, card.name)}
-                    title="Aus Deck entfernen"
+                    title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
                     className="absolute top-1 right-1 z-10 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
                   >
                     ✕
@@ -760,6 +785,7 @@ export function DeckDetailClient({
                 {card.price_eur !== null && (
                   <div className="absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
                     {formatEur(card.price_eur)}
+                    {count > 1 ? ` × ${count}` : ""}
                   </div>
                 )}
               </div>

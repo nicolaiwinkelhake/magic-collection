@@ -28,7 +28,7 @@ export async function POST(
 
   const body = await request.json();
 
-  // Pfad 1: Scryfall-IDs aus CSV-Import
+  // Pfad 1: Scryfall-IDs aus CSV-Import (Mengenangabe pro Zeile wird respektiert)
   if (body.entries?.length) {
     const entries: Array<{ scryfallId: string; name: string; quantity: number; foil: boolean }> = body.entries;
     const SCRYFALL_BASE = "https://api.scryfall.com";
@@ -50,33 +50,40 @@ export async function POST(
       if (i + CHUNK < entries.length) await new Promise((r) => setTimeout(r, 100));
     }
 
-    const { data: existingCards } = await supabase
-      .from("deck_cards").select("scryfall_id").eq("deck_id", params.id);
-    const existingIds = new Set((existingCards ?? []).map((c) => c.scryfall_id));
-
-    const duplicates: string[] = [];
     const rowsToInsert: Record<string, unknown>[] = [];
+    // Zählt Mengen pro Karte, um mehrfach vorkommende Karten (z.B. Basic Lands) zu melden
+    const qtyByCard = new Map<string, { name: string; qty: number }>();
 
     for (const entry of entries) {
       const card = scryfallMap.get(entry.scryfallId);
       if (!card) continue;
-      if (existingIds.has(entry.scryfallId)) { duplicates.push(card.name as string); continue; }
+      const qty = Math.max(1, entry.quantity || 1);
+      const prev = qtyByCard.get(entry.scryfallId);
+      qtyByCard.set(entry.scryfallId, { name: card.name as string, qty: (prev?.qty ?? 0) + qty });
+
       const imageUris = card.image_uris as Record<string, string> | undefined;
       const cardFaces = card.card_faces as Array<{ image_uris?: Record<string, string> }> | undefined;
       const imageUrl = imageUris?.normal ?? cardFaces?.[0]?.image_uris?.normal ?? null;
       const rawPrices = card.prices as Record<string, string | null> | undefined;
       const eur = rawPrices?.eur ? parseFloat(rawPrices.eur) : null;
       const eurFoil = rawPrices?.eur_foil ? parseFloat(rawPrices.eur_foil) : null;
-      rowsToInsert.push({
-        deck_id: params.id, user_id: user.id,
-        scryfall_id: card.id, name: card.name, image_url: imageUrl,
-        mana_cost: (card.mana_cost as string | null) ?? null,
-        cmc: card.cmc, type_line: card.type_line,
-        colors: (card.colors as string[]) ?? [],
-        oracle_text: (card.oracle_text as string | null) ?? null,
-        is_commander: false, price_eur: eur, price_eur_foil: eurFoil,
-      });
+
+      for (let i = 0; i < qty; i++) {
+        rowsToInsert.push({
+          deck_id: params.id, user_id: user.id,
+          scryfall_id: card.id, name: card.name, image_url: imageUrl,
+          mana_cost: (card.mana_cost as string | null) ?? null,
+          cmc: card.cmc, type_line: card.type_line,
+          colors: (card.colors as string[]) ?? [],
+          oracle_text: (card.oracle_text as string | null) ?? null,
+          is_commander: false, price_eur: eur, price_eur_foil: eurFoil,
+        });
+      }
     }
+
+    const repeated = Array.from(qtyByCard.values())
+      .filter((v) => v.qty > 1)
+      .map((v) => ({ name: v.name, count: v.qty }));
 
     let inserted = 0;
     if (rowsToInsert.length) {
@@ -84,7 +91,7 @@ export async function POST(
       if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
       inserted = insertedData?.length ?? 0;
       const collectionRows = entries
-        .filter((e) => scryfallMap.has(e.scryfallId) && !existingIds.has(e.scryfallId))
+        .filter((e) => scryfallMap.has(e.scryfallId))
         .map((e) => {
           const card = scryfallMap.get(e.scryfallId)!;
           const imageUris = card.image_uris as Record<string, string> | undefined;
@@ -108,63 +115,90 @@ export async function POST(
       await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
     }
     const notFound = entries.filter((e) => !scryfallMap.has(e.scryfallId)).map((e) => e.name);
-    return NextResponse.json({ inserted, notFound, duplicates });
+    return NextResponse.json({ inserted, notFound, repeated });
   }
 
-  // Pfad 2: Kartennamen (Textimport)
-  const rawNames: string[] = body.names ?? [];
+  // Pfad 2: Kartennamen (Textimport) – Mengenangabe wie "6x Island" wird respektiert
+  const rawEntries: Array<{ name: string; quantity?: number }> =
+    body.nameEntries ?? (body.names ?? []).map((n: string) => ({ name: n, quantity: 1 }));
 
   // Set-Code, Collector-Number und Kategorie-Tags serverseitig entfernen
-  const names = rawNames
-    .map((n) =>
-      n
+  const cleaned = rawEntries
+    .map((e) => ({
+      name: e.name
         .replace(/\s*\([a-z0-9]+\)\s*\d*\s*/gi, " ")
         .replace(/\s*\[[^\]]*\]/g, "")
-        .trim()
-    )
-    .filter(Boolean);
+        .trim(),
+      quantity: Math.max(1, e.quantity ?? 1),
+    }))
+    .filter((e) => e.name.length > 0);
 
-  if (!names.length) {
+  if (!cleaned.length) {
     return NextResponse.json({ error: "Keine Kartennamen übergeben" }, { status: 400 });
   }
 
-  const results = await fetchCardsByNames(names);
+  // Mengen gleicher Kartennamen zusammenzählen (z.B. mehrere Zeilen mit "Island")
+  const qtyByName = new Map<string, number>();
+  for (const e of cleaned) {
+    const key = e.name.toLowerCase();
+    qtyByName.set(key, (qtyByName.get(key) ?? 0) + e.quantity);
+  }
 
-  // Bereits vorhandene Scryfall-IDs im Deck laden, um Duplikate zu verhindern
-  const { data: existingCards } = await supabase
-    .from("deck_cards")
-    .select("scryfall_id")
-    .eq("deck_id", params.id);
-  const existingIds = new Set((existingCards ?? []).map((c) => c.scryfall_id));
+  const uniqueNames = Array.from(new Set(cleaned.map((e) => e.name)));
+  const results = await fetchCardsByNames(uniqueNames);
+  const resultByName = new Map(results.map((r) => [r.name.toLowerCase(), r]));
 
-  const duplicates: string[] = [];
-  const rowsToInsert = results
-    .filter((r) => {
-      if (!r.card) return false;
-      if (existingIds.has(r.card.id)) {
-        duplicates.push(r.card.name);
-        return false;
-      }
-      return true;
-    })
-    .map((r) => {
-      const { eur, eurFoil } = getPrices(r.card!);
-      return {
+  const rowsToInsert: Record<string, unknown>[] = [];
+  const repeated: { name: string; count: number }[] = [];
+  const priceRecords: { scryfall_id: string; eur: number | null; eurFoil: number | null }[] = [];
+  const collectionRows: Record<string, unknown>[] = [];
+
+  for (const [nameKey, qty] of qtyByName) {
+    const r = resultByName.get(nameKey);
+    if (!r || !r.card) continue;
+    const { eur, eurFoil } = getPrices(r.card);
+    if (qty > 1) repeated.push({ name: r.card.name, count: qty });
+
+    for (let i = 0; i < qty; i++) {
+      rowsToInsert.push({
         deck_id: params.id,
         user_id: user.id,
-        scryfall_id: r.card!.id,
-        name: r.card!.name,
+        scryfall_id: r.card.id,
+        name: r.card.name,
         image_url: r.imageUrl,
-        mana_cost: r.card!.mana_cost ?? null,
-        cmc: r.card!.cmc,
-        type_line: r.card!.type_line,
-        colors: r.card!.colors ?? [],
-        oracle_text: r.card!.oracle_text ?? null,
+        mana_cost: r.card.mana_cost ?? null,
+        cmc: r.card.cmc,
+        type_line: r.card.type_line,
+        colors: r.card.colors ?? [],
+        oracle_text: r.card.oracle_text ?? null,
         is_commander: false,
         price_eur: eur,
         price_eur_foil: eurFoil,
-      };
+      });
+    }
+
+    priceRecords.push({ scryfall_id: r.card.id, eur, eurFoil });
+
+    collectionRows.push({
+      user_id: user.id,
+      scryfall_id: r.card.id,
+      name: r.card.name,
+      image_url: r.imageUrl,
+      mana_cost: r.card.mana_cost ?? null,
+      cmc: r.card.cmc,
+      type_line: r.card.type_line,
+      colors: r.card.colors ?? [],
+      oracle_text: r.card.oracle_text ?? null,
+      rarity: r.card.rarity,
+      set_code: r.card.set,
+      collector_number: r.card.collector_number,
+      quantity: qty,
+      foil: false,
+      price_eur: eur,
+      price_eur_foil: eurFoil,
+      price_updated_at: new Date().toISOString(),
     });
+  }
 
   let inserted = 0;
   if (rowsToInsert.length) {
@@ -179,47 +213,23 @@ export async function POST(
     inserted = data?.length ?? rowsToInsert.length;
 
     // Karten auch in die Sammlung des Nutzers eintragen (falls noch nicht vorhanden)
-    const collectionRows = results
-      .filter((r) => r.card && !existingIds.has(r.card.id))
-      .map((r) => {
-        const { eur, eurFoil } = getPrices(r.card!);
-        return {
-          user_id: user.id,
-          scryfall_id: r.card!.id,
-          name: r.card!.name,
-          image_url: r.imageUrl,
-          mana_cost: r.card!.mana_cost ?? null,
-          cmc: r.card!.cmc,
-          type_line: r.card!.type_line,
-          colors: r.card!.colors ?? [],
-          oracle_text: r.card!.oracle_text ?? null,
-          rarity: r.card!.rarity,
-          set_code: r.card!.set,
-          collector_number: r.card!.collector_number,
-          quantity: 1,
-          foil: false,
-          price_eur: eur,
-          price_eur_foil: eurFoil,
-          price_updated_at: new Date().toISOString(),
-        };
-      });
     await supabase
       .from("cards")
       .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil", ignoreDuplicates: true });
 
-    // Preisverlauf je Karte festhalten
-    for (const r of rowsToInsert) {
+    // Preisverlauf je Karte festhalten (einmal pro Karte, unabhängig von der Menge)
+    for (const p of priceRecords) {
       await supabase.rpc("record_card_price", {
-        p_scryfall_id: r.scryfall_id,
-        p_eur: r.price_eur,
-        p_eur_foil: r.price_eur_foil,
+        p_scryfall_id: p.scryfall_id,
+        p_eur: p.eur,
+        p_eur_foil: p.eurFoil,
       });
     }
   }
 
-  const notFound = results.filter((r) => !r.card).map((r) => r.name);
+  const notFound = uniqueNames.filter((n) => !resultByName.get(n.toLowerCase())?.card);
 
-  return NextResponse.json({ inserted, notFound, duplicates });
+  return NextResponse.json({ inserted, notFound, repeated });
 }
 
 // Einzelne Deckkarte entfernen (der Commander kann nicht gelöscht werden).
