@@ -13,6 +13,7 @@ export function ImportForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [allowDuplicates, setAllowDuplicates] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Letztes Import-Ergebnis überlebt einen Seiten-Refresh (F5),
   // damit die Liste "nicht gefundener" Karten nicht verloren geht.
@@ -30,22 +31,51 @@ export function ImportForm() {
     if (!entries.length) return;
     setLoading(true);
     setMessage(null);
+    setProgress(null);
 
     const res = await fetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ entries, allowDuplicates }),
     });
-    const data = await res.json();
-    setLoading(false);
 
-    if (!res.ok) {
-      setMessage(`Fehler: ${data.error}`);
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      setLoading(false);
+      setProgress(null);
+      setMessage(`Fehler: ${data.error ?? res.status}`);
       return;
     }
-    let msg = `${data.imported} Karte(n) importiert.`;
-    if (data.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${data.skipped.join(", ")}`;
-    if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: { imported: number; notFound: string[]; skipped: string[] } | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === "progress") setProgress({ done: event.done, total: event.total });
+        else if (event.type === "result") result = event;
+      }
+    }
+
+    setLoading(false);
+    setProgress(null);
+
+    if (!result) {
+      setMessage("Fehler: Antwort unvollständig");
+      return;
+    }
+    let msg = `${result.imported} Karte(n) importiert.`;
+    if (result.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${result.skipped.join(", ")}`;
+    if (result.notFound?.length) msg += ` Nicht gefunden: ${result.notFound.join(", ")}`;
     setPersistedMessage(msg);
     setText("");
     router.refresh();
@@ -112,7 +142,11 @@ export function ImportForm() {
               disabled={loading || !text.trim()}
               className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
             >
-              {loading ? "Importiere..." : "Importieren"}
+              {loading
+                ? progress
+                  ? `Importiere... (${progress.done}/${progress.total})`
+                  : "Importiere..."
+                : "Importieren"}
             </button>
 
             <span className="text-zinc-600 text-sm">oder</span>
@@ -131,6 +165,14 @@ export function ImportForm() {
               (Moxfield-CSV mit Scryfall-ID wird direkt importiert)
             </span>
           </div>
+          {progress && progress.total > 0 && (
+            <div className="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 transition-all"
+                style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+              />
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
             <input
               type="checkbox"
