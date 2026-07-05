@@ -288,8 +288,7 @@ export async function POST(request: Request) {
                       name: { type: "string", description: "Exakter Kartenname aus der Pool-Liste" },
                       quantity: {
                         type: "integer",
-                        minimum: 1,
-                        description: "Anzahl - nur bei Standardländern größer 1, sonst immer 1.",
+                        description: "Anzahl (mindestens 1) - nur bei Standardländern größer 1, sonst immer 1.",
                       },
                       category: {
                         type: "string",
