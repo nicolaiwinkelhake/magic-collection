@@ -101,11 +101,11 @@ export async function POST(request: Request) {
       const anthropic = new Anthropic();
 
       const anthropicStream = anthropic.messages.stream({
-        model: "claude-opus-4-8",
-        max_tokens: 32000,
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
         thinking: { type: "adaptive" },
         output_config: {
-          effort: "high",
+          effort: "medium",
           format: {
             type: "json_schema",
             schema: {
