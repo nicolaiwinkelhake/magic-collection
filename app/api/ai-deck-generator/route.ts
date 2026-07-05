@@ -103,8 +103,14 @@ function ndjsonStream(run: (send: (obj: unknown) => void) => Promise<void>) {
   });
 }
 
+// Bricht den Claude-Aufruf ab, BEVOR Vercel die Function hart killt -
+// so bekommt der Client eine klare Fehlermeldung statt eines toten Streams.
+const CLAUDE_TIMEOUT_MS = 260_000;
+
 // Claude-Aufruf mit Lebenszeichen an den Client bei JEDEM Stream-Event (auch
 // während der Thinking-Phase) - sonst schlägt dessen Idle-Timeout fälschlich zu.
+// Die Statusmeldung zeigt den Token-Fortschritt, damit sichtbar ist, dass und
+// wie schnell Claude tatsächlich arbeitet.
 async function runClaude(
   anthropic: Anthropic,
   send: (obj: unknown) => void,
@@ -112,15 +118,42 @@ async function runClaude(
   workingMessage: string
 ) {
   const anthropicStream = anthropic.messages.stream(params);
-  let lastTick = Date.now();
-  anthropicStream.on("streamEvent", () => {
+  const started = Date.now();
+  let lastTick = started;
+  let charCount = 0;
+  anthropicStream.on("streamEvent", (event) => {
+    if (event.type === "content_block_delta") {
+      const delta = event.delta as { text?: string; thinking?: string };
+      charCount += delta.text?.length ?? delta.thinking?.length ?? 0;
+    }
     const now = Date.now();
     if (now - lastTick > 5000) {
       lastTick = now;
-      send({ type: "status", message: workingMessage });
+      const seconds = Math.round((now - started) / 1000);
+      const tokens = Math.round(charCount / 4);
+      send({ type: "status", message: `${workingMessage} (${seconds}s, ~${tokens} Tokens erzeugt)` });
     }
   });
-  const response = await anthropicStream.finalMessage();
+
+  let timedOut = false;
+  const watchdog = setTimeout(() => {
+    timedOut = true;
+    anthropicStream.abort();
+  }, CLAUDE_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await anthropicStream.finalMessage();
+  } catch (e) {
+    if (timedOut) {
+      throw new Error(
+        `Claude hat das Zeitbudget (${Math.round(CLAUDE_TIMEOUT_MS / 1000)}s) überschritten - bitte nochmal versuchen.`
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(watchdog);
+  }
 
   if (response.stop_reason === "refusal") throw new Error("Anfrage wurde abgelehnt");
   if (response.stop_reason === "max_tokens") {
@@ -259,7 +292,9 @@ export async function POST(request: Request) {
           max_tokens: 16000,
           thinking: { type: "adaptive" },
           output_config: {
-            effort: "medium",
+            // "low" statt "medium": bei medium dachte Sonnet über grosse
+            // Sammlungen minutenlang nach und riss das Vercel-Zeitlimit.
+            effort: "low",
             format: {
               type: "json_schema",
               schema: {
@@ -407,7 +442,9 @@ export async function POST(request: Request) {
         max_tokens: 32000,
         thinking: { type: "adaptive" },
         output_config: {
-          effort: "medium",
+          // "low" statt "medium": bei medium dachte Sonnet über grosse
+          // Sammlungen minutenlang nach und riss das Vercel-Zeitlimit.
+          effort: "low",
           format: {
             type: "json_schema",
             schema: {
