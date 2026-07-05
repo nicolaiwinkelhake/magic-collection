@@ -58,6 +58,55 @@ export function AIDeckGeneratorClient() {
   const [suggestions, setSuggestions] = useState<CommanderSuggestion[] | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const [suggestionsStatus, setSuggestionsStatus] = useState<string | null>(null);
+  const [generateStatus, setGenerateStatus] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Läuft während loading/loadingSuggestions, damit der Nutzer sieht, dass sich
+  // tatsächlich noch etwas tut (Claude-Aufrufe können 30-90s dauern).
+  useEffect(() => {
+    if (!loading && !loadingSuggestions) return;
+    setElapsedSeconds(0);
+    const interval = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [loading, loadingSuggestions]);
+
+  // Liest eine NDJSON-Stream-Antwort (ein JSON-Objekt pro Zeile) und ruft für
+  // jede Zeile onEvent auf - liefert am Ende das "result"-Event oder null bei Fehler.
+  async function streamNdjson(
+    url: string,
+    options: RequestInit,
+    onEvent: (event: { type: string; [key: string]: unknown }) => void
+  ): Promise<Record<string, unknown> | null> {
+    const res = await fetch(url, options);
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.error ?? `Fehler (Status ${res.status})`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: Record<string, unknown> | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        onEvent(event);
+        if (event.type === "error") throw new Error(event.error ?? "Unbekannter Fehler");
+        if (event.type === "result") result = event;
+      }
+    }
+
+    if (!result) throw new Error("Antwort unvollständig");
+    return result;
+  }
 
   useEffect(() => {
     fetch("/api/ai-deck-generator/commanders")
@@ -70,18 +119,21 @@ export function AIDeckGeneratorClient() {
     setLoadingSuggestions(true);
     setSuggestionsError(null);
     setSuggestions(null);
+    setSuggestionsStatus("Starte Analyse...");
     try {
-      const res = await fetch("/api/ai-deck-generator/suggest-commanders", { method: "POST" });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setSuggestionsError(data?.error ?? `Vorschläge konnten nicht ermittelt werden (Status ${res.status})`);
-        return;
-      }
-      setSuggestions(data.suggestions ?? []);
+      const result = await streamNdjson(
+        "/api/ai-deck-generator/suggest-commanders",
+        { method: "POST" },
+        (event) => {
+          if (event.type === "status") setSuggestionsStatus(event.message as string);
+        }
+      );
+      setSuggestions((result?.suggestions as CommanderSuggestion[]) ?? []);
     } catch (e) {
-      setSuggestionsError(e instanceof Error ? e.message : "Netzwerkfehler beim Ermitteln der Vorschläge");
+      setSuggestionsError(e instanceof Error ? e.message : "Vorschläge konnten nicht ermittelt werden");
     } finally {
       setLoadingSuggestions(false);
+      setSuggestionsStatus(null);
     }
   }
 
@@ -90,26 +142,25 @@ export function AIDeckGeneratorClient() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setGenerateStatus("Starte Generierung...");
     try {
-      const res = await fetch("/api/ai-deck-generator", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commanderName: commanderName.trim() }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setError(data?.error ?? `Fehler beim Generieren (Status ${res.status})`);
-        return;
-      }
-      setResult(data);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? `Netzwerkfehler: ${e.message}`
-          : "Netzwerkfehler beim Generieren (evtl. Timeout - versuche es erneut)"
+      const result = await streamNdjson(
+        "/api/ai-deck-generator",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ commanderName: commanderName.trim() }),
+        },
+        (event) => {
+          if (event.type === "status") setGenerateStatus(event.message as string);
+        }
       );
+      setResult(result as unknown as GenerateResult);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Fehler beim Generieren");
     } finally {
       setLoading(false);
+      setGenerateStatus(null);
     }
   }
 
@@ -186,9 +237,15 @@ export function AIDeckGeneratorClient() {
             disabled={loading || !commanderName.trim()}
             className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
           >
-            {loading ? "Generiere Deck..." : "Deck generieren"}
+            {loading ? `Generiere Deck... (${elapsedSeconds}s)` : "Deck generieren"}
           </button>
         </div>
+        {loading && generateStatus && (
+          <p className="text-xs text-indigo-300 flex items-center gap-2">
+            <span className="inline-block h-2 w-2 rounded-full bg-indigo-400 animate-pulse" />
+            {generateStatus}
+          </p>
+        )}
         {error && <p className="text-sm text-red-400">{error}</p>}
       </div>
 
@@ -203,9 +260,15 @@ export function AIDeckGeneratorClient() {
               disabled={loadingSuggestions}
               className="bg-purple-700 hover:bg-purple-600 transition rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
             >
-              {loadingSuggestions ? "Analysiere Sammlung..." : "🔮 Commander vorschlagen lassen"}
+              {loadingSuggestions ? `Analysiere Sammlung... (${elapsedSeconds}s)` : "🔮 Commander vorschlagen lassen"}
             </button>
           </div>
+          {loadingSuggestions && suggestionsStatus && (
+            <p className="text-xs text-purple-300 flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-purple-400 animate-pulse" />
+              {suggestionsStatus}
+            </p>
+          )}
           {suggestionsError && <p className="text-sm text-red-400">{suggestionsError}</p>}
           {suggestions && suggestions.length === 0 && (
             <p className="text-sm text-zinc-500">Keine passenden Vorschläge gefunden.</p>
