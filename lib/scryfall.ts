@@ -10,6 +10,8 @@ export type ScryfallCard = {
   cmc: number;
   type_line: string;
   colors?: string[];
+  // Farbidentität (inkl. Aktivierungs-/Kickerkosten) - relevant für Commander
+  color_identity?: string[];
   rarity: string;
   oracle_text?: string;
   // Cardmarket-Preise (in EUR) – von Scryfall mitgeliefert, kein eigener Cardmarket-Zugang nötig
