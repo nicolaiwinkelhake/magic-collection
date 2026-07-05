@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCardByName } from "@/lib/scryfall";
+import { findCombos } from "@/lib/commanderSpellbook";
 
 // Adaptive Thinking + eine grosse Kandidatenliste + ~99 Karten als JSON
 // brauchen mehr Zeit, als Vercels Standard-Timeout fuer Route Handler erlaubt.
@@ -196,10 +197,18 @@ export async function POST(request: Request) {
     if (cards.length >= 99) break;
   }
 
+  // Echte, verifizierte Combos (statt KI-Vermutungen) über Commander Spellbook prüfen -
+  // sowohl im gebauten Deck vorhandene als auch solche, denen nur 1-2 Karten fehlen.
+  const combos = await findCombos(
+    cards.map((c) => c.name),
+    [commander.name]
+  );
+
   return NextResponse.json({
     commander: { name: commander.name, imageUrl, colorIdentity },
     strategy: parsed.strategy,
     improvementAdvice: parsed.improvementAdvice,
     cards,
+    combos,
   });
 }

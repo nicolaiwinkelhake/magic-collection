@@ -13,11 +13,21 @@ type GeneratedCard = {
   colors: string[] | null;
 };
 
+type Combo = {
+  cards: string[];
+  produces: string[];
+  description: string;
+  popularity: number;
+};
+
+type AlmostCombo = Combo & { missing: string[] };
+
 type GenerateResult = {
   commander: { name: string; imageUrl: string | null; colorIdentity: string[] };
   strategy: string;
   improvementAdvice: string;
   cards: GeneratedCard[];
+  combos: { included: Combo[]; almostIncluded: AlmostCombo[] } | null;
 };
 
 type CommanderOption = {
@@ -25,6 +35,13 @@ type CommanderOption = {
   imageUrl: string | null;
   colors: string[];
   hasDeck: boolean;
+};
+
+type CommanderSuggestion = {
+  name: string;
+  imageUrl: string | null;
+  colors: string[];
+  reasoning: string;
 };
 
 const CATEGORY_ORDER = ["Land", "Ramp", "Removal", "Kartenvorteil", "Wincon", "Synergie", "Sonstiges"];
@@ -38,6 +55,9 @@ export function AIDeckGeneratorClient() {
   const [creating, setCreating] = useState(false);
   const [commanderOptions, setCommanderOptions] = useState<CommanderOption[] | null>(null);
   const [loadingCommanders, setLoadingCommanders] = useState(true);
+  const [suggestions, setSuggestions] = useState<CommanderSuggestion[] | null>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/ai-deck-generator/commanders")
@@ -45,6 +65,20 @@ export function AIDeckGeneratorClient() {
       .then((d) => setCommanderOptions(d.commanders ?? []))
       .finally(() => setLoadingCommanders(false));
   }, []);
+
+  async function handleSuggestCommanders() {
+    setLoadingSuggestions(true);
+    setSuggestionsError(null);
+    setSuggestions(null);
+    const res = await fetch("/api/ai-deck-generator/suggest-commanders", { method: "POST" });
+    const data = await res.json();
+    setLoadingSuggestions(false);
+    if (!res.ok) {
+      setSuggestionsError(data.error ?? "Vorschläge konnten nicht ermittelt werden");
+      return;
+    }
+    setSuggestions(data.suggestions ?? []);
+  }
 
   async function handleGenerate() {
     if (!commanderName.trim()) return;
@@ -145,6 +179,56 @@ export function AIDeckGeneratorClient() {
       </div>
 
       {!result && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="text-sm font-medium text-indigo-300">
+              Unsicher, welcher Commander sich lohnt?
+            </p>
+            <button
+              onClick={handleSuggestCommanders}
+              disabled={loadingSuggestions}
+              className="bg-purple-700 hover:bg-purple-600 transition rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            >
+              {loadingSuggestions ? "Analysiere Sammlung..." : "🔮 Commander vorschlagen lassen"}
+            </button>
+          </div>
+          {suggestionsError && <p className="text-sm text-red-400">{suggestionsError}</p>}
+          {suggestions && suggestions.length === 0 && (
+            <p className="text-sm text-zinc-500">Keine passenden Vorschläge gefunden.</p>
+          )}
+          {suggestions && suggestions.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s.name}
+                  onClick={() => setCommanderName(s.name)}
+                  className={`flex gap-3 text-left rounded-lg border p-3 transition ${
+                    commanderName === s.name
+                      ? "border-indigo-400 ring-2 ring-indigo-500/60 bg-zinc-800/50"
+                      : "border-zinc-800 hover:border-indigo-500 bg-zinc-950/50"
+                  }`}
+                >
+                  {s.imageUrl && (
+                    <Image
+                      src={s.imageUrl}
+                      alt={s.name}
+                      width={80}
+                      height={112}
+                      className="rounded-md shrink-0 h-fit"
+                    />
+                  )}
+                  <div>
+                    <p className="font-medium text-sm">{s.name}</p>
+                    <p className="text-xs text-zinc-400 mt-1">{s.reasoning}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!result && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
           <p className="text-sm font-medium text-indigo-300 mb-3">
             Commander aus deiner Sammlung
@@ -239,6 +323,55 @@ export function AIDeckGeneratorClient() {
               </div>
             </div>
           ))}
+
+          {result.combos && (result.combos.included.length > 0 || result.combos.almostIncluded.length > 0) && (
+            <div className="space-y-4">
+              <p className="text-sm font-medium text-indigo-300">
+                🧩 Combos (verifiziert über Commander Spellbook)
+              </p>
+
+              {result.combos.included.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-zinc-500">Im Deck enthalten</p>
+                  {result.combos.included.map((c) => (
+                    <div
+                      key={c.cards.join("+")}
+                      className="bg-emerald-900/20 border border-emerald-800/50 rounded-md px-3 py-2 text-sm"
+                    >
+                      <p className="font-medium text-emerald-300">{c.cards.join(" + ")}</p>
+                      <p className="text-xs text-zinc-400 mt-1">{c.description}</p>
+                      {c.produces.length > 0 && (
+                        <p className="text-xs text-zinc-500 mt-1">→ {c.produces.join(", ")}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {result.combos.almostIncluded.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-zinc-500">
+                    Fast vorhanden – fehlt nur 1-2 Karten (lohnende Ergänzung für die Sammlung)
+                  </p>
+                  {result.combos.almostIncluded.map((c) => (
+                    <div
+                      key={c.cards.join("+")}
+                      className="bg-amber-900/20 border border-amber-800/50 rounded-md px-3 py-2 text-sm"
+                    >
+                      <p className="font-medium text-amber-300">{c.cards.join(" + ")}</p>
+                      <p className="text-xs text-zinc-500">
+                        Fehlt: {c.missing.join(", ")}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1">{c.description}</p>
+                      {c.produces.length > 0 && (
+                        <p className="text-xs text-zinc-500 mt-1">→ {c.produces.join(", ")}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </main>
