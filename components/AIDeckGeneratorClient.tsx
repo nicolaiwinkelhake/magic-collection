@@ -46,6 +46,14 @@ type CommanderSuggestion = {
 
 const CATEGORY_ORDER = ["Land", "Ramp", "Removal", "Kartenvorteil", "Wincon", "Synergie", "Sonstiges"];
 
+function describeError(e: unknown, fallback: string): string {
+  if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+    return "Zeitüberschreitung (über 110s ohne Antwort) - bitte nochmal versuchen.";
+  }
+  if (e instanceof Error) return e.message;
+  return fallback;
+}
+
 export function AIDeckGeneratorClient() {
   const router = useRouter();
   const [commanderName, setCommanderName] = useState("");
@@ -78,7 +86,10 @@ export function AIDeckGeneratorClient() {
     options: RequestInit,
     onEvent: (event: { type: string; [key: string]: unknown }) => void
   ): Promise<Record<string, unknown> | null> {
-    const res = await fetch(url, options);
+    // Server-seitiges maxDuration ist 120s - danach killt Vercel die Function
+    // ohnehin. Etwas darunter abbrechen, damit die UI eine klare Meldung zeigt
+    // statt unbegrenzt zu warten.
+    const res = await fetch(url, { ...options, signal: AbortSignal.timeout(110_000) });
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => null);
       throw new Error(data?.error ?? `Fehler (Status ${res.status})`);
@@ -130,7 +141,7 @@ export function AIDeckGeneratorClient() {
       );
       setSuggestions((result?.suggestions as CommanderSuggestion[]) ?? []);
     } catch (e) {
-      setSuggestionsError(e instanceof Error ? e.message : "Vorschläge konnten nicht ermittelt werden");
+      setSuggestionsError(describeError(e, "Vorschläge konnten nicht ermittelt werden"));
     } finally {
       setLoadingSuggestions(false);
       setSuggestionsStatus(null);
@@ -157,7 +168,7 @@ export function AIDeckGeneratorClient() {
       );
       setResult(result as unknown as GenerateResult);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Fehler beim Generieren");
+      setError(describeError(e, "Fehler beim Generieren"));
     } finally {
       setLoading(false);
       setGenerateStatus(null);
