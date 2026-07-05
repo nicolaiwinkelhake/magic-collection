@@ -4,6 +4,7 @@
 
 const API_URL = "https://backend.commanderspellbook.com/find-my-combos";
 const MAX_MAIN_CARDS = 600;
+const FETCH_TIMEOUT_MS = 12000;
 
 export type Combo = {
   cards: string[];
@@ -52,6 +53,8 @@ export async function findCombos(
         main: main.map((card) => ({ card, quantity: 1 })),
         commanders: commanderNames.map((card) => ({ card, quantity: 1 })),
       }),
+      // Externe API kann langsam/nicht erreichbar sein - darf die ganze Route nicht blockieren.
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const data = await res.json();
