@@ -27,16 +27,20 @@ export function ImportForm() {
     window.localStorage.setItem("import-last-message", msg);
   }
 
-  async function sendEntries(entries: { name: string; quantity: number; foil: boolean }[]) {
-    if (!entries.length) return;
+  // Liest die NDJSON-Stream-Antwort von /api/import bzw. /api/import-csv,
+  // aktualisiert den Fortschritt live und gibt am Ende das Result-Event zurück.
+  async function streamImport(
+    url: string,
+    payload: Record<string, unknown>
+  ): Promise<{ imported: number; notFound: string[]; skipped: string[] } | null> {
     setLoading(true);
     setMessage(null);
     setProgress(null);
 
-    const res = await fetch("/api/import", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries, allowDuplicates }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok || !res.body) {
@@ -44,7 +48,7 @@ export function ImportForm() {
       setLoading(false);
       setProgress(null);
       setMessage(`Fehler: ${data.error ?? res.status}`);
-      return;
+      return null;
     }
 
     const reader = res.body.getReader();
@@ -71,8 +75,15 @@ export function ImportForm() {
 
     if (!result) {
       setMessage("Fehler: Antwort unvollständig");
-      return;
+      return null;
     }
+    return result;
+  }
+
+  async function sendEntries(entries: { name: string; quantity: number; foil: boolean }[]) {
+    if (!entries.length) return;
+    const result = await streamImport("/api/import", { entries, allowDuplicates });
+    if (!result) return;
     let msg = `${result.imported} Karte(n) importiert.`;
     if (result.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${result.skipped.join(", ")}`;
     if (result.notFound?.length) msg += ` Nicht gefunden: ${result.notFound.join(", ")}`;
@@ -93,21 +104,11 @@ export function ImportForm() {
     // CSV mit Scryfall-IDs (Moxfield, ManaBox, ...) → schnelles Endpoint ohne Namens-Lookup
     const moxEntries = moxfieldCsvToEntries(content);
     if (moxEntries) {
-      setLoading(true);
-      setMessage(null);
-      const res = await fetch("/api/import-csv", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: moxEntries, allowDuplicates }),
-      });
-      const data = await res.json();
-      setLoading(false);
-      if (!res.ok) {
-        setPersistedMessage(`Fehler: ${data.error}`);
-      } else {
-        let msg = `${data.imported} Karte(n) importiert.`;
-        if (data.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${data.skipped.join(", ")}`;
-        if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+      const result = await streamImport("/api/import-csv", { entries: moxEntries, allowDuplicates });
+      if (result) {
+        let msg = `${result.imported} Karte(n) importiert.`;
+        if (result.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${result.skipped.join(", ")}`;
+        if (result.notFound?.length) msg += ` Nicht gefunden: ${result.notFound.join(", ")}`;
         setPersistedMessage(msg);
         router.refresh();
       }
@@ -152,13 +153,22 @@ export function ImportForm() {
 
             <span className="text-zinc-600 text-sm">oder</span>
 
-            <label className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm cursor-pointer">
-              CSV-Datei wählen
+            <label
+              className={`bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm ${
+                loading ? "opacity-50 pointer-events-none" : "cursor-pointer"
+              }`}
+            >
+              {loading
+                ? progress
+                  ? `Importiere... (${progress.done}/${progress.total})`
+                  : "Importiere..."
+                : "CSV-Datei wählen"}
               <input
                 ref={fileRef}
                 type="file"
                 accept=".csv,text/csv"
                 onChange={handleFile}
+                disabled={loading}
                 className="hidden"
               />
             </label>
