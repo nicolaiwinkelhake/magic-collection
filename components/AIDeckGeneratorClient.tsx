@@ -16,6 +16,7 @@ type GeneratedCard = {
 type GenerateResult = {
   commander: { name: string; imageUrl: string | null; colorIdentity: string[] };
   strategy: string;
+  improvementAdvice: string;
   cards: GeneratedCard[];
 };
 
@@ -206,6 +207,11 @@ export function AIDeckGeneratorClient() {
               <p className="text-sm text-zinc-500">
                 {result.cards.length} Karten ausgewählt (aus deiner Sammlung, aktuell frei verfügbar)
               </p>
+              {result.improvementAdvice && (
+                <p className="text-sm text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded-md px-3 py-2">
+                  {result.improvementAdvice}
+                </p>
+              )}
               <button
                 onClick={handleCreateDeck}
                 disabled={creating}

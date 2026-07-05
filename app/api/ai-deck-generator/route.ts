@@ -97,6 +97,16 @@ export async function POST(request: Request) {
               type: "string",
               description: "Kurze Erklärung der Deck-Strategie auf Deutsch (2-4 Sätze).",
             },
+            improvementAdvice: {
+              type: "string",
+              description:
+                "Persönliche, konkrete Einschätzung auf Deutsch, wie das Deck über die aktuell " +
+                "verfügbaren Karten hinaus noch deutlich stärker würde - z. B. welche Farben/Länder " +
+                "in der Sammlung knapp sind, welche Karten sich lohnen würden aus einem anderen Deck " +
+                "freizumachen, oder welche konkreten Magic-Karten (auch wenn nicht in der Sammlung) " +
+                "das Deck am meisten verbessern würden. Beginne mit 'Meiner Meinung nach...'. " +
+                "3-6 Sätze, konkret und mit Kartennamen, nicht allgemein.",
+            },
             cards: {
               type: "array",
               items: {
@@ -113,7 +123,7 @@ export async function POST(request: Request) {
               },
             },
           },
-          required: ["strategy", "cards"],
+          required: ["strategy", "improvementAdvice", "cards"],
           additionalProperties: false,
         },
       },
@@ -125,7 +135,9 @@ export async function POST(request: Request) {
       "NUR aus dieser Liste - erfinde keine Karten und nutze keine Karte, die nicht in der Liste steht. " +
       "Achte auf eine gute Balance aus Landbase (ca. 36-38 Länder), Ramp, Removal, Kartenvorteil und " +
       "Wincons passend zur Strategie des Commanders. Wenn weniger als 99 passende Karten sinnvoll sind, " +
-      "wähle weniger - Qualität vor Quantität.",
+      "wähle weniger - Qualität vor Quantität. Gib zusätzlich eine ehrliche, konkrete Einschätzung " +
+      "(improvementAdvice), was dem Deck aktuell fehlt (z. B. zu wenig Länder) und was der Nutzer " +
+      "konkret tun könnte, um daraus ein wirklich starkes Deck zu machen.",
     messages: [
       {
         role: "user",
@@ -154,7 +166,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Keine Antwort erhalten" }, { status: 502 });
   }
 
-  let parsed: { strategy: string; cards: { name: string; category: string }[] };
+  let parsed: {
+    strategy: string;
+    improvementAdvice: string;
+    cards: { name: string; category: string }[];
+  };
   try {
     parsed = JSON.parse(textBlock.text);
   } catch {
@@ -183,6 +199,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     commander: { name: commander.name, imageUrl, colorIdentity },
     strategy: parsed.strategy,
+    improvementAdvice: parsed.improvementAdvice,
     cards,
   });
 }
