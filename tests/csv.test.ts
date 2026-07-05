@@ -59,18 +59,24 @@ describe("moxfieldCsvToEntries mit ManaBox-Export", () => {
         name: "Sagu Pummeler",
         quantity: 2,
         foil: false,
+        set: "tdm",
+        collectorNumber: "156",
       },
       {
         scryfallId: "5cd39b01-9a06-4575-9c63-9fb3ba9ef101",
         name: "Mountain",
         quantity: 1,
         foil: true,
+        set: "eoe",
+        collectorNumber: "273",
       },
       {
         scryfallId: "c74024bd-b383-468d-9cf5-d112a29f6457",
         name: "Windurst, Federation Center",
         quantity: 1,
         foil: false,
+        set: "fin",
+        collectorNumber: "292",
       },
     ]);
   });

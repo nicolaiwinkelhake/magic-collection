@@ -118,6 +118,10 @@ export type MoxfieldEntry = {
   name: string;
   quantity: number;
   foil: boolean;
+  // Set-Code + Sammlernummer als Fallback, falls die Scryfall-ID nicht
+  // (mehr) auflösbar ist - ManaBox/Moxfield liefern beides mit.
+  set?: string;
+  collectorNumber?: string;
 };
 
 // Parst eine Moxfield-CSV mit "Scryfall ID"-Spalte.
@@ -141,6 +145,12 @@ export function moxfieldCsvToEntries(text: string): MoxfieldEntry[] | null {
   const foilIdx = header.findIndex((h) =>
     ["foil", "is foil", "finish", "printing"].includes(h)
   );
+  const setIdx = header.findIndex((h) =>
+    ["set code", "set_code", "set", "edition", "edition code"].includes(h)
+  );
+  const cnIdx = header.findIndex((h) =>
+    ["collector number", "collector_number", "collector nr", "card number"].includes(h)
+  );
 
   return rows.slice(1).flatMap((r): MoxfieldEntry[] => {
     const scryfallId = (r[scryfallIdx] ?? "").trim();
@@ -150,7 +160,18 @@ export function moxfieldCsvToEntries(text: string): MoxfieldEntry[] | null {
       countIdx >= 0 ? Math.max(1, parseInt(r[countIdx] || "1", 10) || 1) : 1;
     const foilVal = foilIdx >= 0 ? (r[foilIdx] || "").trim().toLowerCase() : "";
     const foil = ["foil", "true", "yes", "1", "etched"].includes(foilVal);
-    return [{ scryfallId, name, quantity, foil }];
+    const set = setIdx >= 0 ? (r[setIdx] ?? "").trim().toLowerCase() : "";
+    const collectorNumber = cnIdx >= 0 ? (r[cnIdx] ?? "").trim() : "";
+    return [
+      {
+        scryfallId,
+        name,
+        quantity,
+        foil,
+        set: set || undefined,
+        collectorNumber: collectorNumber || undefined,
+      },
+    ];
   });
 }
 
