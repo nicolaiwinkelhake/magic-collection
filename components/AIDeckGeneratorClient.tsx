@@ -70,14 +70,19 @@ export function AIDeckGeneratorClient() {
     setLoadingSuggestions(true);
     setSuggestionsError(null);
     setSuggestions(null);
-    const res = await fetch("/api/ai-deck-generator/suggest-commanders", { method: "POST" });
-    const data = await res.json();
-    setLoadingSuggestions(false);
-    if (!res.ok) {
-      setSuggestionsError(data.error ?? "Vorschläge konnten nicht ermittelt werden");
-      return;
+    try {
+      const res = await fetch("/api/ai-deck-generator/suggest-commanders", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setSuggestionsError(data?.error ?? `Vorschläge konnten nicht ermittelt werden (Status ${res.status})`);
+        return;
+      }
+      setSuggestions(data.suggestions ?? []);
+    } catch (e) {
+      setSuggestionsError(e instanceof Error ? e.message : "Netzwerkfehler beim Ermitteln der Vorschläge");
+    } finally {
+      setLoadingSuggestions(false);
     }
-    setSuggestions(data.suggestions ?? []);
   }
 
   async function handleGenerate() {
@@ -85,18 +90,27 @@ export function AIDeckGeneratorClient() {
     setLoading(true);
     setError(null);
     setResult(null);
-    const res = await fetch("/api/ai-deck-generator", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commanderName: commanderName.trim() }),
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) {
-      setError(data.error ?? "Fehler beim Generieren");
-      return;
+    try {
+      const res = await fetch("/api/ai-deck-generator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commanderName: commanderName.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? `Fehler beim Generieren (Status ${res.status})`);
+        return;
+      }
+      setResult(data);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `Netzwerkfehler: ${e.message}`
+          : "Netzwerkfehler beim Generieren (evtl. Timeout - versuche es erneut)"
+      );
+    } finally {
+      setLoading(false);
     }
-    setResult(data);
   }
 
   async function handleCreateDeck() {
