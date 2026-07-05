@@ -230,7 +230,10 @@ export async function POST(request: Request) {
 
       const anthropicStream = anthropic.messages.stream({
         model: "claude-sonnet-4-6",
-        max_tokens: 9000,
+        // Adaptive-Thinking-Tokens zaehlen in max_tokens mit rein - bei grossen
+        // Sammlungen frisst allein das Nachdenken mehrere tausend Tokens, dazu
+        // ~4k fuer die 99-Karten-JSON. 9000 fuehrte zu abgeschnittenen Antworten.
+        max_tokens: 32000,
         thinking: { type: "adaptive" },
         output_config: {
           effort: "medium",
