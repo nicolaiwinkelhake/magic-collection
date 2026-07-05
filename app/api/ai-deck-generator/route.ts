@@ -3,6 +3,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCardByName } from "@/lib/scryfall";
 
+// Adaptive Thinking + eine grosse Kandidatenliste + ~99 Karten als JSON
+// brauchen mehr Zeit, als Vercels Standard-Timeout fuer Route Handler erlaubt.
+export const maxDuration = 120;
+
 const BASIC_LANDS = new Set(["plains", "island", "swamp", "mountain", "forest", "wastes"]);
 
 function fitsColorIdentity(cardColors: string[] | null, identity: string[]): boolean {
@@ -78,9 +82,9 @@ export async function POST(request: Request) {
 
   const anthropic = new Anthropic();
 
-  const response = await anthropic.messages.create({
+  const stream = anthropic.messages.stream({
     model: "claude-opus-4-8",
-    max_tokens: 8000,
+    max_tokens: 32000,
     thinking: { type: "adaptive" },
     output_config: {
       effort: "high",
@@ -133,8 +137,16 @@ export async function POST(request: Request) {
     ],
   });
 
+  const response = await stream.finalMessage();
+
   if (response.stop_reason === "refusal") {
     return NextResponse.json({ error: "Anfrage wurde abgelehnt" }, { status: 502 });
+  }
+  if (response.stop_reason === "max_tokens") {
+    return NextResponse.json(
+      { error: "Antwort wurde abgeschnitten (zu lang) - bitte nochmal versuchen." },
+      { status: 502 }
+    );
   }
 
   const textBlock = response.content.find((b) => b.type === "text");
