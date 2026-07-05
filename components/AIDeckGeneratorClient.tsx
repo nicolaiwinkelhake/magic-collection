@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -19,6 +19,13 @@ type GenerateResult = {
   cards: GeneratedCard[];
 };
 
+type CommanderOption = {
+  name: string;
+  imageUrl: string | null;
+  colors: string[];
+  hasDeck: boolean;
+};
+
 const CATEGORY_ORDER = ["Land", "Ramp", "Removal", "Kartenvorteil", "Wincon", "Synergie", "Sonstiges"];
 
 export function AIDeckGeneratorClient() {
@@ -28,6 +35,15 @@ export function AIDeckGeneratorClient() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [creating, setCreating] = useState(false);
+  const [commanderOptions, setCommanderOptions] = useState<CommanderOption[] | null>(null);
+  const [loadingCommanders, setLoadingCommanders] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/ai-deck-generator/commanders")
+      .then((r) => r.json())
+      .then((d) => setCommanderOptions(d.commanders ?? []))
+      .finally(() => setLoadingCommanders(false));
+  }, []);
 
   async function handleGenerate() {
     if (!commanderName.trim()) return;
@@ -126,6 +142,51 @@ export function AIDeckGeneratorClient() {
         </div>
         {error && <p className="text-sm text-red-400">{error}</p>}
       </div>
+
+      {!result && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <p className="text-sm font-medium text-indigo-300 mb-3">
+            Commander aus deiner Sammlung
+          </p>
+          {loadingCommanders && (
+            <p className="text-sm text-zinc-500">Suche legendäre Kreaturen/Planeswalker in deiner Sammlung…</p>
+          )}
+          {!loadingCommanders && commanderOptions?.length === 0 && (
+            <p className="text-sm text-zinc-500">
+              Keine legendäre Kreatur oder Planeswalker in deiner Sammlung gefunden. Gib stattdessen einen
+              Namen oben ein.
+            </p>
+          )}
+          {!loadingCommanders && commanderOptions && commanderOptions.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+              {commanderOptions.map((c) => (
+                <button
+                  key={c.name}
+                  onClick={() => setCommanderName(c.name)}
+                  className={`relative rounded-lg overflow-hidden border text-left transition ${
+                    commanderName === c.name
+                      ? "border-indigo-400 ring-2 ring-indigo-500/60"
+                      : "border-zinc-800 hover:border-indigo-500"
+                  }`}
+                >
+                  {c.imageUrl ? (
+                    <Image src={c.imageUrl} alt={c.name} width={244} height={340} className="w-full h-auto" />
+                  ) : (
+                    <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-xs p-2 text-center bg-zinc-950">
+                      {c.name}
+                    </div>
+                  )}
+                  {c.hasDeck && (
+                    <span className="absolute top-1 left-1 bg-black/70 text-[10px] rounded px-1.5 py-0.5">
+                      hat schon Deck
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {result && (
         <div className="space-y-6">
