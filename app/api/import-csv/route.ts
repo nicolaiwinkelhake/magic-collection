@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const body = await request.json();
   const entries: Array<{ scryfallId: string; name: string; quantity: number; foil: boolean }> =
     body.entries ?? [];
+  const allowDuplicates: boolean = body.allowDuplicates ?? false;
   if (!entries.length) return NextResponse.json({ error: "Keine Einträge" }, { status: 400 });
 
   // Daten von Scryfall per Bulk-API holen (75 IDs pro Request)
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
 
   let imported = 0;
   const notFound: string[] = [];
+  const skipped: string[] = [];
 
   for (const entry of entries) {
     const card = scryfallMap.get(entry.scryfallId);
@@ -88,6 +90,10 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existing) {
+      if (!allowDuplicates) {
+        if (!skipped.includes(card.name as string)) skipped.push(card.name as string);
+        continue;
+      }
       await supabase
         .from("cards")
         .update({
@@ -111,5 +117,5 @@ export async function POST(request: Request) {
   }
 
   await supabase.rpc("snapshot_collection_value");
-  return NextResponse.json({ imported, notFound });
+  return NextResponse.json({ imported, notFound, skipped });
 }

@@ -90,7 +90,7 @@ export function ImportForm() {
     if (!file) return;
     const content = await file.text();
 
-    // Moxfield-CSV mit Scryfall-IDs → schnelles Endpoint ohne Namens-Lookup
+    // CSV mit Scryfall-IDs (Moxfield, ManaBox, ...) → schnelles Endpoint ohne Namens-Lookup
     const moxEntries = moxfieldCsvToEntries(content);
     if (moxEntries) {
       setLoading(true);
@@ -98,7 +98,7 @@ export function ImportForm() {
       const res = await fetch("/api/import-csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: moxEntries }),
+        body: JSON.stringify({ entries: moxEntries, allowDuplicates }),
       });
       const data = await res.json();
       setLoading(false);
@@ -106,6 +106,7 @@ export function ImportForm() {
         setPersistedMessage(`Fehler: ${data.error}`);
       } else {
         let msg = `${data.imported} Karte(n) importiert.`;
+        if (data.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${data.skipped.join(", ")}`;
         if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
         setPersistedMessage(msg);
         router.refresh();
@@ -162,7 +163,7 @@ export function ImportForm() {
               />
             </label>
             <span className="text-xs text-zinc-500">
-              (Moxfield-CSV mit Scryfall-ID wird direkt importiert)
+              (Moxfield- oder ManaBox-CSV mit Scryfall-ID wird direkt importiert)
             </span>
           </div>
           {progress && progress.total > 0 && (
