@@ -4,10 +4,9 @@ import { fetchCardByName, fetchGameChangerNames } from "@/lib/scryfall";
 import { findCombos } from "@/lib/commanderSpellbook";
 import { analyzeBracket } from "@/lib/bracket";
 
-// Kompletter Deck-Vorschlag (ggf. inkl. Commander-Wahl) aus einer grossen
-// Sammlung dauert mit Thinking regelmaessig laenger als 120s. Vercel Fluid
-// Compute erlaubt bis zu 300s - der Client bricht nicht mehr nach fester
-// Gesamtzeit ab, sondern nur wenn der Stream still wird.
+// Die Generierung ist in zwei Phasen gesplittet (Commander-Wahl, Deckbau),
+// damit jeder einzelne Request sicher unter Vercels 300s-Limit bleibt -
+// ein kombinierter Aufruf lief bei grossen Sammlungen dagegen.
 export const maxDuration = 300;
 
 const BASIC_LANDS = new Set(["plains", "island", "swamp", "mountain", "forest", "wastes"]);
@@ -68,9 +67,70 @@ function jsonResponse(body: unknown, status: number) {
   });
 }
 
-// Antwort ist NDJSON (ein JSON-Objekt pro Zeile): "status"-Events zeigen dem
-// Nutzer live, in welcher Phase die Generierung steckt, und dienen zugleich
-// als Lebenszeichen für das Idle-Timeout des Clients.
+type PoolCard = {
+  name: string;
+  image_url: string | null;
+  type_line: string | null;
+  cmc: number | null;
+  colors: string[] | null;
+  oracle_text: string | null;
+  quantity: number;
+  available: number;
+};
+
+// NDJSON-Stream mit Status-Lebenszeichen. Der gesamte Ablauf ist in try/catch
+// gekapselt, damit jeder unerwartete Fehler als "error"-Event beim Client
+// ankommt statt als kommentarlos abgebrochener Stream.
+function ndjsonStream(run: (send: (obj: unknown) => void) => Promise<void>) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      try {
+        await run(send);
+      } catch (e) {
+        try {
+          send({ type: "error", error: e instanceof Error ? e.message : "Unerwarteter Fehler" });
+        } catch {
+          // Stream bereits geschlossen - nichts mehr zu tun.
+        }
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
+  });
+}
+
+// Claude-Aufruf mit Lebenszeichen an den Client bei JEDEM Stream-Event (auch
+// während der Thinking-Phase) - sonst schlägt dessen Idle-Timeout fälschlich zu.
+async function runClaude(
+  anthropic: Anthropic,
+  send: (obj: unknown) => void,
+  params: Parameters<Anthropic["messages"]["stream"]>[0],
+  workingMessage: string
+) {
+  const anthropicStream = anthropic.messages.stream(params);
+  let lastTick = Date.now();
+  anthropicStream.on("streamEvent", () => {
+    const now = Date.now();
+    if (now - lastTick > 5000) {
+      lastTick = now;
+      send({ type: "status", message: workingMessage });
+    }
+  });
+  const response = await anthropicStream.finalMessage();
+
+  if (response.stop_reason === "refusal") throw new Error("Anfrage wurde abgelehnt");
+  if (response.stop_reason === "max_tokens") {
+    throw new Error("Antwort wurde abgeschnitten (zu lang) - bitte nochmal versuchen.");
+  }
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock || textBlock.type !== "text") throw new Error("Keine Antwort erhalten");
+  return textBlock.text;
+}
+
 export async function POST(request: Request) {
   const supabase = createClient();
   const {
@@ -80,7 +140,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const bracket = Number(body?.bracket);
-  const fixedCommanderName: string | undefined = body?.commanderName?.trim() || undefined;
+  const commanderName: string | undefined = body?.commanderName?.trim() || undefined;
   if (!BRACKET_RULES[bracket]) {
     return jsonResponse({ error: "Bracket (2-5) erforderlich" }, 400);
   }
@@ -115,7 +175,7 @@ export async function POST(request: Request) {
     usedCountByName.set(key, (usedCountByName.get(key) ?? 0) + 1);
   }
 
-  let pool = (collectionCards ?? [])
+  const pool: PoolCard[] = (collectionCards ?? [])
     .map((c) => {
       const key = c.name.toLowerCase();
       const used = usedCountByName.get(key) ?? 0;
@@ -123,18 +183,6 @@ export async function POST(request: Request) {
       return { ...c, available };
     })
     .filter((c) => c.available > 0);
-
-  // Fester Commander: Pool direkt auf seine Farbidentität einschränken.
-  let fixedCommander: { name: string; imageUrl: string | null; identity: string[]; oracle: string } | null = null;
-  if (fixedCommanderName) {
-    const { card, imageUrl, error } = await fetchCardByName(fixedCommanderName);
-    if (!card) return jsonResponse({ error: error ?? "Commander nicht gefunden" }, 404);
-    const identity = card.color_identity ?? card.colors ?? [];
-    fixedCommander = { name: card.name, imageUrl, identity, oracle: card.oracle_text ?? "" };
-    pool = pool
-      .filter((c) => c.name.toLowerCase() !== card.name.toLowerCase())
-      .filter((c) => fitsColorIdentity(c.colors, identity));
-  }
 
   if (pool.length < 20) {
     return jsonResponse(
@@ -147,56 +195,41 @@ export async function POST(request: Request) {
     );
   }
 
-  // Commander-Kandidaten (nur relevant, wenn Claude selbst wählen soll).
-  const candidates = pool.filter(
-    (c) => /Legendary/.test(c.type_line ?? "") && /Creature|Planeswalker/.test(c.type_line ?? "")
-  );
-  if (!fixedCommander && candidates.length === 0) {
-    return jsonResponse(
-      { error: "Keine freie legendäre Kreatur/Planeswalker als Commander-Kandidat in deiner Sammlung gefunden." },
-      400
+  const bracketInfo = BRACKET_RULES[bracket];
+  const anthropic = new Anthropic();
+
+  // ---------------------------------------------------------------
+  // Phase 1: Commander-Wahl (kein commanderName im Request).
+  // Kompakter Prompt (Pool ohne Oracle-Texte), kleiner Output - schnell.
+  // ---------------------------------------------------------------
+  if (!commanderName) {
+    const candidates = pool.filter(
+      (c) => /Legendary/.test(c.type_line ?? "") && /Creature|Planeswalker/.test(c.type_line ?? "")
     );
-  }
+    if (candidates.length === 0) {
+      return jsonResponse(
+        { error: "Keine freie legendäre Kreatur/Planeswalker als Commander-Kandidat in deiner Sammlung gefunden." },
+        400
+      );
+    }
 
-  const encoder = new TextEncoder();
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      function send(obj: unknown) {
-        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
-      }
-
+    return ndjsonStream(async (send) => {
       send({
         type: "status",
-        message: `Analysiere Kartenpool (${pool.length} freie Karten${fixedCommander ? "" : `, ${candidates.length} Commander-Kandidaten`})...`,
+        message: `Phase 1/2: Wähle den besten Commander (${candidates.length} Kandidaten, ${pool.length} freie Karten)...`,
       });
 
-      // Aktuelle Game-Changers-Liste live von Scryfall (is:gamechanger) -
-      // Grundlage der Bracket-Regeln. Fällt bei Nichterreichbarkeit auf leer zurück.
       const gameChangerNames = await fetchGameChangerNames().catch(() => [] as string[]);
       const gcSet = new Set(gameChangerNames.map((n) => n.toLowerCase()));
 
       send({ type: "status", message: "Suche verifizierte Combos in deiner Sammlung..." });
-
-      // Verifizierte Combos aus dem freien Pool (Commander Spellbook) als
-      // Entscheidungsgrundlage für Commander-Wahl und Wincon-Planung.
       const nonBasicNames = Array.from(
         new Set(pool.filter((c) => !BASIC_LANDS.has(c.name.toLowerCase())).map((c) => c.name))
       );
-      const poolCombos = await findCombos(nonBasicNames, fixedCommander ? [fixedCommander.name] : []);
+      const poolCombos = await findCombos(nonBasicNames, []);
       const comboSummary = (poolCombos?.included ?? [])
         .slice(0, MAX_COMBO_LINES)
         .map((c) => `${c.cards.join(" + ")} => ${c.produces.join(", ")}`)
-        .join("\n");
-
-      const cardList = pool
-        .map((c) => {
-          const colors = (c.colors ?? []).join("") || "C";
-          const gc = gcSet.has(c.name.toLowerCase()) ? " [GC]" : "";
-          const qty = c.available > 1 ? ` (x${c.available})` : "";
-          const text = c.oracle_text ? ` | ${c.oracle_text.slice(0, 140).replace(/\n/g, " ")}` : "";
-          return `${c.name}${gc}${qty} | ${c.type_line ?? "?"} | CMC ${c.cmc ?? 0} | ${colors}${text}`;
-        })
         .join("\n");
 
       const candidateList = candidates
@@ -207,32 +240,170 @@ export async function POST(request: Request) {
         })
         .join("\n");
 
-      const bracketInfo = BRACKET_RULES[bracket];
+      // Bewusst OHNE Oracle-Texte: für die Farb-/Synergie-Abschätzung reichen
+      // Name, Typ und Farben - das halbiert die Prompt-Größe dieser Phase.
+      const poolOverview = pool
+        .map((c) => {
+          const gc = gcSet.has(c.name.toLowerCase()) ? " [GC]" : "";
+          return `${c.name}${gc} | ${c.type_line ?? "?"} | ${(c.colors ?? []).join("") || "C"}`;
+        })
+        .join("\n");
 
-      const commanderTask = fixedCommander
-        ? `Der Commander steht fest: ${fixedCommander.name} (Farbidentität: ${
-            fixedCommander.identity.join("") || "farblos"
-          }). Oracle-Text: ${fixedCommander.oracle}\nGib exakt diesen Namen als commanderName zurück und lass alternativeCommanders leer.`
-        : "Wähle zuerst den besten Commander aus der Kandidatenliste: den, mit dem sich aus diesem " +
-          "Pool das stärkste, stimmigste Deck für das Ziel-Bracket bauen lässt (berücksichtige die " +
-          "verifizierten Combos und wie viele passende Synergiekarten der Pool je Farbidentität hergibt). " +
-          "Bevorzuge Kandidaten ohne [hat schon ein Deck]. Nenne zusätzlich 2-3 alternative Kandidaten " +
-          "mit kurzer Begründung. Wähle NUR Namen aus der Kandidatenliste.";
+      send({ type: "status", message: "Claude bewertet die Commander-Kandidaten..." });
+
+      const text = await runClaude(
+        anthropic,
+        send,
+        {
+          model: "claude-sonnet-4-6",
+          max_tokens: 16000,
+          thinking: { type: "adaptive" },
+          output_config: {
+            effort: "medium",
+            format: {
+              type: "json_schema",
+              schema: {
+                type: "object",
+                properties: {
+                  commanderName: {
+                    type: "string",
+                    description: "Exakter Name des besten Commanders aus der Kandidatenliste.",
+                  },
+                  reasoning: {
+                    type: "string",
+                    description: "2-4 Sätze Deutsch: warum dieser Commander mit diesem Pool im Ziel-Bracket am stärksten ist.",
+                  },
+                  alternativeCommanders: {
+                    type: "array",
+                    description: "2-3 alternative Kandidaten aus der Liste.",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: "string", description: "Exakter Name aus der Kandidatenliste" },
+                        reasoning: { type: "string", description: "1-2 Sätze Deutsch." },
+                      },
+                      required: ["name", "reasoning"],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["commanderName", "reasoning", "alternativeCommanders"],
+                additionalProperties: false,
+              },
+            },
+          },
+          system:
+            "Du bist ein erfahrener Magic: The Gathering Commander-Experte und kennst das offizielle " +
+            `Bracket-System (Beta 2026). Ziel-Bracket: ${bracketInfo.name}. Regeln: ${bracketInfo.rules}\n\n` +
+            "Du bekommst die Commander-Kandidaten des Nutzers (mit Oracle-Text), eine kompakte Übersicht " +
+            "seines freien Kartenpools (Name, Typ, Farben; [GC] = Game Changer) und verifizierte Combos aus " +
+            "dem Pool. Wähle den Kandidaten, mit dem sich aus diesem Pool das stärkste Deck für das " +
+            "Ziel-Bracket bauen lässt: genug passende Synergie-Karten in seiner Farbidentität, nutzbare " +
+            "Combos, klarer Gameplan. Bevorzuge Kandidaten ohne [hat schon ein Deck]. Wähle NUR Namen aus " +
+            "der Kandidatenliste.",
+          messages: [
+            {
+              role: "user",
+              content:
+                `Commander-Kandidaten (Name | Farbidentität | Oracle-Text):\n${candidateList}\n\n` +
+                `Freier Kartenpool (Name [GC?] | Typ | Farben):\n${poolOverview}\n\n` +
+                `Verifizierte Combos aus dem Pool (Karten => Effekt):\n${comboSummary || "keine gefunden"}`,
+            },
+          ],
+        },
+        "Claude bewertet die Commander-Kandidaten..."
+      );
+
+      const parsed: {
+        commanderName: string;
+        reasoning: string;
+        alternativeCommanders: { name: string; reasoning: string }[];
+      } = JSON.parse(text);
+
+      const chosen = candidates.find((c) => c.name.toLowerCase() === parsed.commanderName?.toLowerCase());
+      if (!chosen) {
+        send({ type: "error", error: "Claude hat einen Commander gewählt, der nicht in deiner Sammlung ist - bitte nochmal versuchen." });
+        return;
+      }
+
+      const alternativeCommanders = (parsed.alternativeCommanders ?? [])
+        .filter((a) => a?.name && a.name.toLowerCase() !== chosen.name.toLowerCase())
+        .map((a) => {
+          const match = candidates.find((c) => c.name.toLowerCase() === a.name.toLowerCase());
+          return match ? { name: match.name, imageUrl: match.image_url, reasoning: a.reasoning } : null;
+        })
+        .filter((a): a is { name: string; imageUrl: string | null; reasoning: string } => a !== null)
+        .slice(0, 3);
 
       send({
-        type: "status",
-        message: fixedCommander
-          ? `Claude baut ein ${bracketInfo.name}-Deck für ${fixedCommander.name}...`
-          : `Claude wählt den besten Commander und baut ein ${bracketInfo.name}-Deck...`,
+        type: "result",
+        phase: "commander",
+        commander: { name: chosen.name, imageUrl: chosen.image_url },
+        reasoning: parsed.reasoning,
+        alternativeCommanders,
       });
+    });
+  }
 
-      const anthropic = new Anthropic();
+  // ---------------------------------------------------------------
+  // Phase 2: Deckbau für einen festen Commander.
+  // Pool ist auf die Farbidentität gefiltert - deutlich kleinerer Prompt.
+  // ---------------------------------------------------------------
+  const { card, imageUrl, error } = await fetchCardByName(commanderName);
+  if (!card) return jsonResponse({ error: error ?? "Commander nicht gefunden" }, 404);
+  const identity = card.color_identity ?? card.colors ?? [];
+  const commander = { name: card.name, imageUrl, identity, oracle: card.oracle_text ?? "" };
 
-      const anthropicStream = anthropic.messages.stream({
+  const deckPool = pool
+    .filter((c) => c.name.toLowerCase() !== card.name.toLowerCase())
+    .filter((c) => fitsColorIdentity(c.colors, identity));
+
+  if (deckPool.length < 20) {
+    return jsonResponse(
+      {
+        error: `Zu wenige freie, farblich passende Karten für ${card.name} (${deckPool.length} gefunden, mindestens 20 nötig).`,
+      },
+      400
+    );
+  }
+
+  return ndjsonStream(async (send) => {
+    send({
+      type: "status",
+      message: `Phase 2/2: Baue ${bracketInfo.name}-Deck für ${commander.name} (${deckPool.length} passende Karten)...`,
+    });
+
+    const gameChangerNames = await fetchGameChangerNames().catch(() => [] as string[]);
+    const gcSet = new Set(gameChangerNames.map((n) => n.toLowerCase()));
+
+    send({ type: "status", message: "Suche verifizierte Combos für diesen Pool..." });
+    const nonBasicNames = Array.from(
+      new Set(deckPool.filter((c) => !BASIC_LANDS.has(c.name.toLowerCase())).map((c) => c.name))
+    );
+    const poolCombos = await findCombos(nonBasicNames, [commander.name]);
+    const comboSummary = (poolCombos?.included ?? [])
+      .slice(0, MAX_COMBO_LINES)
+      .map((c) => `${c.cards.join(" + ")} => ${c.produces.join(", ")}`)
+      .join("\n");
+
+    const cardList = deckPool
+      .map((c) => {
+        const colors = (c.colors ?? []).join("") || "C";
+        const gc = gcSet.has(c.name.toLowerCase()) ? " [GC]" : "";
+        const qty = c.available > 1 ? ` (x${c.available})` : "";
+        const text = c.oracle_text ? ` | ${c.oracle_text.slice(0, 140).replace(/\n/g, " ")}` : "";
+        return `${c.name}${gc}${qty} | ${c.type_line ?? "?"} | CMC ${c.cmc ?? 0} | ${colors}${text}`;
+      })
+      .join("\n");
+
+    send({ type: "status", message: `Claude baut das Deck für ${commander.name}...` });
+
+    const text = await runClaude(
+      anthropic,
+      send,
+      {
         model: "claude-sonnet-4-6",
-        // Adaptive-Thinking-Tokens zaehlen in max_tokens mit rein - bei grossen
-        // Sammlungen frisst allein das Nachdenken mehrere tausend Tokens, dazu
-        // ~4k fuer die 99-Karten-JSON. 9000 fuehrte zu abgeschnittenen Antworten.
+        // Thinking-Tokens zählen in max_tokens mit - reichlich Luft lassen.
         max_tokens: 32000,
         thinking: { type: "adaptive" },
         output_config: {
@@ -242,10 +413,6 @@ export async function POST(request: Request) {
             schema: {
               type: "object",
               properties: {
-                commanderName: {
-                  type: "string",
-                  description: "Exakter Name des gewählten Commanders (aus Kandidatenliste bzw. der Vorgabe).",
-                },
                 deckName: {
                   type: "string",
                   description: "Kurzer, einprägsamer Deckname auf Deutsch (max. 40 Zeichen).",
@@ -269,19 +436,6 @@ export async function POST(request: Request) {
                     "welche Karten sich aus anderen Decks freizumachen lohnen. Beginne mit 'Meiner Meinung nach...'. " +
                     "3-6 Sätze mit Kartennamen, nicht allgemein.",
                 },
-                alternativeCommanders: {
-                  type: "array",
-                  description: "2-3 alternative Commander-Kandidaten (leer, wenn Commander vorgegeben war).",
-                  items: {
-                    type: "object",
-                    properties: {
-                      name: { type: "string", description: "Exakter Name aus der Kandidatenliste" },
-                      reasoning: { type: "string", description: "1-2 Sätze Deutsch, warum dieser Kandidat auch stark wäre." },
-                    },
-                    required: ["name", "reasoning"],
-                    additionalProperties: false,
-                  },
-                },
                 cards: {
                   type: "array",
                   description: "Die 99 Karten des Decks (ohne Commander). Basics dürfen quantity > 1 haben.",
@@ -303,24 +457,15 @@ export async function POST(request: Request) {
                   },
                 },
               },
-              required: [
-                "commanderName",
-                "deckName",
-                "strategy",
-                "bracketJustification",
-                "improvementAdvice",
-                "alternativeCommanders",
-                "cards",
-              ],
+              required: ["deckName", "strategy", "bracketJustification", "improvementAdvice", "cards"],
               additionalProperties: false,
             },
           },
         },
         system:
           "Du bist ein erfahrener Magic: The Gathering Commander-Deckbuilder und kennst das offizielle " +
-          "Bracket-System (Beta 2026). Du bekommst den freien Kartenpool des Nutzers (Karten, die er besitzt " +
-          "und die in keinem anderen Deck stecken), verifizierte Combos aus diesem Pool und ein Ziel-Bracket. " +
-          `\n\nZiel-Bracket: ${bracketInfo.name}. Regeln: ${bracketInfo.rules}\n\n${BUILD_GUIDELINES}\n\n` +
+          `Bracket-System (Beta 2026). Ziel-Bracket: ${bracketInfo.name}. Regeln: ${bracketInfo.rules}\n\n` +
+          `${BUILD_GUIDELINES}\n\n` +
           "Baue das Deck (genau bis zu 99 Karten inkl. Standardländern, ohne Commander) AUSSCHLIESSLICH aus " +
           "der Pool-Liste - erfinde keine Karten. Standardländer (Plains/Island/Swamp/Mountain/Forest/Wastes) " +
           "dürfen mehrfach vorkommen (bis zur angegebenen Anzahl x…), alle anderen Karten genau einmal. " +
@@ -331,176 +476,92 @@ export async function POST(request: Request) {
           {
             role: "user",
             content:
-              `${commanderTask}\n\n` +
-              (fixedCommander
-                ? ""
-                : `Commander-Kandidaten (Name | Farbidentität | Oracle-Text):\n${candidateList}\n\n`) +
+              `Commander: ${commander.name} (Farbidentität: ${identity.join("") || "farblos"})\n` +
+              `Oracle-Text Commander: ${commander.oracle}\n\n` +
               `Freier Kartenpool (Name [GC?] (xAnzahl) | Typ | CMC | Farben | Text):\n${cardList}\n\n` +
               `Verifizierte Combos aus dem Pool (Karten => Effekt):\n${comboSummary || "keine gefunden"}`,
           },
         ],
+      },
+      `Claude baut das Deck für ${commander.name}...`
+    );
+
+    const parsed: {
+      deckName: string;
+      strategy: string;
+      bracketJustification: string;
+      improvementAdvice: string;
+      cards: { name: string; quantity: number; category: string }[];
+    } = JSON.parse(text);
+
+    // Kartenliste gegen Pool, Farbidentität und Mengen validieren.
+    const poolByName = new Map(deckPool.map((c) => [c.name.toLowerCase(), c]));
+    const seen = new Set<string>();
+    const cards = [];
+    let totalCount = 0;
+    for (const entry of parsed.cards ?? []) {
+      const key = entry.name?.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      const match = poolByName.get(key);
+      if (!match) continue;
+      seen.add(key);
+      const isBasic = BASIC_LANDS.has(key);
+      const quantity = isBasic
+        ? Math.min(Math.max(1, Math.floor(entry.quantity ?? 1)), match.available, 99 - totalCount)
+        : 1;
+      if (quantity < 1) continue;
+      cards.push({
+        name: match.name,
+        quantity,
+        category: entry.category,
+        type_line: match.type_line,
+        cmc: match.cmc,
+        colors: match.colors,
       });
+      totalCount += quantity;
+      if (totalCount >= 99) break;
+    }
 
-      // Lebenszeichen an den Client bei JEDEM Stream-Event (auch während der
-      // Thinking-Phase, in der noch kein Text kommt) - sonst schlägt dessen
-      // Idle-Timeout während langer Denkphasen fälschlich zu.
-      let lastTick = Date.now();
-      anthropicStream.on("streamEvent", () => {
-        const now = Date.now();
-        if (now - lastTick > 5000) {
-          lastTick = now;
-          send({ type: "status", message: "Claude arbeitet am Deck..." });
-        }
-      });
+    send({ type: "status", message: "Verifiziere Bracket-Einstufung und Combos..." });
 
-      let response;
-      try {
-        response = await anthropicStream.finalMessage();
-      } catch (e) {
-        send({ type: "error", error: e instanceof Error ? e.message : "Anfrage an Claude fehlgeschlagen" });
-        controller.close();
-        return;
-      }
+    // Unabhängige, regelbasierte Gegenprüfung der Bracket-Einstufung
+    // (Game Changer, Massen-Landzerstörung, bekannte 2-Karten-Combos).
+    const bracketCheck = analyzeBracket(
+      [
+        ...cards.map((c) => ({
+          name: c.name,
+          type_line: c.type_line,
+          oracle_text: poolByName.get(c.name.toLowerCase())?.oracle_text ?? null,
+          is_commander: false,
+        })),
+        { name: commander.name, type_line: "Legendary Creature", oracle_text: null, is_commander: true },
+      ],
+      gameChangerNames
+    );
 
-      if (response.stop_reason === "refusal") {
-        send({ type: "error", error: "Anfrage wurde abgelehnt" });
-        controller.close();
-        return;
-      }
-      if (response.stop_reason === "max_tokens") {
-        send({ type: "error", error: "Antwort wurde abgeschnitten (zu lang) - bitte nochmal versuchen." });
-        controller.close();
-        return;
-      }
+    const combos = await findCombos(
+      cards.map((c) => c.name),
+      [commander.name]
+    );
 
-      const textBlock = response.content.find((b) => b.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        send({ type: "error", error: "Keine Antwort erhalten" });
-        controller.close();
-        return;
-      }
-
-      let parsed: {
-        commanderName: string;
-        deckName: string;
-        strategy: string;
-        bracketJustification: string;
-        improvementAdvice: string;
-        alternativeCommanders: { name: string; reasoning: string }[];
-        cards: { name: string; quantity: number; category: string }[];
-      };
-      try {
-        parsed = JSON.parse(textBlock.text);
-      } catch {
-        send({ type: "error", error: "Antwort konnte nicht gelesen werden" });
-        controller.close();
-        return;
-      }
-
-      // Gewählten Commander auflösen und validieren.
-      let commander: { name: string; imageUrl: string | null; identity: string[] };
-      if (fixedCommander) {
-        commander = { name: fixedCommander.name, imageUrl: fixedCommander.imageUrl, identity: fixedCommander.identity };
-      } else {
-        const chosen = candidates.find((c) => c.name.toLowerCase() === parsed.commanderName?.toLowerCase());
-        if (!chosen) {
-          send({ type: "error", error: "Claude hat einen Commander gewählt, der nicht in deiner Sammlung ist - bitte nochmal versuchen." });
-          controller.close();
-          return;
-        }
-        // Scryfall liefert die exakte Farbidentität (inkl. Aktivierungskosten etc.).
-        const { card, imageUrl } = await fetchCardByName(chosen.name);
-        commander = {
-          name: chosen.name,
-          imageUrl: imageUrl ?? chosen.image_url,
-          identity: card?.color_identity ?? chosen.colors ?? [],
-        };
-      }
-
-      // Kartenliste gegen Pool, Farbidentität und Mengen validieren.
-      const poolByName = new Map(pool.map((c) => [c.name.toLowerCase(), c]));
-      const seen = new Set<string>();
-      const cards = [];
-      let totalCount = 0;
-      for (const entry of parsed.cards ?? []) {
-        const key = entry.name?.toLowerCase();
-        if (!key || seen.has(key) || key === commander.name.toLowerCase()) continue;
-        const match = poolByName.get(key);
-        if (!match) continue;
-        if (!fitsColorIdentity(match.colors, commander.identity)) continue;
-        seen.add(key);
-        const isBasic = BASIC_LANDS.has(key);
-        const quantity = isBasic
-          ? Math.min(Math.max(1, Math.floor(entry.quantity ?? 1)), match.available, 99 - totalCount)
-          : 1;
-        if (quantity < 1) continue;
-        cards.push({
-          name: match.name,
-          quantity,
-          category: entry.category,
-          type_line: match.type_line,
-          cmc: match.cmc,
-          colors: match.colors,
-        });
-        totalCount += quantity;
-        if (totalCount >= 99) break;
-      }
-
-      send({ type: "status", message: "Verifiziere Bracket-Einstufung und Combos..." });
-
-      // Unabhängige, regelbasierte Gegenprüfung der Bracket-Einstufung
-      // (Game Changer, Massen-Landzerstörung, bekannte 2-Karten-Combos).
-      const bracketCheck = analyzeBracket(
-        [
-          ...cards.map((c) => ({
-            name: c.name,
-            type_line: c.type_line,
-            oracle_text: pool.find((p) => p.name === c.name)?.oracle_text ?? null,
-            is_commander: false,
-          })),
-          { name: commander.name, type_line: "Legendary Creature", oracle_text: null, is_commander: true },
-        ],
-        gameChangerNames
-      );
-
-      const combos = await findCombos(
-        cards.map((c) => c.name),
-        [commander.name]
-      );
-
-      const alternativeCommanders = (parsed.alternativeCommanders ?? [])
-        .filter((a) => a?.name && a.name.toLowerCase() !== commander.name.toLowerCase())
-        .map((a) => {
-          const match = candidates.find((c) => c.name.toLowerCase() === a.name.toLowerCase());
-          return match ? { name: match.name, imageUrl: match.image_url, reasoning: a.reasoning } : null;
-        })
-        .filter((a): a is { name: string; imageUrl: string | null; reasoning: string } => a !== null)
-        .slice(0, 3);
-
-      send({
-        type: "result",
-        commander: { name: commander.name, imageUrl: commander.imageUrl, colorIdentity: commander.identity },
-        deckName: parsed.deckName,
-        strategy: parsed.strategy,
-        targetBracket: bracket,
-        bracketJustification: parsed.bracketJustification,
-        bracketCheck: {
-          bracket: bracketCheck.bracket,
-          label: bracketCheck.label,
-          gameChangers: bracketCheck.gameChangers,
-          reasons: bracketCheck.reasons,
-        },
-        improvementAdvice: parsed.improvementAdvice,
-        alternativeCommanders,
-        cards,
-        totalCount,
-        combos,
-      });
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
+    send({
+      type: "result",
+      phase: "deck",
+      commander: { name: commander.name, imageUrl: commander.imageUrl, colorIdentity: identity },
+      deckName: parsed.deckName,
+      strategy: parsed.strategy,
+      targetBracket: bracket,
+      bracketJustification: parsed.bracketJustification,
+      bracketCheck: {
+        bracket: bracketCheck.bracket,
+        label: bracketCheck.label,
+        gameChangers: bracketCheck.gameChangers,
+        reasons: bracketCheck.reasons,
+      },
+      improvementAdvice: parsed.improvementAdvice,
+      cards,
+      totalCount,
+      combos,
+    });
   });
 }

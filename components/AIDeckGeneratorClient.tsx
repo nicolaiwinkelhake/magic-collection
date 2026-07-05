@@ -100,6 +100,7 @@ export function AIDeckGeneratorClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
+  const [alternatives, setAlternatives] = useState<AlternativeCommander[]>([]);
   const [creating, setCreating] = useState(false);
   const [commanderOptions, setCommanderOptions] = useState<CommanderOption[] | null>(null);
   const [loadingCommanders, setLoadingCommanders] = useState(true);
@@ -176,28 +177,44 @@ export function AIDeckGeneratorClient() {
       .finally(() => setLoadingCommanders(false));
   }, []);
 
+  // Die Generierung läuft in zwei getrennten Requests (Commander-Wahl, dann
+  // Deckbau), damit jeder einzelne unter Vercels Zeitlimit bleibt. Ist ein
+  // Commander vorgegeben, wird Phase 1 übersprungen.
   async function handleGenerate(overrideCommander?: string) {
-    const chosenCommander = overrideCommander ?? commanderName;
+    let chosenCommander = (overrideCommander ?? commanderName).trim();
     setLoading(true);
     setError(null);
     setResult(null);
     setGenerateStatus("Starte Generierung...");
-    try {
-      const result = await streamNdjson(
+    const onEvent = (event: { type: string; [key: string]: unknown }) => {
+      if (event.type === "status") setGenerateStatus(event.message as string);
+    };
+    const post = (body: Record<string, unknown>) =>
+      streamNdjson(
         "/api/ai-deck-generator",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bracket,
-            commanderName: chosenCommander.trim() || undefined,
-          }),
+          body: JSON.stringify(body),
         },
-        (event) => {
-          if (event.type === "status") setGenerateStatus(event.message as string);
-        }
+        onEvent
       );
-      setResult(result as unknown as GenerateResult);
+
+    try {
+      let alts = overrideCommander
+        ? alternatives.filter((a) => a.name !== overrideCommander)
+        : [];
+      if (!chosenCommander) {
+        const phase1 = await post({ bracket });
+        chosenCommander = (phase1?.commander as { name: string }).name;
+        alts = (phase1?.alternativeCommanders as AlternativeCommander[]) ?? [];
+        setGenerateStatus(`Commander gewählt: ${chosenCommander} - baue jetzt das Deck...`);
+      }
+      const phase2 = await post({ bracket, commanderName: chosenCommander });
+      setAlternatives(alts);
+      const finalResult = phase2 as unknown as GenerateResult;
+      finalResult.alternativeCommanders = alts;
+      setResult(finalResult);
     } catch (e) {
       setError(describeError(e, "Fehler beim Generieren"));
     } finally {
