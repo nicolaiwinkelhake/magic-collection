@@ -1,0 +1,48 @@
+name: Supabase wach halten
+
+# Supabase pausiert Projekte im Free-Plan nach 7 Tagen ohne Aktivität.
+# Diese Action fragt die Datenbank alle 3 Tage einmal über die REST-API ab
+# (eine leere Abfrage auf import_batches; RLS liefert ohne Login nichts, die
+# Anfrage zählt aber als Aktivität). Kostenlos über GitHub Actions.
+#
+# Benötigte Repository-Secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL       https://<projekt>.supabase.co
+#   SUPABASE_ANON_KEY  öffentlicher anon/publishable Key (steckt ohnehin im Frontend)
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write # zum Selbst-Reaktivieren (siehe letzter Schritt)
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Datenbank abfragen
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Secrets SUPABASE_URL / SUPABASE_ANON_KEY fehlen"
+            exit 1
+          fi
+          status=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/import_batches?select=batch_key&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "Supabase antwortet mit HTTP $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::Supabase nicht erreichbar (HTTP $status) – Projekt evtl. pausiert, im Dashboard wiederherstellen"
+            exit 1
+          fi
+
+      # GitHub deaktiviert geplante Workflows in öffentlichen Repos nach 60
+      # Tagen ohne Repo-Aktivität. Selbst wieder aktivieren hält ihn am Leben.
+      - name: Workflow aktiv halten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable supabase-keepalive.yml --repo "$GITHUB_REPOSITORY"
