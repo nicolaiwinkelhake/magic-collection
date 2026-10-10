@@ -1,11 +1,10 @@
 import { requireUser, unauthorized } from "@/lib/apiAuth";
 import { fetchCardByName } from "@/lib/scryfall";
-import { cachedSearch, compactCard, type CompactCard } from "@/lib/scryfallCache";
-import { getCommanderThemes } from "@/lib/commanderProfile";
-import { buildListSpecs, cleanList, type CardMarks } from "@/lib/commanderLists";
+import { compactCard } from "@/lib/scryfallCache";
+import { type CardMarks } from "@/lib/commanderLists";
+import { loadCommanderLists } from "@/lib/commanderData";
 import { edhrecLinks } from "@/lib/edhrecLinks";
 import { findCombosWithCard } from "@/lib/commanderSpellbook";
-import { unionIdentity } from "@/lib/colorIdentity";
 import { selectAll } from "@/lib/supabase/selectAll";
 
 export const maxDuration = 120;
@@ -33,23 +32,7 @@ export async function GET(request: Request) {
 
   const commanders = [main.card, ...(partner?.card ? [partner.card] : [])];
   const commanderNames = commanders.map((c) => c.name);
-  const identity = unionIdentity(commanders.map((c) => c.color_identity ?? c.colors ?? []));
-
-  // Themen (einmalig per Claude, danach aus der DB).
-  const themes = await getCommanderThemes(supabase, {
-    name: commanderNames.join(" + "),
-    typeLine: commanders.map((c) => c.type_line).join(" / "),
-    oracleText: commanders.map((c) => `${c.name}: ${c.oracle_text ?? ""}`).join("\n\n"),
-    colorIdentity: identity,
-  });
-
-  // Kartenlisten (nacheinander wegen Scryfall-Rate-Limit; meist aus dem Cache).
-  const specs = buildListSpecs(identity, themes);
-  const lists: Array<{ key: string; label: string; description?: string; cards: CompactCard[] }> = [];
-  for (const spec of specs) {
-    const cards = await cachedSearch(supabase, spec.query, { order: spec.order, limit: spec.limit, ttlDays: spec.ttlDays });
-    lists.push({ key: spec.key, label: spec.label, description: spec.description, cards: cleanList(cards, commanderNames) });
-  }
+  const { identity, themes, lists } = await loadCommanderLists(supabase, commanders);
 
   // Combos mit dem (Haupt-)Commander.
   const combos = await findCombosWithCard(main.card.name, 12);
