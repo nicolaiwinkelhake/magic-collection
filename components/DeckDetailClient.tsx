@@ -22,6 +22,8 @@ import { DeckCharts } from "@/components/DeckCharts";
 import { RoleOverview } from "@/components/RoleOverview";
 import { ManaBasePanel } from "@/components/ManaBasePanel";
 import { DeckCombosPanel } from "@/components/DeckCombosPanel";
+import { DeckCoachPanel } from "@/components/DeckCoachPanel";
+import { deckToText } from "@/lib/deckExport";
 import type { CardRole } from "@/lib/cardRoles";
 import { formatEur, formatDate } from "@/lib/format";
 import type { Deck, DeckCard } from "@/lib/deckTypes";
@@ -50,6 +52,7 @@ export function DeckDetailClient({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<DeckTab>("analysis");
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
   const csvRef = useRef<HTMLInputElement>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -319,6 +322,28 @@ export function DeckDetailClient({
     setImportMessage(msg);
     if (csvRef.current) csvRef.current.value = "";
     router.refresh();
+  }
+
+  // Deckliste über einen Link laden und ins Textfeld übernehmen (dann wie
+  // gewohnt importieren).
+  const [importUrl, setImportUrl] = useState("");
+  const [loadingUrl, setLoadingUrl] = useState(false);
+  async function loadFromUrl() {
+    setLoadingUrl(true);
+    setImportMessage(null);
+    const res = await fetch(`/api/deck-list-from-url?url=${encodeURIComponent(importUrl.trim())}`).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    setLoadingUrl(false);
+    if (!res?.ok || !data) {
+      setImportMessage(`Fehler: ${data?.error ?? "Link konnte nicht geladen werden"}`);
+      return;
+    }
+    setImportText(data.text);
+    const cmd = (data.commanders as string[]).filter((c) => c !== deck.commander_name && c !== deck.partner_name);
+    setImportMessage(
+      `${data.text.split("\n").length} Zeilen geladen – prüfen und auf „Importieren“ klicken.` +
+        (cmd.length ? ` Hinweis: Das verlinkte Deck hat als Commander ${cmd.join(" + ")}.` : "")
+    );
   }
 
   async function handleImport() {
@@ -609,6 +634,9 @@ export function DeckDetailClient({
       {tab === "improve" && (
         <>
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <DeckCoachPanel deckId={deck.id} />
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
           <DeckCombosPanel deckId={deck.id} />
         </div>
         {/* Scryfall-basierte Kartenvorschläge */}
@@ -788,6 +816,31 @@ export function DeckDetailClient({
 
       {tab === "cards" && (
         <>
+        <div className="flex flex-wrap gap-3 text-sm">
+          <button
+            onClick={() => {
+              void navigator.clipboard?.writeText(deckToText(initialCards));
+              setExportMsg("Deckliste kopiert – z. B. in Moxfield oder Archidekt einfügen.");
+            }}
+            className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-md px-3 py-1.5"
+          >
+            Deckliste kopieren
+          </button>
+          <button
+            onClick={() => {
+              const url = URL.createObjectURL(new Blob([deckToText(initialCards)], { type: "text/plain;charset=utf-8" }));
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${deck.name.replace(/[^\w\- ]+/g, "").trim() || "deck"}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-md px-3 py-1.5"
+          >
+            Als .txt speichern
+          </button>
+          {exportMsg && <span className="self-center text-emerald-300">{exportMsg}</span>}
+        </div>
         {/* Import */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
           <button
@@ -798,6 +851,22 @@ export function DeckDetailClient({
           </button>
           {importOpen && (
             <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  placeholder="Link zu Moxfield, Archidekt, TappedOut …"
+                  aria-label="Deck-Link"
+                  className="flex-1 min-w-[220px] rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                />
+                <button
+                  onClick={loadFromUrl}
+                  disabled={!importUrl.trim() || loadingUrl}
+                  className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-md px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  {loadingUrl ? "Lade…" : "Liste von Link laden"}
+                </button>
+              </div>
               <textarea
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}

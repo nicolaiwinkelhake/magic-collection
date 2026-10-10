@@ -145,3 +145,21 @@ export async function estimateBracketFlags(
     return null;
   }
 }
+
+// Deckliste aus einem Link (Moxfield, Archidekt, TappedOut …) über Commander
+// Spellbook, das die gängigen Seiten ausliest.
+export type DeckList = { commanders: Array<{ card: string; quantity: number }>; main: Array<{ card: string; quantity: number }> };
+
+export async function cardListFromUrl(url: string): Promise<DeckList | null> {
+  try {
+    const res = await fetch(
+      `https://backend.commanderspellbook.com/card-list-from-url?${new URLSearchParams({ url })}`,
+      { headers: { "User-Agent": "MagicCollectionApp/1.0" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { commanders: data?.commanders ?? [], main: data?.main ?? [] };
+  } catch {
+    return null;
+  }
+}
