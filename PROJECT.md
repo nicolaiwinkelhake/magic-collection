@@ -91,6 +91,35 @@ Wunschliste, CSV-Import/-Export, Deck-Baubarkeit (fehlende Karten aus der
 Sammlung), Mana-Kurve/Farbverteilung, Deckwert-Verlauf, read-only
 Sammlungs-Freigabe an Freunde, Leih-Tracking und Trade-Balance.
 
+## EDHREC-ähnliche Funktionen (Phasen 0–4)
+
+Ziel: die EDHREC-Funktionen, die die Gruppe zum Deckbau nutzt, direkt in der
+App – verknüpft mit Sammlung, Decks und Freundeskreis. **Keine EDHREC-Daten**
+(deren ToS verbieten automatisierte Abfragen/Weiterverwendung); stattdessen
+Scryfall (Beliebtheit `edhrec_rank`, Tagger-`otag:`, Game Changer), Commander
+Spellbook (Combos, Bracket-Merkmale, Import per Link), Claude (Themen, Coach)
+und eigene Gruppen-Statistiken. Auf EDHREC wird nur verlinkt (`lib/edhrecLinks.ts`).
+
+- **Phase 0 – Fundament** (`lib/cardRoles.ts`, Migration 009): Kartenrollen aus
+  Scryfall-Tags, global gecacht in `card_roles`; korrekte Farbidentität je Deck
+  (Vereinigung der Commander); Partner/Background.
+- **Phase 1 – Commander-Seite** (`/commanders`, `/commanders/[name]`, Migration 010):
+  Themen per Claude (`lib/commanderProfile.ts`, gespeichert in `commander_profiles`),
+  Kartenlisten (`lib/commanderLists.ts`, `lib/commanderData.ts`) über
+  `lib/scryfallCache.ts` (Tabelle `scryfall_cache`), Markierungen Besitz/Decks/
+  Freunde/Gruppe, Filter Budget/Game Changer/Besitz, Combos.
+- **Phase 2 – Deck-Analyse** (Migration 011): Reiter auf der Deckseite,
+  Rollen-Bilanz, Mana-Basis (`lib/manaBase.ts`, `deck_cards.produced_mana`),
+  Bracket mit Spellbook-Merkmalen, Combos + „eine Karte fehlt“, Gruppenvergleich
+  (`group_deck_staples`).
+- **Phase 3 – Deck verbessern**: Deck-Coach (`lib/deckCoach.ts`,
+  `/api/decks/[id]/coach`) mit Modi Sammlung/Budget/Beste und geprüften Tauschen,
+  Import per Link, Export.
+- **Phase 4 – Entdecken** (`/discover`, Migration 012): baubare Commander,
+  Ranglisten (inkl. Gruppe), Typal, neue Sets.
+- **Phase 5 – offen**: Inclusion %/Lift, Durchschnitts-Deck und Salt nur mit
+  ausdrücklicher Erlaubnis von EDHREC.
+
 ## Import in Paketen (idempotent)
 
 Problem vorher: Ein Import lief als eine lange Anfrage. Brach er ab (Zeitlimit,
