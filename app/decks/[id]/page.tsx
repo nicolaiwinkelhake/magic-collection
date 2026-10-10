@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import { DeckDetailClient } from "@/components/DeckDetailClient";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 export const dynamic = "force-dynamic";
 
@@ -32,11 +33,10 @@ export default async function DeckDetailPage({
     .order("name", { ascending: true });
 
   // Welche Deckkarten besitzt der Nutzer bereits in seiner Sammlung?
-  const { data: owned } = await supabase
-    .from("cards")
-    .select("name")
-    .eq("user_id", user.id);
-  const ownedNames = new Set((owned ?? []).map((c) => c.name.toLowerCase()));
+  const owned = await selectAll<{ name: string }>(() =>
+    supabase.from("cards").select("name").eq("user_id", user.id).order("id")
+  );
+  const ownedNames = new Set(owned.map((c) => c.name.toLowerCase()));
 
   const missing = (deckCards ?? []).filter(
     (c) => !c.is_commander && !ownedNames.has(c.name.toLowerCase())
