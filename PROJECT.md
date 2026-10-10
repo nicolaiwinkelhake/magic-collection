@@ -45,7 +45,7 @@ lib/
 tests/               Vitest-Unit-Tests der Kernlogik
 supabase/
   schema.sql         Vollständiges Schema für FRISCHE Installation
-  migrations/        001..003 (für bestehende DBs)
+  migrations/        001..008 (für bestehende DBs)
 ```
 
 ## Datenmodell
@@ -90,6 +90,26 @@ supabase/
 Wunschliste, CSV-Import/-Export, Deck-Baubarkeit (fehlende Karten aus der
 Sammlung), Mana-Kurve/Farbverteilung, Deckwert-Verlauf, read-only
 Sammlungs-Freigabe an Freunde, Leih-Tracking und Trade-Balance.
+
+## Import in Paketen (idempotent)
+
+Problem vorher: Ein Import lief als eine lange Anfrage. Brach er ab (Zeitlimit,
+Verbindung), wusste niemand, welche Karten schon gespeichert waren – erneutes
+Hochladen erzeugte Dubletten, Fehler wurden nicht gemeldet.
+
+Jetzt (`lib/importJob.ts`, `components/ImportForm.tsx`, `/api/import/batch`,
+`migrations/005_import_batches.sql`):
+- Der Browser fasst gleiche Karten zusammen und teilt den Import in Pakete à
+  100 Positionen. Jedes Paket hat einen Schlüssel = SHA-256 seines Inhalts.
+- Der Server löst die Karten bei Scryfall auf und schreibt das Paket über
+  `import_cards_batch()` in **einer Transaktion** (ganz oder gar nicht).
+  Bereits gebuchte Schlüssel stehen in `import_batches` → derselbe Inhalt wird
+  nie doppelt gebucht (Retry, Fortsetzen, dieselbe Datei erneut hochladen).
+- Ist Scryfall nicht erreichbar, antwortet der Server 503 statt Karten als
+  „nicht gefunden“ zu markieren; der Client wiederholt das Paket.
+- Bericht je Position (neu / Menge erhöht / schon vorhanden / nicht gefunden /
+  Fehler / offen), bleibt in localStorage erhalten. Aktionen: Fehlgeschlagene
+  wiederholen, unterbrochenen Import fortsetzen, nicht Importierte als CSV.
 
 ## Features seit Version 9 (Architektur-Review-Runde)
 

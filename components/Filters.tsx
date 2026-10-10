@@ -38,7 +38,7 @@ export function Filters({
   return (
     <div className="flex flex-wrap gap-3 items-center bg-zinc-900 border border-zinc-800 rounded-lg p-4">
       <input
-        placeholder="Kartenname suchen..."
+        placeholder="Kartenname suchen (deutsch oder englisch)..."
         value={state.search}
         onChange={(e) => onChange({ ...state, search: e.target.value })}
         className="flex-1 min-w-[180px] rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"

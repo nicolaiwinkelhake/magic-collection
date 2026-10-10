@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchCardByName, fetchGameChangerNames } from "@/lib/scryfall";
 import { findCombos } from "@/lib/commanderSpellbook";
 import { analyzeBracket } from "@/lib/bracket";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 // Die Generierung ist in zwei Phasen gesplittet (Commander-Wahl, Deckbau),
 // damit jeder einzelne Request sicher unter Vercels 300s-Limit bleibt -
@@ -178,10 +179,22 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "Bracket (2-5) erforderlich" }, 400);
   }
 
-  const { data: collectionCards } = await supabase
-    .from("cards")
-    .select("name, image_url, type_line, cmc, colors, oracle_text, quantity")
-    .eq("user_id", user.id);
+  // Seitenweise: ohne Blättern sah der Generator nur 1000 Sammlungszeilen.
+  const collectionCards = await selectAll<{
+    name: string;
+    image_url: string | null;
+    type_line: string | null;
+    cmc: number | null;
+    colors: string[] | null;
+    oracle_text: string | null;
+    quantity: number;
+  }>(() =>
+    supabase
+      .from("cards")
+      .select("name, image_url, type_line, cmc, colors, oracle_text, quantity")
+      .eq("user_id", user.id)
+      .order("id")
+  );
 
   if (!collectionCards || collectionCards.length === 0) {
     return jsonResponse({ error: "Deine Sammlung ist leer." }, 400);
@@ -189,10 +202,9 @@ export async function POST(request: Request) {
 
   // Alle bereits verbauten Karten zählen als belegt - inklusive Commander
   // anderer Decks (die stecken physisch genauso in einem Deck).
-  const { data: deckCardRows } = await supabase
-    .from("deck_cards")
-    .select("name")
-    .eq("user_id", user.id);
+  const deckCardRows = await selectAll<{ name: string }>(() =>
+    supabase.from("deck_cards").select("name").eq("user_id", user.id).order("id")
+  );
 
   const { data: existingDecks } = await supabase
     .from("decks")
@@ -203,12 +215,12 @@ export async function POST(request: Request) {
   );
 
   const usedCountByName = new Map<string, number>();
-  for (const r of deckCardRows ?? []) {
+  for (const r of deckCardRows) {
     const key = r.name.toLowerCase();
     usedCountByName.set(key, (usedCountByName.get(key) ?? 0) + 1);
   }
 
-  const pool: PoolCard[] = (collectionCards ?? [])
+  const pool: PoolCard[] = collectionCards
     .map((c) => {
       const key = c.name.toLowerCase();
       const used = usedCountByName.get(key) ?? 0;

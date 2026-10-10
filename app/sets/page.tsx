@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { fetchSets } from "@/lib/scryfall";
 import { SetsClient } from "@/components/SetsClient";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 export default async function SetsPage() {
   const supabase = createClient();
@@ -10,10 +11,22 @@ export default async function SetsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: cards } = await supabase
-    .from("cards")
-    .select("set_code, scryfall_id, name, image_url, quantity, foil, price_eur, type_line")
-    .eq("user_id", user.id);
+  const cards = await selectAll<{
+    set_code: string | null;
+    scryfall_id: string;
+    name: string;
+    image_url: string | null;
+    quantity: number;
+    foil: boolean;
+    price_eur: number | null;
+    type_line: string | null;
+  }>(() =>
+    supabase
+      .from("cards")
+      .select("set_code, scryfall_id, name, image_url, quantity, foil, price_eur, type_line")
+      .eq("user_id", user.id)
+      .order("id")
+  );
 
   const cardsBySet = new Map<string, typeof cards>();
   for (const c of cards ?? []) {

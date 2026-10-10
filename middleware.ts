@@ -34,8 +34,14 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith(path)
   );
 
+  // API-Routen prüfen die Anmeldung selbst und antworten mit 401-JSON. Ein
+  // Redirect auf /login lieferte hier HTML statt eines Fehlers (Client sah
+  // "Erfolg" ohne Daten) und sperrte den Preis-Cron aus, der sich per
+  // CRON_SECRET statt per Login ausweist.
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+
   // Nicht eingeloggt und versucht geschützte Seite aufzurufen -> Redirect zu Login
-  if (!user && !isPublic) {
+  if (!user && !isPublic && !isApi) {
     const redirectUrl = new URL("/login", request.url);
     return NextResponse.redirect(redirectUrl);
   }

@@ -51,11 +51,40 @@ export function CollectionClient({
     return [...codes].sort();
   }, [initialCards]);
 
+  // Deutsche Namen für Bestandskarten im Hintergrund nachfüllen (in Runden,
+  // bis nichts mehr offen ist oder eine Runde nichts schafft).
+  const [germanPending, setGermanPending] = useState<number | null>(null);
+  useEffect(() => {
+    if (!initialCards.some((c) => c.name_de == null)) return;
+    let cancelled = false;
+    (async () => {
+      let anyUpdated = false;
+      for (let round = 0; round < 50 && !cancelled; round++) {
+        const d = await fetch("/api/cards/german-names", { method: "POST" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (!d || d.updated === 0) break;
+        anyUpdated = true;
+        setGermanPending(d.remaining);
+        if (d.remaining === 0) break;
+      }
+      if (!cancelled) {
+        setGermanPending(null);
+        if (anyUpdated) router.refresh();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filteredCards = useMemo(() => {
+    const search = filters.search.trim().toLowerCase();
     const result = initialCards.filter((card) => {
       if (
-        filters.search &&
-        !card.name.toLowerCase().includes(filters.search.toLowerCase())
+        search &&
+        !card.name.toLowerCase().includes(search) &&
+        !card.name_de?.toLowerCase().includes(search)
       ) {
         return false;
       }
@@ -151,6 +180,11 @@ export function CollectionClient({
           </svg>
           Kartendaten werden von Scryfall aktualisiert…
         </div>
+      )}
+      {germanPending !== null && (
+        <p className="text-sm text-indigo-300" aria-live="polite">
+          Deutsche Kartennamen werden ergänzt… noch {germanPending} Namen offen.
+        </p>
       )}
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">🪄 Magic Collection</h1>
