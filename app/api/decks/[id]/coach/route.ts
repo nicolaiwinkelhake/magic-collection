@@ -10,6 +10,8 @@ import {
   validateCoach,
   type CoachCandidate,
   type CoachMode,
+  COACH_MODEL,
+  COACH_MODE_LABEL,
 } from "@/lib/deckCoach";
 
 export const maxDuration = 300;
@@ -143,15 +145,56 @@ export async function POST(request: Request, { params }: { params: { id: string 
     candidates.map((c) => c.name)
   );
 
-  const idByName = new Map(deckCards.filter((r) => !r.is_commander).map((r) => [r.name as string, r.id as string]));
-  return Response.json({
+  // Ergebnis speichern – die Abfrage hat Geld gekostet und soll mit Datum
+  // abrufbar bleiben (Tabelle ai_results, Migration 013).
+  const saved = {
     summary: result.summary,
     swaps: result.swaps.map((s) => ({
       ...s,
-      outCardId: idByName.get(s.out) ?? null,
       inOwned: (byName.get(s.in)?.owned ?? 0) > 0,
       inEur: byName.get(s.in)?.eur ?? null,
     })),
-    cuts: result.cuts.map((c) => ({ ...c, cardId: idByName.get(c.name) ?? null })),
+    cuts: result.cuts,
+    applied: [] as string[],
+  };
+  const params_ = { mode, budget, targetBracket };
+  const { data: row, error: saveError } = await supabase
+    .from("ai_results")
+    .insert({
+      user_id: user.id,
+      kind: "coach",
+      deck_id: params.id,
+      title: COACH_MODE_LABEL[mode],
+      params: params_,
+      result: saved,
+      model: COACH_MODEL,
+    })
+    .select("id, created_at")
+    .single();
+  if (saveError) console.error("Coach-Ergebnis nicht gespeichert", saveError);
+
+  return Response.json({
+    id: row?.id ?? null,
+    createdAt: row?.created_at ?? new Date().toISOString(),
+    params: params_,
+    result: saved,
+  });
+}
+
+// GET: gespeicherte Coach-Abfragen dieses Decks (neueste zuerst).
+export async function GET(_request: Request, { params }: { params: { id: string } }) {
+  const { supabase, user } = await requireUser();
+  if (!user) return unauthorized();
+  const { data, error } = await supabase
+    .from("ai_results")
+    .select("id, created_at, params, result")
+    .eq("user_id", user.id)
+    .eq("kind", "coach")
+    .eq("deck_id", params.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({
+    history: (data ?? []).map((r) => ({ id: r.id, createdAt: r.created_at, params: r.params, result: r.result })),
   });
 }

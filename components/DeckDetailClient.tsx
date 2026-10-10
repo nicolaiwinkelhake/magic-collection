@@ -636,7 +636,10 @@ export function DeckDetailClient({
       {tab === "improve" && (
         <>
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <DeckCoachPanel deckId={deck.id} />
+          <DeckCoachPanel
+            deckId={deck.id}
+            deckCards={initialCards.map((c) => ({ id: c.id, name: c.name, is_commander: c.is_commander }))}
+          />
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
           <DeckCombosPanel deckId={deck.id} />

@@ -46,7 +46,16 @@ type GenerateResult = {
   cards: GeneratedCard[];
   totalCount: number;
   combos: { included: Combo[]; almostIncluded: AlmostCombo[] } | null;
+  // Gespeicherte Abfrage (ai_results)
+  savedId?: string | null;
+  savedAt?: string | null;
 };
+
+type SavedGeneration = { id: string; createdAt: string; title: string | null; params: { bracket?: number } };
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+}
 
 type CommanderOption = {
   name: string;
@@ -100,6 +109,29 @@ export function AIDeckGeneratorClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
+  // Frühere (bezahlte) Vorschläge – gespeichert, jederzeit wieder abrufbar.
+  const [savedList, setSavedList] = useState<SavedGeneration[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/ai-deck-generator/history")
+      .then((r) => (r.ok ? r.json() : { history: [] }))
+      .then((d) => setSavedList(d.history ?? []))
+      .catch(() => {});
+  }, [result?.savedId]);
+
+  async function openSaved(id: string) {
+    setLoadingSaved(id);
+    const res = await fetch(`/api/ai-deck-generator/history?id=${id}`).catch(() => null);
+    const d = await res?.json().catch(() => null);
+    setLoadingSaved(null);
+    if (!res?.ok || !d) {
+      setError(d?.error ?? "Gespeicherter Vorschlag konnte nicht geladen werden.");
+      return;
+    }
+    setError(null);
+    setAlternatives([]);
+    setResult({ ...(d.result as GenerateResult), alternativeCommanders: [], savedId: d.id, savedAt: d.createdAt });
+  }
   const [alternatives, setAlternatives] = useState<AlternativeCommander[]>([]);
   const [creating, setCreating] = useState(false);
   const [commanderOptions, setCommanderOptions] = useState<CommanderOption[] | null>(null);
@@ -288,6 +320,34 @@ export function AIDeckGeneratorClient() {
         </p>
       </header>
 
+      {savedList.length > 0 && (
+        <details className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <summary className="cursor-pointer font-medium">Frühere Vorschläge ({savedList.length})</summary>
+          <ul className="mt-3 space-y-1 text-sm">
+            {savedList.map((g) => (
+              <li key={g.id} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-800/60 py-1">
+                <span>
+                  {g.title ?? "Vorschlag"}
+                  <span className="text-xs text-zinc-500">
+                    {" "}
+                    · {formatDateTime(g.createdAt)}
+                    {g.params?.bracket ? ` · Bracket ${g.params.bracket}` : ""}
+                  </span>
+                </span>
+                <button
+                  onClick={() => openSaved(g.id)}
+                  disabled={loadingSaved === g.id}
+                  className="text-indigo-400 hover:underline text-xs disabled:opacity-50"
+                >
+                  {loadingSaved === g.id ? "Lade…" : "Anzeigen"}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-zinc-500">Gespeicherte Vorschläge kosten beim erneuten Anzeigen nichts.</p>
+        </details>
+      )}
+
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
         <div>
           <p className="text-sm font-medium text-indigo-300 mb-2">Ziel-Bracket</p>
@@ -395,6 +455,12 @@ export function AIDeckGeneratorClient() {
 
       {result && (
         <div className="space-y-6">
+          {result.savedAt && (
+            <p className="text-sm text-zinc-400">
+              Vorschlag aus der Abfrage vom <strong className="text-zinc-200">{formatDateTime(result.savedAt)}</strong> –
+              gespeichert unter „Frühere Vorschläge“.
+            </p>
+          )}
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex gap-4 items-start">
             {result.commander.imageUrl && (
               <Image
