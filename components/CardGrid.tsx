@@ -6,6 +6,7 @@ import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { cardValue } from "@/lib/valuation";
 import { EmptyState } from "@/components/ui/States";
+import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/CardView";
 import type { Card } from "@/lib/types";
 
 export function CardGrid({ cards }: { cards: Card[] }) {
@@ -15,6 +16,7 @@ export function CardGrid({ cards }: { cards: Card[] }) {
   const [local, setLocal] = useState<Card[]>(cards);
   useEffect(() => setLocal(cards), [cards]);
 
+  const [view, setView] = useCardView();
   const [editing, setEditing] = useState<Card | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,6 +106,7 @@ export function CardGrid({ cards }: { cards: Card[] }) {
           {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
         </div>
         <div className="flex items-center gap-3">
+          <CardViewToggle mode={view} onChange={setView} />
           {selectMode && selected.size > 0 && (
             <button
               onClick={() => removeCards([...selected])}
@@ -171,27 +174,19 @@ export function CardGrid({ cards }: { cards: Card[] }) {
                   ✓
                 </span>
               )}
-              {card.quantity > 1 && (
-                <span className="absolute top-1 right-1 bg-indigo-600 text-xs rounded-full px-2 py-0.5">
-                  ×{card.quantity}
-                </span>
+              <QuantityBadge count={card.quantity} />
+              {/* Infozeile unter dem Bild statt Beschriftungen auf der Karte */}
+              {view === "details" && (
+                <div className="flex items-center justify-between gap-1 px-2 py-1 text-[11px] text-zinc-400 border-t border-zinc-800">
+                  <span className="tabular-nums text-zinc-300">{formatEur(cardValue({ ...card, quantity: 1 }))}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {card.foil && <span title="Foil" aria-label="Foil">✨</span>}
+                    {card.condition && card.condition !== "NM" && (
+                      <span className="text-amber-400" title="Zustand">{card.condition}</span>
+                    )}
+                  </span>
+                </div>
               )}
-              {!selectMode && card.foil && (
-                <span className="absolute top-1 left-1 bg-gradient-to-r from-fuchsia-500 to-cyan-400 text-[10px] rounded-full px-2 py-0.5 font-semibold">
-                  Foil
-                </span>
-              )}
-              {card.condition && card.condition !== "NM" && (
-                <span className="absolute bottom-7 right-1 bg-amber-700/90 text-[10px] rounded px-1.5 py-0.5">
-                  {card.condition}
-                </span>
-              )}
-              <div className="absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1 flex justify-between">
-                <span>{formatEur(cardValue({ ...card, quantity: 1 }))}</span>
-                {card.quantity > 1 && (
-                  <span className="text-zinc-400">Σ {formatEur(cardValue(card))}</span>
-                )}
-              </div>
             </button>
           );
         })}

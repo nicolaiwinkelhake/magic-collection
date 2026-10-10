@@ -24,6 +24,7 @@ import { ManaBasePanel } from "@/components/ManaBasePanel";
 import { DeckCombosPanel } from "@/components/DeckCombosPanel";
 import { DeckCoachPanel } from "@/components/DeckCoachPanel";
 import { deckToText } from "@/lib/deckExport";
+import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/CardView";
 import type { CardRole } from "@/lib/cardRoles";
 import { formatEur, formatDate } from "@/lib/format";
 import type { Deck, DeckCard } from "@/lib/deckTypes";
@@ -53,6 +54,7 @@ export function DeckDetailClient({
   const router = useRouter();
   const [tab, setTab] = useState<DeckTab>("analysis");
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [cardView, setCardView] = useCardView();
   const csvRef = useRef<HTMLInputElement>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -933,6 +935,9 @@ export function DeckDetailClient({
               <span className="text-xs text-zinc-500">(prüfe Freunde...)</span>
             )}
           </h2>
+          <div className="flex justify-end mb-3 -mt-1">
+            <CardViewToggle mode={cardView} onChange={setCardView} />
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {stackedCards.map((group) => {
               const card = group[0];
@@ -956,35 +961,36 @@ export function DeckDetailClient({
                       {card.name}
                     </div>
                   )}
-                  {count > 1 && (
-                    <span className="absolute top-1 left-1 bg-indigo-600 text-xs font-semibold rounded-full px-2 py-0.5">
-                      ×{count}
-                    </span>
-                  )}
+                  <QuantityBadge count={count} />
                   {card.is_commander && (
-                    <span className={`absolute top-1 ${count > 1 ? "left-10" : "left-1"} bg-amber-600 text-xs rounded-full px-2 py-0.5`}>
-                      Commander
+                    <span className="absolute top-1 left-1 bg-amber-600/90 text-[10px] font-semibold rounded-full px-1.5 py-0.5">
+                      ♛
                     </span>
                   )}
                   {!card.is_commander && (
                     <button
                       onClick={() => removeDeckCard(card.id, card.name)}
                       title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
-                      className="absolute top-1 right-1 z-10 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
+                      aria-label={`${card.name} aus dem Deck entfernen`}
+                      className="absolute top-1 left-1 z-10 bg-black/60 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs opacity-70 hover:opacity-100"
                     >
                       ✕
                     </button>
                   )}
-                  {owners?.length ? (
-                    <div className="absolute bottom-7 inset-x-0 bg-emerald-700/90 text-xs px-2 py-1">
-                      ✅ {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat
-                      diese Karte
-                    </div>
-                  ) : null}
-                  {card.price_eur !== null && (
-                    <div className="absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
-                      {formatEur(card.price_eur)}
-                      {count > 1 ? ` × ${count}` : ""}
+                  {/* Infozeile unter dem Bild statt Beschriftungen auf der Karte */}
+                  {cardView === "details" && (
+                    <div className="flex items-center justify-between gap-1 px-2 py-1 text-[11px] text-zinc-400 border-t border-zinc-800">
+                      <span className="tabular-nums text-zinc-300">
+                        {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
+                      </span>
+                      {owners?.length ? (
+                        <span
+                          className="text-sky-400 truncate"
+                          title={`${owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat diese Karte`}
+                        >
+                          👥 {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")}
+                        </span>
+                      ) : null}
                     </div>
                   )}
                 </div>
