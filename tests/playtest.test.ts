@@ -60,7 +60,7 @@ describe("newGame", () => {
   it("zieht 7 Karten und lässt den Rest in der Bibliothek", () => {
     const g = newGame(deck(100), makeRng(3));
     expect(g.hand).toHaveLength(7);
-    expect(g.library).toHaveLength(99 - 7); // 100 − Commander? hier kein Commander → 100−7
+    expect(g.library).toHaveLength(100 - 7); // kein Commander im Testdeck → 100 − 7
   });
 
   it("Hand + Bibliothek = Bibliotheksgröße", () => {
