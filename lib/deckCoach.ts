@@ -140,3 +140,17 @@ export async function runCoach(prompt: string): Promise<CoachResult | null> {
   if (!text || text.type !== "text") return null;
   return JSON.parse(text.text) as CoachResult;
 }
+
+// Verständliche Meldung für typische API-Fehler (Guthaben, Schlüssel, Last).
+export function coachErrorMessage(err: unknown): string {
+  if (err instanceof Anthropic.AuthenticationError) {
+    return "Der Anthropic-API-Schlüssel ist ungültig. Bitte in Vercel prüfen.";
+  }
+  if (err instanceof Anthropic.BadRequestError && /credit balance/i.test(err.message)) {
+    return "Das Guthaben des Anthropic-Kontos ist aufgebraucht. Bitte unter console.anthropic.com → Plans & Billing aufladen.";
+  }
+  if (err instanceof Anthropic.RateLimitError) {
+    return "Zu viele Anfragen an Claude gerade. Bitte in einer Minute erneut versuchen.";
+  }
+  return "Der Coach ist gerade nicht erreichbar. Bitte später erneut versuchen.";
+}

@@ -5,6 +5,7 @@ import { selectAll } from "@/lib/supabase/selectAll";
 import { countRoles, ROLE_LABEL, ROLE_TARGETS, type CardRole } from "@/lib/cardRoles";
 import {
   buildCoachPrompt,
+  coachErrorMessage,
   runCoach,
   validateCoach,
   type CoachCandidate,
@@ -131,7 +132,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     raw = await runCoach(prompt);
   } catch (err) {
     console.error("Deck-Coach fehlgeschlagen", err);
-    return Response.json({ error: "Der Coach ist gerade nicht erreichbar. Bitte später erneut versuchen." }, { status: 502 });
+    return Response.json({ error: coachErrorMessage(err) }, { status: 502 });
   }
   if (!raw) return Response.json({ error: "Der Coach hat keine verwertbare Antwort geliefert." }, { status: 502 });
 
