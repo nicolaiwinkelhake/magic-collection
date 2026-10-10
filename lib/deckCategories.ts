@@ -2,6 +2,9 @@
 // Kartenziehen, Board Wipe, Kreaturen, Sonstiges). Rein funktional & testbar.
 // Nutzt dieselben Oracle-Muster wie die Deck-Analyse, für konsistente Ergebnisse.
 
+import type { CardRole } from "@/lib/cardRoles";
+import { isLand } from "@/lib/cardRoles";
+
 export type CategorizableCard = {
   name: string;
   type_line: string | null;
@@ -17,6 +20,10 @@ export type DeckCategory =
   | "Removal"
   | "Kartenziehen"
   | "Board Wipe"
+  | "Tutor"
+  | "Counterspell"
+  | "Schutz"
+  | "Rekursion"
   | "Kreaturen"
   | "Sonstiges";
 
@@ -27,6 +34,10 @@ export const CATEGORY_ORDER: DeckCategory[] = [
   "Removal",
   "Board Wipe",
   "Kartenziehen",
+  "Tutor",
+  "Counterspell",
+  "Schutz",
+  "Rekursion",
   "Kreaturen",
   "Sonstiges",
 ];
@@ -51,12 +62,31 @@ function matchesAny(text: string | null, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
 }
 
+// Priorität, wenn eine Karte mehrere Scryfall-Rollen hat.
+const ROLE_PRIORITY: Array<[CardRole, DeckCategory]> = [
+  ["wipe", "Board Wipe"],
+  ["removal", "Removal"],
+  ["ramp", "Ramp"],
+  ["draw", "Kartenziehen"],
+  ["tutor", "Tutor"],
+  ["counter", "Counterspell"],
+  ["protection", "Schutz"],
+  ["recursion", "Rekursion"],
+];
+
 // Ordnet einer Karte GENAU eine Kategorie zu (nach Priorität), damit die
-// Summe der Buckets der Deckgröße entspricht.
-export function categorizeCard(card: CategorizableCard): DeckCategory {
+// Summe der Buckets der Deckgröße entspricht. roles = Scryfall-Tags je Name;
+// fehlt die Karte darin, greifen die Oracle-Muster.
+export function categorizeCard(card: CategorizableCard, roles?: Map<string, CardRole[]>): DeckCategory {
   if (card.is_commander) return "Commander";
   const type = card.type_line?.toLowerCase() ?? "";
-  if (type.includes("land")) return "Länder";
+  if (isLand(card)) return "Länder";
+  const known = roles?.get(card.name);
+  if (known) {
+    const hit = ROLE_PRIORITY.find(([role]) => known.includes(role));
+    if (hit) return hit[1];
+    return type.includes("creature") ? "Kreaturen" : "Sonstiges";
+  }
   if (matchesAny(card.oracle_text, WIPE)) return "Board Wipe";
   if (matchesAny(card.oracle_text, REMOVAL)) return "Removal";
   if (matchesAny(card.oracle_text, RAMP)) return "Ramp";
@@ -66,11 +96,12 @@ export function categorizeCard(card: CategorizableCard): DeckCategory {
 }
 
 export function categorizeDeck<T extends CategorizableCard>(
-  cards: T[]
+  cards: T[],
+  roles?: Map<string, CardRole[]>
 ): Array<{ category: DeckCategory; cards: T[] }> {
   const buckets = new Map<DeckCategory, T[]>();
   for (const card of cards) {
-    const cat = categorizeCard(card);
+    const cat = categorizeCard(card, roles);
     if (!buckets.has(cat)) buckets.set(cat, []);
     buckets.get(cat)!.push(card);
   }

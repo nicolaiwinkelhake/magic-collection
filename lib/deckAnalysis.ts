@@ -1,11 +1,20 @@
+import type { CardRole } from "@/lib/cardRoles";
+import { isLand } from "@/lib/cardRoles";
+import { withinIdentity } from "@/lib/colorIdentity";
+
 export type DeckCardLike = {
   name: string;
   type_line: string | null;
   oracle_text: string | null;
   cmc: number | null;
   colors: string[] | null;
+  color_identity?: string[] | null;
   is_commander: boolean;
 };
+
+// Rollen je Kartenname aus Scryfall-Tags (lib/cardRoles.ts). Fehlt eine
+// Karte darin, greifen die Oracle-Text-Muster unten als Rückfall.
+export type RolesByName = Map<string, CardRole[]>;
 
 export type DeckSuggestion = {
   severity: "info" | "warning";
@@ -43,25 +52,35 @@ function matchesAny(text: string | null, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
 }
 
+const FALLBACK_PATTERNS: Partial<Record<CardRole, RegExp[]>> = {
+  ramp: RAMP_PATTERNS,
+  removal: REMOVAL_PATTERNS,
+  draw: DRAW_PATTERNS,
+  wipe: WIPE_PATTERNS,
+};
+
+// Hat die Karte die Rolle? Scryfall-Tags, sonst Oracle-Text-Muster.
+export function hasRole(card: DeckCardLike, role: CardRole, roles?: RolesByName): boolean {
+  const known = roles?.get(card.name);
+  if (known) return known.includes(role);
+  const patterns = FALLBACK_PATTERNS[role];
+  return patterns ? matchesAny(card.oracle_text, patterns) : false;
+}
+
 export function analyzeDeck(
   cards: DeckCardLike[],
-  commanderColorIdentity: string[]
+  commanderColorIdentity: string[],
+  roles?: RolesByName
 ): { stats: Record<string, number>; suggestions: DeckSuggestion[] } {
   const nonCommander = cards.filter((c) => !c.is_commander);
 
-  const lands = nonCommander.filter((c) =>
-    c.type_line?.toLowerCase().includes("land")
-  );
-  const nonlands = nonCommander.filter(
-    (c) => !c.type_line?.toLowerCase().includes("land")
-  );
+  const lands = nonCommander.filter((c) => isLand(c));
+  const nonlands = nonCommander.filter((c) => !isLand(c));
 
-  const ramp = nonlands.filter((c) => matchesAny(c.oracle_text, RAMP_PATTERNS));
-  const removal = nonlands.filter((c) =>
-    matchesAny(c.oracle_text, REMOVAL_PATTERNS)
-  );
-  const draw = nonlands.filter((c) => matchesAny(c.oracle_text, DRAW_PATTERNS));
-  const wipes = nonlands.filter((c) => matchesAny(c.oracle_text, WIPE_PATTERNS));
+  const ramp = nonlands.filter((c) => hasRole(c, "ramp", roles));
+  const removal = nonlands.filter((c) => hasRole(c, "removal", roles));
+  const draw = nonlands.filter((c) => hasRole(c, "draw", roles));
+  const wipes = nonlands.filter((c) => hasRole(c, "wipe", roles));
 
   const avgCmc =
     nonlands.reduce((sum, c) => sum + (c.cmc ?? 0), 0) /
@@ -69,10 +88,13 @@ export function analyzeDeck(
 
   const highCurve = nonlands.filter((c) => (c.cmc ?? 0) >= 6);
 
-  // Farbidentität-Verstöße: Karten mit Farben außerhalb des Commanders
-  const illegalColors = nonCommander.filter((c) =>
-    (c.colors ?? []).some((col) => !commanderColorIdentity.includes(col))
-  );
+  // Farbidentität-Verstöße: Identität der Karte (inkl. Fähigkeitskosten)
+  // außerhalb der Commander-Identität. Ohne Identität: Rückfall auf Farben.
+  const illegalColors = commanderColorIdentity.length
+    ? nonCommander.filter(
+        (c) => !withinIdentity(c.color_identity ?? c.colors ?? [], commanderColorIdentity)
+      )
+    : [];
 
   const totalCards = cards.length;
 
@@ -164,9 +186,10 @@ export function analyzeDeck(
 // Leitet aus dem Deck ab, in welchen Kategorien Vorschläge sinnvoll sind
 // (unterhalb der Richtwerte). Reihenfolge = Priorität.
 export function weakCategories(
-  cards: DeckCardLike[]
+  cards: DeckCardLike[],
+  roles?: RolesByName
 ): Array<"ramp" | "removal" | "draw" | "wipe"> {
-  const { stats } = analyzeDeck(cards, []);
+  const { stats } = analyzeDeck(cards, [], roles);
   const weak: Array<"ramp" | "removal" | "draw" | "wipe"> = [];
   if (stats.removal < 8) weak.push("removal");
   if (stats.ramp < 8) weak.push("ramp");

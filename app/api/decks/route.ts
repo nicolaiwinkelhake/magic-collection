@@ -1,103 +1,58 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { fetchCardByName, getPrices } from "@/lib/scryfall";
+import { requireUser, unauthorized } from "@/lib/apiAuth";
+import { unionIdentity } from "@/lib/colorIdentity";
+import {
+  addCommanderToCollection,
+  commanderDeckRow,
+  identityOf,
+  resolveCommander,
+  type ResolvedCommander,
+} from "@/lib/deckCommanders";
 
+// Erwartet { name, commanderName, partnerName? }. partnerName = zweiter
+// Commander (Partner, Background, "Friends forever" …).
 export async function POST(request: Request) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
-  }
+  const { supabase, user } = await requireUser();
+  if (!user) return unauthorized();
 
   const body = await request.json();
-  const { name, commanderName } = body as { name: string; commanderName: string };
+  const { name, commanderName, partnerName } = body as {
+    name: string;
+    commanderName: string;
+    partnerName?: string;
+  };
 
   if (!name?.trim() || !commanderName?.trim()) {
-    return NextResponse.json(
-      { error: "Deckname und Commander-Name sind erforderlich" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Deckname und Commander-Name sind erforderlich" }, { status: 400 });
   }
 
-  const { card, imageUrl, error: scryfallError } = await fetchCardByName(
-    commanderName
-  );
-
-  if (!card) {
-    return NextResponse.json(
-      { error: scryfallError ?? "Commander nicht gefunden" },
-      { status: 404 }
-    );
+  const commanders: ResolvedCommander[] = [];
+  for (const n of [commanderName, partnerName].filter((x): x is string => Boolean(x?.trim()))) {
+    const resolved = await resolveCommander(n.trim());
+    if ("error" in resolved) return NextResponse.json({ error: resolved.error }, { status: 404 });
+    commanders.push(resolved);
   }
+  const [main, partner] = commanders;
 
   const { data: deck, error } = await supabase
     .from("decks")
     .insert({
       user_id: user.id,
       name: name.trim(),
-      commander_name: card.name,
-      commander_image_url: imageUrl,
-      color_identity: card.colors ?? [],
+      commander_name: main.card.name,
+      partner_name: partner?.card.name ?? null,
+      commander_image_url: main.imageUrl,
+      // Farbidentität (nicht "colors"): Vereinigung aller Commander.
+      color_identity: unionIdentity(commanders.map((c) => identityOf(c.card))),
     })
     .select()
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Commander direkt als erste Deckkarte anlegen
-  const { eur, eurFoil } = getPrices(card);
-  await supabase.from("deck_cards").insert({
-    deck_id: deck.id,
-    user_id: user.id,
-    scryfall_id: card.id,
-    name: card.name,
-    image_url: imageUrl,
-    mana_cost: card.mana_cost ?? null,
-    cmc: card.cmc,
-    type_line: card.type_line,
-    colors: card.colors ?? [],
-    oracle_text: card.oracle_text ?? null,
-    is_commander: true,
-    price_eur: eur,
-    price_eur_foil: eurFoil,
-  });
-
-  // Commander auch in die Sammlung eintragen; bestehende Menge wird addiert
-  const { data: existing } = await supabase
-    .from("cards")
-    .select("quantity")
-    .eq("user_id", user.id)
-    .eq("scryfall_id", card.id)
-    .eq("foil", false)
-    .maybeSingle();
-
-  await supabase.from("cards").upsert(
-    {
-      user_id: user.id,
-      scryfall_id: card.id,
-      name: card.name,
-      image_url: imageUrl,
-      mana_cost: card.mana_cost ?? null,
-      cmc: card.cmc,
-      type_line: card.type_line,
-      colors: card.colors ?? [],
-      oracle_text: card.oracle_text ?? null,
-      rarity: card.rarity,
-      set_code: card.set,
-      collector_number: card.collector_number,
-      quantity: (existing?.quantity ?? 0) + 1,
-      foil: false,
-      price_eur: eur,
-      price_eur_foil: eurFoil,
-      price_updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,scryfall_id,foil" }
-  );
+  // Commander direkt als Deckkarten anlegen und in die Sammlung eintragen.
+  await supabase.from("deck_cards").insert(commanders.map((c) => commanderDeckRow(deck.id, user.id, c)));
+  for (const c of commanders) await addCommanderToCollection(supabase, user.id, c);
 
   return NextResponse.json({ deck });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchSuggestions, sleep } from "@/lib/scryfall";
 import { weakCategories } from "@/lib/deckAnalysis";
+import type { CardRole } from "@/lib/cardRoles";
 import {
   buildSuggestionUrl,
   CATEGORY_LABEL,
@@ -34,6 +35,13 @@ export async function GET(
   const cards = deckCards ?? [];
   const excludeNames = cards.map((c) => c.name);
 
+  // Gecachte Scryfall-Rollen nutzen (genauer als die Text-Muster).
+  const { data: roleRows } = await supabase
+    .from("card_roles")
+    .select("name, roles")
+    .in("name", Array.from(new Set(excludeNames)).slice(0, 300));
+  const roles = new Map((roleRows ?? []).map((r) => [r.name as string, r.roles as CardRole[]]));
+
   // Schwache Kategorien bestimmen (max. 3, um Scryfall-Anfragen zu begrenzen)
   const weak = weakCategories(
     cards.map((c) => ({
@@ -43,7 +51,8 @@ export async function GET(
       cmc: c.cmc,
       colors: c.colors,
       is_commander: c.is_commander,
-    }))
+    })),
+    roles
   ).slice(0, 3);
 
   const rawResult: Array<{
