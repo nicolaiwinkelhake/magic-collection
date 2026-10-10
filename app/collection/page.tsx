@@ -26,7 +26,6 @@ export default async function CollectionPage() {
   return (
     <CollectionClient
       initialCards={cards ?? []}
-      userEmail={user.email ?? ""}
       loadError={error?.message}
     />
   );

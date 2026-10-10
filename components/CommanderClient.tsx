@@ -186,7 +186,7 @@ export function CommanderClient({
         </section>
       )}
 
-      <section className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur border-y border-zinc-800 py-3 flex flex-wrap items-center gap-3 text-sm">
+      <section className="sticky top-14 z-10 bg-zinc-950/95 backdrop-blur border-y border-zinc-800 py-3 flex flex-wrap items-center gap-3 text-sm">
         <label className="flex items-center gap-2">
           Budget je Karte
           <select

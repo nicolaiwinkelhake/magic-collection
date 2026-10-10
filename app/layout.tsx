@@ -1,6 +1,8 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { PWAProvider } from "@/components/PWAProvider";
+import { AppNav } from "@/components/AppNav";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Magic Collection",
@@ -28,14 +30,20 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Navigation nur für angemeldete Nutzer (Login-Seiten bleiben schlicht).
+  const {
+    data: { user },
+  } = await createClient().auth.getUser();
+
   return (
     <html lang="de">
       <body>
+        <AppNav email={user?.email ?? null} />
         {children}
         <PWAProvider />
       </body>

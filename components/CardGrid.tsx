@@ -207,7 +207,7 @@ export function CardGrid({ cards }: { cards: Card[] }) {
           onClick={() => !busy && setEditing(null)}
         >
           <div
-            className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-full max-w-sm space-y-4"
+            className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-full max-w-sm space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3">

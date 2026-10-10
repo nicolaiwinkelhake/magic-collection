@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
 import { ImportForm } from "@/components/ImportForm";
@@ -12,15 +11,12 @@ import type { Card } from "@/lib/types";
 
 export function CollectionClient({
   initialCards,
-  userEmail,
   loadError,
 }: {
   initialCards: Card[];
-  userEmail: string;
   loadError?: string;
 }) {
   const router = useRouter();
-  const supabase = createClient();
 
   const [backfilling, setBackfilling] = useState(false);
 
@@ -164,12 +160,6 @@ export function CollectionClient({
     router.refresh();
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
-  }
-
   return (
     <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
       {backfilling && (
@@ -186,52 +176,8 @@ export function CollectionClient({
           Deutsche Kartennamen werden ergänzt… noch {germanPending} Namen offen.
         </p>
       )}
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">🪄 Magic Collection</h1>
-        <div className="flex items-center gap-4 text-sm text-zinc-400">
-          <a href="/decks" className="hover:text-indigo-400">
-            Decks
-          </a>
-          <a href="/commanders" className="hover:text-indigo-400">
-            Commander
-          </a>
-          <a href="/discover" className="hover:text-indigo-400">
-            Entdecken
-          </a>
-          <a href="/ai-deck-generator" className="hover:text-indigo-400">
-            AI Deck Generator
-          </a>
-          <a href="/scan" className="hover:text-indigo-400">
-            Scannen
-          </a>
-          <a href="/wishlist" className="hover:text-indigo-400">
-            Wunschliste
-          </a>
-          <a href="/sets" className="hover:text-indigo-400">
-            Sets
-          </a>
-          <a href="/trades" className="hover:text-indigo-400">
-            Trades
-          </a>
-          <a href="/loans" className="hover:text-indigo-400">
-            Verliehen
-          </a>
-          <a href="/stats" className="hover:text-indigo-400">
-            Wertverlauf
-          </a>
-          <a href="/friends" className="hover:text-indigo-400">
-            Freunde
-          </a>
-          <a href="/account" className="hover:text-indigo-400">
-            {userEmail}
-          </a>
-          <button
-            onClick={handleLogout}
-            className="text-red-400 hover:underline"
-          >
-            Abmelden
-          </button>
-        </div>
+      <header>
+        <h1 className="text-2xl font-semibold">Sammlung</h1>
       </header>
 
       <ImportForm />
