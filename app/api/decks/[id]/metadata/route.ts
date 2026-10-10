@@ -25,16 +25,21 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
   const { data: rows, error } = await supabase
     .from("deck_cards")
-    .select("id, scryfall_id, is_commander, color_identity")
+    .select("id, scryfall_id, is_commander, color_identity, produced_mana")
     .eq("deck_id", params.id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  const missing = (rows ?? []).filter((r) => r.color_identity == null);
+  // Fehlende Farbidentität oder Manaquellen (für die Mana-Basis-Analyse).
+  const missing = (rows ?? []).filter((r) => r.color_identity == null || r.produced_mana == null);
   const ids = Array.from(new Set(missing.map((r) => r.scryfall_id as string)));
   const identityById = new Map<string, string[]>();
+  const producedById = new Map<string, string[]>();
   for (let i = 0; i < ids.length; i += CHUNK) {
     const cards = await fetchCollectionWithRetry(ids.slice(i, i + CHUNK).map((id) => ({ id })));
-    for (const c of cards ?? []) identityById.set(c.id, c.color_identity ?? c.colors ?? []);
+    for (const c of cards ?? []) {
+      identityById.set(c.id, c.color_identity ?? c.colors ?? []);
+      producedById.set(c.id, c.produced_mana ?? []);
+    }
     if (i + CHUNK < ids.length) await sleep(100);
   }
 
@@ -42,10 +47,9 @@ export async function POST(_request: Request, { params }: { params: { id: string
   for (const [scryfallId, identity] of identityById) {
     const { error: updateError, count } = await supabase
       .from("deck_cards")
-      .update({ color_identity: identity }, { count: "exact" })
+      .update({ color_identity: identity, produced_mana: producedById.get(scryfallId) ?? [] }, { count: "exact" })
       .eq("deck_id", params.id)
-      .eq("scryfall_id", scryfallId)
-      .is("color_identity", null);
+      .eq("scryfall_id", scryfallId);
     if (!updateError) updated += count ?? 0;
   }
 

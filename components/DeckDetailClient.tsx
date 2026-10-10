@@ -20,9 +20,20 @@ import { categorizeDeck } from "@/lib/deckCategories";
 import { PlaytestClient } from "@/components/PlaytestClient";
 import { DeckCharts } from "@/components/DeckCharts";
 import { RoleOverview } from "@/components/RoleOverview";
+import { ManaBasePanel } from "@/components/ManaBasePanel";
+import { DeckCombosPanel } from "@/components/DeckCombosPanel";
 import type { CardRole } from "@/lib/cardRoles";
 import { formatEur, formatDate } from "@/lib/format";
 import type { Deck, DeckCard } from "@/lib/deckTypes";
+
+const DECK_TABS = [
+  { key: "analysis", label: "Analyse" },
+  { key: "improve", label: "Verbessern" },
+  { key: "cards", label: "Karten" },
+  { key: "test", label: "Testen" },
+  { key: "history", label: "Verlauf" },
+] as const;
+type DeckTab = (typeof DECK_TABS)[number]["key"];
 
 type FriendOwnership = Record<string, { friendEmail: string; quantity: number }[]>;
 
@@ -38,6 +49,7 @@ export function DeckDetailClient({
   valueHistory?: { captured_on: string; total_value_eur: number }[];
 }) {
   const router = useRouter();
+  const [tab, setTab] = useState<DeckTab>("analysis");
   const csvRef = useRef<HTMLInputElement>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -227,7 +239,7 @@ export function DeckDetailClient({
 
   // Farbidentität nachfüllen (ältere Decks speicherten nur "colors").
   useEffect(() => {
-    if (!initialCards.some((c) => c.color_identity == null)) return;
+    if (!initialCards.some((c) => c.color_identity == null || c.produced_mana == null)) return;
     fetch(`/api/decks/${deck.id}/metadata`, { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -473,446 +485,497 @@ export function DeckDetailClient({
         </div>
       )}
 
-      {/* Import */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <button
-          onClick={() => setImportOpen(!importOpen)}
-          className="text-indigo-400 font-medium"
-        >
-          {importOpen ? "Import schließen ▲" : "Karten zum Deck hinzufügen ▼"}
-        </button>
-        {importOpen && (
-          <div className="mt-3 space-y-3">
-            <textarea
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              rows={6}
-              placeholder={"Sol Ring\n1x Arcane Signet\nSwords to Plowshares"}
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={handleImport}
-                disabled={importing || !importText.trim()}
-                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
-              >
-                {importing ? "Importiere..." : "Hinzufügen"}
-              </button>
-              <span className="text-zinc-600 text-sm">oder</span>
-              <label className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm cursor-pointer">
-                {importing ? "Importiere..." : "Moxfield CSV wählen"}
-                <input
-                  ref={csvRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={handleCsvFile}
-                  disabled={importing}
-                  className="hidden"
-                />
-              </label>
+      {/* Reiter */}
+      <nav className="flex flex-wrap gap-1 border-b border-zinc-800" aria-label="Deck-Bereiche">
+        {DECK_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            aria-current={tab === t.key ? "page" : undefined}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 ${
+              tab === t.key ? "border-indigo-500 text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "analysis" && (
+        <>
+        {/* Analyse */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
+          <h2 className="font-medium text-lg">📊 Deck-Analyse</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm">
+            <Stat label="Karten" value={stats.totalCards} />
+            <Stat label="Länder" value={stats.lands} />
+            <Stat label="Ø Manawert" value={stats.avgCmc} />
+            <div className="bg-zinc-800 rounded-md py-2">
+              <p className="text-lg font-semibold text-emerald-400">
+                {formattedValue}
+              </p>
+              <p className="text-zinc-500 text-xs">Deckwert</p>
             </div>
-            <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
-              <input
-                type="checkbox"
-                checked={replaceMode}
-                onChange={(e) => setReplaceMode(e.target.checked)}
-                className="rounded"
-              />
-              Deckliste ersetzen (bestehende Nicht-Commander-Karten werden entfernt, Sammlungsmenge entsprechend reduziert)
-            </label>
-            {importMessage && (
-              <p className="text-sm text-zinc-300">{importMessage}</p>
+          </div>
+
+          <RoleOverview cards={initialCards} roles={roles} pending={rolesPending} />
+
+          <div className="space-y-2">
+            {suggestions.map((s, i) => (
+              <div
+                key={i}
+                className={`text-sm rounded-md px-3 py-2 ${
+                  s.severity === "warning"
+                    ? "bg-amber-900/40 text-amber-300 border border-amber-800"
+                    : "bg-zinc-800 text-zinc-300"
+                }`}
+              >
+                {s.severity === "warning" ? "⚠️ " : "ℹ️ "}
+                {s.message}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <ManaBasePanel cards={initialCards} />
+        </div>
+        {/* Commander-Bracket / Power-Level */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-medium">Power-Level (Commander-Bracket)</h2>
+            {!bracketLoaded && (
+              <button
+                onClick={loadBracket}
+                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
+              >
+                Bracket berechnen
+              </button>
             )}
           </div>
-        )}
-      </div>
+          <p className="text-xs text-zinc-500 mt-1">
+            Offizielles 5-Stufen-System (Beta). Basiert auf der Game-Changers-Liste
+            von Scryfall.
+          </p>
 
-      {/* Analyse */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
-        <h2 className="font-medium text-lg">📊 Deck-Analyse</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm">
-          <Stat label="Karten" value={stats.totalCards} />
-          <Stat label="Länder" value={stats.lands} />
-          <Stat label="Ø Manawert" value={stats.avgCmc} />
-          <div className="bg-zinc-800 rounded-md py-2">
-            <p className="text-lg font-semibold text-emerald-400">
-              {formattedValue}
-            </p>
-            <p className="text-zinc-500 text-xs">Deckwert</p>
-          </div>
-        </div>
+          {loadingBracket && (
+            <p className="text-sm text-zinc-500 mt-3">Berechne…</p>
+          )}
 
-        <RoleOverview cards={initialCards} roles={roles} pending={rolesPending} />
+          {bracket && (
+            <div className="mt-3 space-y-3">
+              <div className="flex items-center gap-3">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <div
+                    key={n}
+                    className={`flex-1 h-2 rounded-full ${
+                      n <= bracket.bracket ? "bg-indigo-500" : "bg-zinc-800"
+                    }`}
+                  />
+                ))}
+              </div>
+              <p className="font-semibold text-indigo-300">{bracket.label}</p>
 
-        <div className="space-y-2">
-          {suggestions.map((s, i) => (
-            <div
-              key={i}
-              className={`text-sm rounded-md px-3 py-2 ${
-                s.severity === "warning"
-                  ? "bg-amber-900/40 text-amber-300 border border-amber-800"
-                  : "bg-zinc-800 text-zinc-300"
-              }`}
-            >
-              {s.severity === "warning" ? "⚠️ " : "ℹ️ "}
-              {s.message}
+              <ul className="text-sm text-zinc-300 space-y-1">
+                {bracket.reasons.map((r, i) => (
+                  <li key={i}>• {r}</li>
+                ))}
+              </ul>
+
+              {bracket.gameChangers.length > 0 && (
+                <div className="text-sm">
+                  <span className="text-zinc-400">Game Changer im Deck: </span>
+                  <span className="text-amber-300">
+                    {bracket.gameChangers.join(", ")}
+                  </span>
+                </div>
+              )}
+
+              <p className="text-xs text-zinc-500">
+                Hinweis: Zwei-Karten-Combos werden über eine kuratierte Liste
+                bekannter Kombinationen erkannt – nicht erschöpfend. Ungewöhnliche
+                Combos bei Bedarf selbst prüfen.
+              </p>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Playtester / Goldfishing */}
-      <PlaytestClient
-        cards={initialCards.map((c) => ({
-          id: c.id,
-          name: c.name,
-          image_url: c.image_url,
-          type_line: c.type_line,
-          is_commander: c.is_commander,
-        }))}
-      />
-
-      {/* Commander-Bracket / Power-Level */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-medium">Power-Level (Commander-Bracket)</h2>
-          {!bracketLoaded && (
-            <button
-              onClick={loadBracket}
-              className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
-            >
-              Bracket berechnen
-            </button>
           )}
         </div>
-        <p className="text-xs text-zinc-500 mt-1">
-          Offizielles 5-Stufen-System (Beta). Basiert auf der Game-Changers-Liste
-          von Scryfall.
-        </p>
 
-        {loadingBracket && (
-          <p className="text-sm text-zinc-500 mt-3">Berechne…</p>
-        )}
+        {/* Mana-Kurve & Farbverteilung */}
+        <DeckCharts cards={initialCards} />
 
-        {bracket && (
-          <div className="mt-3 space-y-3">
-            <div className="flex items-center gap-3">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <div
-                  key={n}
-                  className={`flex-1 h-2 rounded-full ${
-                    n <= bracket.bracket ? "bg-indigo-500" : "bg-zinc-800"
-                  }`}
-                />
-              ))}
-            </div>
-            <p className="font-semibold text-indigo-300">{bracket.label}</p>
+        </>
+      )}
 
-            <ul className="text-sm text-zinc-300 space-y-1">
-              {bracket.reasons.map((r, i) => (
-                <li key={i}>• {r}</li>
-              ))}
-            </ul>
-
-            {bracket.gameChangers.length > 0 && (
-              <div className="text-sm">
-                <span className="text-zinc-400">Game Changer im Deck: </span>
-                <span className="text-amber-300">
-                  {bracket.gameChangers.join(", ")}
-                </span>
-              </div>
-            )}
-
-            <p className="text-xs text-zinc-500">
-              Hinweis: Zwei-Karten-Combos werden über eine kuratierte Liste
-              bekannter Kombinationen erkannt – nicht erschöpfend. Ungewöhnliche
-              Combos bei Bedarf selbst prüfen.
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Mana-Kurve & Farbverteilung */}
-      <DeckCharts cards={initialCards} />
-
-      {/* Rollen-Kategorien */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <h2 className="font-medium mb-3">Karten nach Rolle</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {categories.map((group) => (
-            <div
-              key={group.category}
-              className="bg-zinc-800 rounded-md px-3 py-2 flex items-center justify-between"
-            >
-              <span className="text-sm text-zinc-300">{group.category}</span>
-              <span className="text-sm font-semibold">{group.cards.length}</span>
-            </div>
-          ))}
+      {tab === "improve" && (
+        <>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <DeckCombosPanel deckId={deck.id} />
         </div>
-      </div>
+        {/* Scryfall-basierte Kartenvorschläge */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-medium">Kartenvorschläge</h2>
+            {!suggestLoaded && (
+              <button
+                onClick={loadSuggestions}
+                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
+              >
+                Vorschläge laden
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500 mt-1">
+            Passend zur Farbidentität des Commanders, gefiltert nach den schwächsten
+            Kategorien deines Decks. Quelle: Scryfall.
+          </p>
 
-      {/* Baubarkeit aus der Sammlung */}
-      {(() => {
-        const nonCommander = initialCards.filter((c) => !c.is_commander);
-        const total = nonCommander.length;
-        const owned = total - missing.length;
-        const missingValue = missing.reduce((s, c) => s + (c.price_eur ?? 0), 0);
+          {suggestMsg && (
+            <p className={`text-sm mt-2 px-3 py-2 rounded-md ${
+              suggestMsg.type === "success" ? "bg-emerald-900/40 text-emerald-300" :
+              suggestMsg.type === "info" ? "bg-indigo-900/40 text-indigo-300" :
+              "bg-red-900/40 text-red-300"
+            }`}>
+              {suggestMsg.text}
+            </p>
+          )}
 
-        function getCategory(typeLine: string): string {
-          if (typeLine?.includes("Land")) return "Land";
-          if (typeLine?.includes("Creature")) return "Kreatur";
-          if (typeLine?.includes("Instant")) return "Instant";
-          if (typeLine?.includes("Sorcery")) return "Hexerei";
-          if (typeLine?.includes("Enchantment")) return "Verzauberung";
-          if (typeLine?.includes("Artifact")) return "Artefakt";
-          if (typeLine?.includes("Planeswalker")) return "Planeswalker";
-          return "Sonstiges";
-        }
+          {loadingSuggest && (
+            <p className="text-sm text-zinc-500 mt-3">Suche Vorschläge…</p>
+          )}
 
-        const grouped = missing.reduce<Record<string, typeof missing>>((acc, c) => {
-          const cat = getCategory(c.type_line ?? "");
-          if (!acc[cat]) acc[cat] = [];
-          acc[cat].push(c);
-          return acc;
-        }, {});
+          {suggestLoaded && !loadingSuggest && suggestGroups.length === 0 && (
+            <p className="text-sm text-emerald-400 mt-3">
+              Keine offensichtlichen Lücken gefunden – das Deck ist gut ausbalanciert.
+            </p>
+          )}
 
-        const categoryOrder = ["Land", "Kreatur", "Instant", "Hexerei", "Verzauberung", "Artefakt", "Planeswalker", "Sonstiges"];
-
-        return (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
-            <h2 className="font-medium">Baubarkeit aus deiner Sammlung</h2>
-            {total === 0 ? (
-              <p className="text-sm text-zinc-500">Noch keine Karten im Deck.</p>
-            ) : (
-              <>
-                {/* Fortschrittsbalken */}
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-zinc-400">{owned} / {total} Karten vorhanden</span>
-                    {missing.length > 0 && (
-                      <span className="text-zinc-400">Fehlen: <span className="text-emerald-400">{formatEur(missingValue)}</span></span>
+          {suggestGroups.map((group) => (
+            <div key={group.category} className="mt-4">
+              <p className="text-sm font-medium text-indigo-300 mb-2">
+                Mehr {group.label}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                {group.cards.map((c) => (
+                  <div
+                    key={c.id}
+                    className="relative rounded-lg overflow-hidden bg-zinc-950 border border-zinc-800 group"
+                  >
+                    {c.imageUrl ? (
+                      <Image src={c.imageUrl} alt={c.name} width={244} height={340} className="w-full h-auto" />
+                    ) : (
+                      <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-xs p-2 text-center">
+                        {c.name}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => addSuggestion(c.name)}
+                      className="absolute inset-x-0 bottom-0 bg-indigo-600/90 hover:bg-indigo-500 transition text-xs py-1.5 font-medium opacity-0 group-hover:opacity-100"
+                    >
+                      + Hinzufügen
+                    </button>
+                    {c.eur !== null && (
+                      <span className="absolute top-1 left-1 bg-black/70 text-[10px] rounded px-1.5 py-0.5">
+                        {formatEur(c.eur)}
+                      </span>
+                    )}
+                    {(c.ownedQuantity > 0 || c.usedInDecks.length > 0 || c.friendsOwning.length > 0) && (
+                      <div className="p-1.5 space-y-1 bg-zinc-950">
+                        {c.ownedQuantity > 0 && (
+                          <p className="text-[10px] leading-tight text-emerald-400">
+                            In Sammlung ×{c.ownedQuantity}
+                          </p>
+                        )}
+                        {c.usedInDecks.length > 0 && (
+                          <p className="text-[10px] leading-tight text-amber-400">
+                            Auch in: {c.usedInDecks.join(", ")}
+                          </p>
+                        )}
+                        {c.friendsOwning.map((f) => (
+                          <p key={f.friendEmail} className="text-[10px] leading-tight text-indigo-300">
+                            Bei {f.friendEmail} ×{f.quantity}
+                          </p>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <div className="w-full bg-zinc-700 rounded-full h-2">
-                    <div
-                      className="bg-emerald-500 h-2 rounded-full transition-all"
-                      style={{ width: `${total > 0 ? (owned / total) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-
-                {missing.length === 0 ? (
-                  <p className="text-sm text-emerald-400">✅ Du besitzt alle Karten dieses Decks.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {categoryOrder
-                      .filter((cat) => grouped[cat]?.length)
-                      .map((cat) => (
-                        <div key={cat}>
-                          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1">
-                            {cat} ({grouped[cat].length})
-                          </h3>
-                          <ul className="text-sm text-zinc-300 space-y-0.5">
-                            {grouped[cat].map((c) => (
-                              <li key={c.id} className="flex justify-between">
-                                <span>{c.name}</span>
-                                <span className="text-zinc-500">{formatEur(c.price_eur)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Scryfall-basierte Kartenvorschläge */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-medium">Kartenvorschläge</h2>
-          {!suggestLoaded && (
-            <button
-              onClick={loadSuggestions}
-              className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
-            >
-              Vorschläge laden
-            </button>
-          )}
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-        <p className="text-xs text-zinc-500 mt-1">
-          Passend zur Farbidentität des Commanders, gefiltert nach den schwächsten
-          Kategorien deines Decks. Quelle: Scryfall.
-        </p>
 
-        {suggestMsg && (
-          <p className={`text-sm mt-2 px-3 py-2 rounded-md ${
-            suggestMsg.type === "success" ? "bg-emerald-900/40 text-emerald-300" :
-            suggestMsg.type === "info" ? "bg-indigo-900/40 text-indigo-300" :
-            "bg-red-900/40 text-red-300"
-          }`}>
-            {suggestMsg.text}
-          </p>
-        )}
+        {/* Baubarkeit aus der Sammlung */}
+        {(() => {
+          const nonCommander = initialCards.filter((c) => !c.is_commander);
+          const total = nonCommander.length;
+          const owned = total - missing.length;
+          const missingValue = missing.reduce((s, c) => s + (c.price_eur ?? 0), 0);
 
-        {loadingSuggest && (
-          <p className="text-sm text-zinc-500 mt-3">Suche Vorschläge…</p>
-        )}
+          function getCategory(typeLine: string): string {
+            if (typeLine?.includes("Land")) return "Land";
+            if (typeLine?.includes("Creature")) return "Kreatur";
+            if (typeLine?.includes("Instant")) return "Instant";
+            if (typeLine?.includes("Sorcery")) return "Hexerei";
+            if (typeLine?.includes("Enchantment")) return "Verzauberung";
+            if (typeLine?.includes("Artifact")) return "Artefakt";
+            if (typeLine?.includes("Planeswalker")) return "Planeswalker";
+            return "Sonstiges";
+          }
 
-        {suggestLoaded && !loadingSuggest && suggestGroups.length === 0 && (
-          <p className="text-sm text-emerald-400 mt-3">
-            Keine offensichtlichen Lücken gefunden – das Deck ist gut ausbalanciert.
-          </p>
-        )}
+          const grouped = missing.reduce<Record<string, typeof missing>>((acc, c) => {
+            const cat = getCategory(c.type_line ?? "");
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat].push(c);
+            return acc;
+          }, {});
 
-        {suggestGroups.map((group) => (
-          <div key={group.category} className="mt-4">
-            <p className="text-sm font-medium text-indigo-300 mb-2">
-              Mehr {group.label}
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-              {group.cards.map((c) => (
-                <div
-                  key={c.id}
-                  className="relative rounded-lg overflow-hidden bg-zinc-950 border border-zinc-800 group"
-                >
-                  {c.imageUrl ? (
-                    <Image src={c.imageUrl} alt={c.name} width={244} height={340} className="w-full h-auto" />
+          const categoryOrder = ["Land", "Kreatur", "Instant", "Hexerei", "Verzauberung", "Artefakt", "Planeswalker", "Sonstiges"];
+
+          return (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+              <h2 className="font-medium">Baubarkeit aus deiner Sammlung</h2>
+              {total === 0 ? (
+                <p className="text-sm text-zinc-500">Noch keine Karten im Deck.</p>
+              ) : (
+                <>
+                  {/* Fortschrittsbalken */}
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-zinc-400">{owned} / {total} Karten vorhanden</span>
+                      {missing.length > 0 && (
+                        <span className="text-zinc-400">Fehlen: <span className="text-emerald-400">{formatEur(missingValue)}</span></span>
+                      )}
+                    </div>
+                    <div className="w-full bg-zinc-700 rounded-full h-2">
+                      <div
+                        className="bg-emerald-500 h-2 rounded-full transition-all"
+                        style={{ width: `${total > 0 ? (owned / total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {missing.length === 0 ? (
+                    <p className="text-sm text-emerald-400">✅ Du besitzt alle Karten dieses Decks.</p>
                   ) : (
-                    <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-xs p-2 text-center">
-                      {c.name}
+                    <div className="space-y-3">
+                      {categoryOrder
+                        .filter((cat) => grouped[cat]?.length)
+                        .map((cat) => (
+                          <div key={cat}>
+                            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1">
+                              {cat} ({grouped[cat].length})
+                            </h3>
+                            <ul className="text-sm text-zinc-300 space-y-0.5">
+                              {grouped[cat].map((c) => (
+                                <li key={c.id} className="flex justify-between">
+                                  <span>{c.name}</span>
+                                  <span className="text-zinc-500">{formatEur(c.price_eur)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
                     </div>
                   )}
-                  <button
-                    onClick={() => addSuggestion(c.name)}
-                    className="absolute inset-x-0 bottom-0 bg-indigo-600/90 hover:bg-indigo-500 transition text-xs py-1.5 font-medium opacity-0 group-hover:opacity-100"
-                  >
-                    + Hinzufügen
-                  </button>
-                  {c.eur !== null && (
-                    <span className="absolute top-1 left-1 bg-black/70 text-[10px] rounded px-1.5 py-0.5">
-                      {formatEur(c.eur)}
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        </>
+      )}
+
+      {tab === "cards" && (
+        <>
+        {/* Import */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <button
+            onClick={() => setImportOpen(!importOpen)}
+            className="text-indigo-400 font-medium"
+          >
+            {importOpen ? "Import schließen ▲" : "Karten zum Deck hinzufügen ▼"}
+          </button>
+          {importOpen && (
+            <div className="mt-3 space-y-3">
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                rows={6}
+                placeholder={"Sol Ring\n1x Arcane Signet\nSwords to Plowshares"}
+                className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleImport}
+                  disabled={importing || !importText.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+                >
+                  {importing ? "Importiere..." : "Hinzufügen"}
+                </button>
+                <span className="text-zinc-600 text-sm">oder</span>
+                <label className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm cursor-pointer">
+                  {importing ? "Importiere..." : "Moxfield CSV wählen"}
+                  <input
+                    ref={csvRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={handleCsvFile}
+                    disabled={importing}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
+                <input
+                  type="checkbox"
+                  checked={replaceMode}
+                  onChange={(e) => setReplaceMode(e.target.checked)}
+                  className="rounded"
+                />
+                Deckliste ersetzen (bestehende Nicht-Commander-Karten werden entfernt, Sammlungsmenge entsprechend reduziert)
+              </label>
+              {importMessage && (
+                <p className="text-sm text-zinc-300">{importMessage}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Rollen-Kategorien */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <h2 className="font-medium mb-3">Karten nach Rolle</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {categories.map((group) => (
+              <div
+                key={group.category}
+                className="bg-zinc-800 rounded-md px-3 py-2 flex items-center justify-between"
+              >
+                <span className="text-sm text-zinc-300">{group.category}</span>
+                <span className="text-sm font-semibold">{group.cards.length}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="font-medium text-lg mb-3">
+            Kartenliste {loadingOwnership && (
+              <span className="text-xs text-zinc-500">(prüfe Freunde...)</span>
+            )}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {stackedCards.map((group) => {
+              const card = group[0];
+              const count = group.length;
+              const owners = ownership[card.name];
+              return (
+                <div
+                  key={card.id}
+                  className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800"
+                >
+                  {card.image_url ? (
+                    <Image
+                      src={card.image_url}
+                      alt={card.name}
+                      width={244}
+                      height={340}
+                      className="w-full h-auto"
+                    />
+                  ) : (
+                    <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
+                      {card.name}
+                    </div>
+                  )}
+                  {count > 1 && (
+                    <span className="absolute top-1 left-1 bg-indigo-600 text-xs font-semibold rounded-full px-2 py-0.5">
+                      ×{count}
                     </span>
                   )}
-                  {(c.ownedQuantity > 0 || c.usedInDecks.length > 0 || c.friendsOwning.length > 0) && (
-                    <div className="p-1.5 space-y-1 bg-zinc-950">
-                      {c.ownedQuantity > 0 && (
-                        <p className="text-[10px] leading-tight text-emerald-400">
-                          In Sammlung ×{c.ownedQuantity}
-                        </p>
-                      )}
-                      {c.usedInDecks.length > 0 && (
-                        <p className="text-[10px] leading-tight text-amber-400">
-                          Auch in: {c.usedInDecks.join(", ")}
-                        </p>
-                      )}
-                      {c.friendsOwning.map((f) => (
-                        <p key={f.friendEmail} className="text-[10px] leading-tight text-indigo-300">
-                          Bei {f.friendEmail} ×{f.quantity}
-                        </p>
-                      ))}
+                  {card.is_commander && (
+                    <span className={`absolute top-1 ${count > 1 ? "left-10" : "left-1"} bg-amber-600 text-xs rounded-full px-2 py-0.5`}>
+                      Commander
+                    </span>
+                  )}
+                  {!card.is_commander && (
+                    <button
+                      onClick={() => removeDeckCard(card.id, card.name)}
+                      title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
+                      className="absolute top-1 right-1 z-10 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  {owners?.length ? (
+                    <div className="absolute bottom-7 inset-x-0 bg-emerald-700/90 text-xs px-2 py-1">
+                      ✅ {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat
+                      diese Karte
+                    </div>
+                  ) : null}
+                  {card.price_eur !== null && (
+                    <div className="absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
+                      {formatEur(card.price_eur)}
+                      {count > 1 ? ` × ${count}` : ""}
                     </div>
                   )}
                 </div>
-              ))}
+              );
+            })}
+          </div>
+        </div>
+        </>
+      )}
+
+      {tab === "test" && (
+        <>
+        {/* Playtester / Goldfishing */}
+        <PlaytestClient
+          cards={initialCards.map((c) => ({
+            id: c.id,
+            name: c.name,
+            image_url: c.image_url,
+            type_line: c.type_line,
+            is_commander: c.is_commander,
+          }))}
+        />
+
+        </>
+      )}
+
+      {tab === "history" && (
+        <>
+        {/* Deckwert-Verlauf */}
+        {valueHistory.length >= 2 && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <h2 className="font-medium mb-3">Deckwert-Verlauf</h2>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={valueHistory.map((p) => ({
+                    date: formatDate(p.captured_on),
+                    Wert: Number(p.total_value_eur),
+                  }))}
+                >
+                  <CartesianGrid stroke="#27272a" />
+                  <XAxis dataKey="date" stroke="#71717a" fontSize={11} />
+                  <YAxis stroke="#71717a" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{ background: "#18181b", border: "1px solid #3f3f46" }}
+                    formatter={(v: number) => formatEur(v)}
+                  />
+                  <Line type="monotone" dataKey="Wert" stroke="#34d399" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Deckwert-Verlauf */}
-      {valueHistory.length >= 2 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <h2 className="font-medium mb-3">Deckwert-Verlauf</h2>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={valueHistory.map((p) => ({
-                  date: formatDate(p.captured_on),
-                  Wert: Number(p.total_value_eur),
-                }))}
-              >
-                <CartesianGrid stroke="#27272a" />
-                <XAxis dataKey="date" stroke="#71717a" fontSize={11} />
-                <YAxis stroke="#71717a" fontSize={11} />
-                <Tooltip
-                  contentStyle={{ background: "#18181b", border: "1px solid #3f3f46" }}
-                  formatter={(v: number) => formatEur(v)}
-                />
-                <Line type="monotone" dataKey="Wert" stroke="#34d399" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-      <div>
-        <h2 className="font-medium text-lg mb-3">
-          Kartenliste {loadingOwnership && (
-            <span className="text-xs text-zinc-500">(prüfe Freunde...)</span>
+        )}
+          {valueHistory.length < 2 && (
+            <p className="text-sm text-zinc-500">
+              Der Deckwert wird jede Nacht gespeichert – der Verlauf erscheint ab dem zweiten Tag.
+            </p>
           )}
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {stackedCards.map((group) => {
-            const card = group[0];
-            const count = group.length;
-            const owners = ownership[card.name];
-            return (
-              <div
-                key={card.id}
-                className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800"
-              >
-                {card.image_url ? (
-                  <Image
-                    src={card.image_url}
-                    alt={card.name}
-                    width={244}
-                    height={340}
-                    className="w-full h-auto"
-                  />
-                ) : (
-                  <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
-                    {card.name}
-                  </div>
-                )}
-                {count > 1 && (
-                  <span className="absolute top-1 left-1 bg-indigo-600 text-xs font-semibold rounded-full px-2 py-0.5">
-                    ×{count}
-                  </span>
-                )}
-                {card.is_commander && (
-                  <span className={`absolute top-1 ${count > 1 ? "left-10" : "left-1"} bg-amber-600 text-xs rounded-full px-2 py-0.5`}>
-                    Commander
-                  </span>
-                )}
-                {!card.is_commander && (
-                  <button
-                    onClick={() => removeDeckCard(card.id, card.name)}
-                    title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
-                    className="absolute top-1 right-1 z-10 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
-                  >
-                    ✕
-                  </button>
-                )}
-                {owners?.length ? (
-                  <div className="absolute bottom-7 inset-x-0 bg-emerald-700/90 text-xs px-2 py-1">
-                    ✅ {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat
-                    diese Karte
-                  </div>
-                ) : null}
-                {card.price_eur !== null && (
-                  <div className="absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
-                    {formatEur(card.price_eur)}
-                    {count > 1 ? ` × ${count}` : ""}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+        </>
+      )}
     </main>
   );
 }

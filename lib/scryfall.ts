@@ -12,6 +12,8 @@ export type ScryfallCard = {
   colors?: string[];
   // Farbidentität (inkl. Aktivierungs-/Kickerkosten) - relevant für Commander
   color_identity?: string[];
+  // Farben, die die Karte als Mana erzeugen kann (Länder, Mana-Steine …)
+  produced_mana?: string[];
   rarity: string;
   oracle_text?: string;
   // Cardmarket-Preise (in EUR) – von Scryfall mitgeliefert, kein eigener Cardmarket-Zugang nötig

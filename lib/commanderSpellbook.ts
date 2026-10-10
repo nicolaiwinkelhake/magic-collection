@@ -108,3 +108,40 @@ export async function findCombosWithCard(cardName: string, limit = 12): Promise<
     return [];
   }
 }
+
+// Karten-Merkmale für die Bracket-Einstufung (Commander Spellbook pflegt die
+// offiziellen Listen: Game Changer, Massen-Landzerstörung, Extrazüge).
+export type BracketFlags = { gameChangers: string[]; massLandDenial: string[]; extraTurns: string[] };
+
+export async function estimateBracketFlags(
+  mainCardNames: string[],
+  commanderNames: string[]
+): Promise<BracketFlags | null> {
+  const main = Array.from(new Set(mainCardNames)).slice(0, MAX_MAIN_CARDS);
+  try {
+    const res = await fetch("https://backend.commanderspellbook.com/estimate-bracket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        main: main.map((card) => ({ card, quantity: 1 })),
+        commanders: commanderNames.map((card) => ({ card, quantity: 1 })),
+      }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cards = (data?.cards ?? []) as Array<{
+      card: { name: string };
+      gameChanger?: boolean;
+      massLandDenial?: boolean;
+      extraTurn?: boolean;
+    }>;
+    return {
+      gameChangers: cards.filter((c) => c.gameChanger).map((c) => c.card.name),
+      massLandDenial: cards.filter((c) => c.massLandDenial).map((c) => c.card.name),
+      extraTurns: cards.filter((c) => c.extraTurn).map((c) => c.card.name),
+    };
+  } catch {
+    return null;
+  }
+}

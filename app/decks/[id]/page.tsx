@@ -42,8 +42,7 @@ export default async function DeckDetailPage({
     (c) => !c.is_commander && !ownedNames.has(c.name.toLowerCase())
   );
 
-  // Tages-Snapshot des Deckwerts festhalten (für den Verlauf)
-  await supabase.rpc("snapshot_deck_value", { p_deck_id: params.id });
+  // Der Deckwert-Snapshot entsteht nachts im Preis-Cron (nicht bei jedem Aufruf).
 
   const { data: valueHistory } = await supabase
     .from("deck_value_history")

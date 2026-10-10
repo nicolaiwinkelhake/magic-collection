@@ -28,6 +28,7 @@ export function commanderDeckRow(deckId: string, userId: string, c: ResolvedComm
     type_line: c.card.type_line,
     colors: c.card.colors ?? [],
     color_identity: identityOf(c.card),
+    produced_mana: c.card.produced_mana ?? [],
     oracle_text: c.card.oracle_text ?? null,
     is_commander: true,
     price_eur: eur,
