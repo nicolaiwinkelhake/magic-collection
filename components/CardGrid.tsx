@@ -228,6 +228,7 @@ export function CardGrid({ cards }: { cards: Card[] }) {
               )}
               <div>
                 <p className="font-medium">{editing.name}</p>
+                {editing.name_de && <p className="text-sm text-zinc-400">{editing.name_de}</p>}
                 <p className="text-xs text-zinc-500">
                   {editing.set_code?.toUpperCase()} ·{" "}
                   {formatEur(cardValue({ ...editing, quantity: 1 }))}

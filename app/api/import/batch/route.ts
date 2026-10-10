@@ -1,6 +1,7 @@
 import { requireUser, unauthorized } from "@/lib/apiAuth";
 import { getPrices, type ScryfallCard } from "@/lib/scryfall";
 import { resolveCards, ResolveUnavailableError, type ResolveInput } from "@/lib/resolveCards";
+import { fetchGermanNames } from "@/lib/germanNames";
 
 // Ein Paket (≤ 100 Positionen) ist schnell erledigt; großzügiger Puffer für
 // Scryfall-Retries und Fuzzy-Suche.
@@ -44,6 +45,12 @@ export async function POST(request: Request) {
     return Response.json({ error: err instanceof Error ? err.message : "Auflösung fehlgeschlagen" }, { status });
   }
 
+  // Deutsche Namen für die Suche mitspeichern. Nicht kritisch: schlägt das
+  // fehl, bleibt name_de leer und wird später im Hintergrund nachgefüllt.
+  const germanNames = await fetchGermanNames(Array.from(resolved.values()).map((c) => c.name)).catch(
+    () => new Map<string, string>()
+  );
+
   // Positionen, die auf dieselbe Karte (+ Foil) zeigen, zu einer Zeile
   // zusammenfassen – sonst würde die zweite als "schon vorhanden" gelten.
   const rows = new Map<string, { row: Record<string, unknown>; members: number[] }>();
@@ -65,6 +72,7 @@ export async function POST(request: Request) {
         i: rows.size,
         scryfall_id: card.id,
         name: card.name,
+        name_de: germanNames.get(card.name) ?? null,
         set_code: card.set,
         collector_number: card.collector_number,
         image_url: imageUrl(card),

@@ -3,6 +3,8 @@ export type Card = {
   user_id: string;
   scryfall_id: string;
   name: string;
+  // Deutscher Name: null = noch nicht ermittelt, "" = kein deutscher Druck
+  name_de?: string | null;
   set_code: string | null;
   collector_number: string | null;
   image_url: string | null;
