@@ -21,6 +21,7 @@ export type DeckCard = {
   type_line: string | null;
   colors: string[] | null;
   color_identity?: string[] | null;
+  produced_mana?: string[] | null;
   oracle_text: string | null;
   is_commander: boolean;
   price_eur: number | null;

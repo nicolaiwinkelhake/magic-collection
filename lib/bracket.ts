@@ -27,8 +27,19 @@ export type BracketResult = {
     massLandDenial: string[];
     fastMana: string[];
     tutors: string[];
+    extraTurns: string[];
     twoCardCombo: boolean;
   };
+};
+
+// Zusätzliche, verlässlichere Daten (Commander Spellbook): offizielle
+// Listen für Game Changer/Massen-Landzerstörung/Extrazüge und echte
+// Zwei-Karten-Combos statt der kuratierten Liste.
+export type BracketExtras = {
+  gameChangers?: string[];
+  massLandDenial?: string[];
+  extraTurns?: string[];
+  twoCardCombos?: string[][];
 };
 
 export const BRACKET_LABEL: Record<number, string> = {
@@ -64,17 +75,22 @@ function matchesAny(text: string | null, patterns: RegExp[]): boolean {
 
 export function analyzeBracket(
   cards: BracketCardLike[],
-  gameChangerNames: string[]
+  gameChangerNames: string[],
+  extras: BracketExtras = {}
 ): BracketResult {
-  const gcSet = new Set(gameChangerNames.map((n) => n.toLowerCase()));
+  const gcSet = new Set([...gameChangerNames, ...(extras.gameChangers ?? [])].map((n) => n.toLowerCase()));
 
-  const gameChangers = cards
-    .filter((c) => gcSet.has(c.name.toLowerCase()))
-    .map((c) => c.name);
+  const gameChangers = Array.from(
+    new Set(cards.filter((c) => gcSet.has(c.name.toLowerCase())).map((c) => c.name))
+  );
 
-  const massLandDenial = cards
-    .filter((c) => matchesAny(c.oracle_text, MASS_LAND_DENIAL))
-    .map((c) => c.name);
+  const massLandDenial = Array.from(
+    new Set([
+      ...cards.filter((c) => matchesAny(c.oracle_text, MASS_LAND_DENIAL)).map((c) => c.name),
+      ...(extras.massLandDenial ?? []),
+    ])
+  );
+  const extraTurns = Array.from(new Set(extras.extraTurns ?? []));
 
   const fastMana = cards
     .filter((c) => matchesAny(c.oracle_text, FAST_MANA))
@@ -91,7 +107,11 @@ export function analyzeBracket(
   // Zwei-Karten-Combos: Erkennung über eine kuratierte Liste bekannter
   // Kombinationen (lib/combos.ts). Nicht erschöpfend – vollständiger
   // Abgleich wäre über Commander Spellbook möglich.
-  const combos = detectCombos(cards.map((c) => c.name));
+  const comboTexts = [
+    ...detectCombos(cards.map((c) => c.name)).map(formatCombo),
+    ...(extras.twoCardCombos ?? []).map((pair) => pair.join(" + ")),
+  ];
+  const combos = Array.from(new Set(comboTexts));
   const twoCardCombo = combos.length > 0;
 
   const gcCount = gameChangers.length;
@@ -129,12 +149,22 @@ export function analyzeBracket(
   // Bekannte Zwei-Karten-Combos heben das Deck auf mindestens Bracket 3.
   if (twoCardCombo) {
     reasons.push(
-      `Bekannte Zwei-Karten-Combo(s) im Deck: ${combos.map(formatCombo).join("; ")}.`
+      `Zwei-Karten-Combo(s) im Deck: ${combos.join("; ")}.`
     );
     if (bracket < 3) {
       bracket = 3;
       reasons.push("Zwei-Karten-Combo → mindestens Bracket 3.");
     }
+  }
+
+  // Extrazüge: in Bracket 1–2 nur vereinzelt und nicht verkettet erlaubt.
+  if (extraTurns.length >= 2) {
+    reasons.push(
+      `${extraTurns.length} Extrazug-Karten (${extraTurns.join(", ")}) – mehrere Extrazüge sprechen gegen Bracket 1–2.`
+    );
+    if (bracket < 3) bracket = 3;
+  } else if (extraTurns.length === 1) {
+    reasons.push(`Extrazug-Karte: ${extraTurns[0]} (einzeln unkritisch).`);
   }
 
   return {
@@ -147,6 +177,7 @@ export function analyzeBracket(
       massLandDenial,
       fastMana,
       tutors,
+      extraTurns,
       twoCardCombo,
     },
   };
