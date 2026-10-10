@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 // Legendäre Kreaturen/Planeswalker aus der eigenen Sammlung, die als Commander
 // infrage kommen - Basis für die Vorschlagsliste im AI Deck Generator.
@@ -10,11 +11,19 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
 
-  const { data: cards } = await supabase
-    .from("cards")
-    .select("name, image_url, colors, type_line")
-    .eq("user_id", user.id)
-    .ilike("type_line", "%Legendary%");
+  const cards = await selectAll<{
+    name: string;
+    image_url: string | null;
+    colors: string[] | null;
+    type_line: string | null;
+  }>(() =>
+    supabase
+      .from("cards")
+      .select("name, image_url, colors, type_line")
+      .eq("user_id", user.id)
+      .ilike("type_line", "%Legendary%")
+      .order("id")
+  );
 
   const { data: existingDecks } = await supabase
     .from("decks")
@@ -24,7 +33,7 @@ export async function GET() {
     (existingDecks ?? []).map((d) => d.commander_name.toLowerCase())
   );
 
-  const commanders = (cards ?? [])
+  const commanders = cards
     .filter((c) => /Creature|Planeswalker/.test(c.type_line ?? ""))
     .map((c) => ({
       name: c.name,

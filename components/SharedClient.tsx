@@ -6,6 +6,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { formatEur } from "@/lib/format";
 import type { Card } from "@/lib/types";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 export function SharedClient({
   owners,
@@ -22,8 +23,11 @@ export function SharedClient({
     setSelected(ownerId);
     if (!ownerId) return;
     setLoading(true);
-    const { data } = await supabase.rpc("shared_collection", { p_owner: ownerId });
-    setCards((data as Card[]) ?? []);
+    // Seitenweise: auch RPC-Ergebnisse kappt Supabase bei 1000 Zeilen.
+    const data = await selectAll<Card>(() =>
+      supabase.rpc("shared_collection", { p_owner: ownerId }).order("name").order("id")
+    ).catch(() => [] as Card[]);
+    setCards(data);
     setLoading(false);
   }
 

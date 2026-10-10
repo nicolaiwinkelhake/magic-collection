@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCardsCollection, getPrices } from "@/lib/scryfall";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 // Aktualisiert die Preise der gesamten Sammlung über Scryfalls
 // Batch-Endpoint (75 Karten pro Request) – schnell genug auch für
@@ -15,13 +16,11 @@ export async function POST() {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
 
-  const { data: cards } = await supabase
-    .from("cards")
-    .select("id, scryfall_id, foil")
-    .eq("user_id", user.id)
-    .returns<{ id: string; scryfall_id: string; foil: boolean }[]>();
+  const cards = await selectAll<{ id: string; scryfall_id: string; foil: boolean }>(() =>
+    supabase.from("cards").select("id, scryfall_id, foil").eq("user_id", user.id).order("id")
+  );
 
-  if (!cards?.length) {
+  if (!cards.length) {
     return NextResponse.json({ updated: 0 });
   }
 
