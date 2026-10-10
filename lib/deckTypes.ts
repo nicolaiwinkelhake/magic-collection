@@ -3,6 +3,7 @@ export type Deck = {
   user_id: string;
   name: string;
   commander_name: string;
+  partner_name?: string | null;
   commander_image_url: string | null;
   color_identity: string[];
   created_at: string;
@@ -19,6 +20,7 @@ export type DeckCard = {
   cmc: number | null;
   type_line: string | null;
   colors: string[] | null;
+  color_identity?: string[] | null;
   oracle_text: string | null;
   is_commander: boolean;
   price_eur: number | null;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchCardByName, getPrices } from "@/lib/scryfall";
+import { unionIdentity } from "@/lib/colorIdentity";
+import { commanderDeckRow, resolveCommander } from "@/lib/deckCommanders";
 
 export async function PATCH(
   request: Request,
@@ -15,53 +16,66 @@ export async function PATCH(
   // Eigentümerschaft sicherstellen
   const { data: deck } = await supabase
     .from("decks")
-    .select("id")
+    .select("id, commander_name, partner_name")
     .eq("id", params.id)
     .eq("user_id", user.id)
     .single();
   if (!deck) return NextResponse.json({ error: "Deck nicht gefunden" }, { status: 404 });
 
-  const { name, commanderName } = await request.json();
+  // partnerName: undefined = unverändert, "" = Partner entfernen
+  const { name, commanderName, partnerName } = (await request.json()) as {
+    name?: string;
+    commanderName?: string;
+    partnerName?: string;
+  };
   const updates: Record<string, unknown> = {};
+  let commandersChanged = false;
 
   if (name?.trim()) updates.name = name.trim();
 
-  // Commander tauschen: neuen Commander bei Scryfall auflösen
-  if (commanderName?.trim()) {
-    const { card, imageUrl, error } = await fetchCardByName(commanderName);
-    if (!card) {
-      return NextResponse.json(
-        { error: error ?? "Commander nicht gefunden" },
-        { status: 404 }
-      );
+  // Eine Commander-Zeile (Haupt-Commander oder Partner) gezielt ersetzen.
+  // Früher wurden ALLE Commander-Zeilen gelöscht – ein Partner ging verloren.
+  async function replaceCommander(oldName: string | null, newName: string | null) {
+    let resolved = null;
+    if (newName) {
+      const r = await resolveCommander(newName);
+      if ("error" in r) return { error: r.error };
+      resolved = r;
     }
-    updates.commander_name = card.name;
-    updates.commander_image_url = imageUrl;
-    updates.color_identity = card.colors ?? [];
+    if (oldName) {
+      await supabase
+        .from("deck_cards")
+        .delete()
+        .eq("deck_id", params.id)
+        .eq("is_commander", true)
+        .eq("name", oldName);
+    }
+    if (resolved) await supabase.from("deck_cards").insert(commanderDeckRow(params.id, user!.id, resolved));
+    commandersChanged = true;
+    return { resolved };
+  }
 
-    // Alte Commander-Karte ersetzen
-    await supabase
+  if (commanderName?.trim()) {
+    const r = await replaceCommander(deck.commander_name, commanderName.trim());
+    if ("error" in r) return NextResponse.json({ error: r.error }, { status: 404 });
+    updates.commander_name = r.resolved!.card.name;
+    updates.commander_image_url = r.resolved!.imageUrl;
+  }
+
+  if (partnerName !== undefined) {
+    const r = await replaceCommander(deck.partner_name, partnerName.trim() || null);
+    if ("error" in r) return NextResponse.json({ error: r.error }, { status: 404 });
+    updates.partner_name = r.resolved?.card.name ?? null;
+  }
+
+  // Farbidentität = Vereinigung aller (verbleibenden) Commander.
+  if (commandersChanged) {
+    const { data: rows } = await supabase
       .from("deck_cards")
-      .delete()
+      .select("color_identity")
       .eq("deck_id", params.id)
       .eq("is_commander", true);
-
-    const { eur, eurFoil } = getPrices(card);
-    await supabase.from("deck_cards").insert({
-      deck_id: params.id,
-      user_id: user.id,
-      scryfall_id: card.id,
-      name: card.name,
-      image_url: imageUrl,
-      mana_cost: card.mana_cost ?? null,
-      cmc: card.cmc,
-      type_line: card.type_line,
-      colors: card.colors ?? [],
-      oracle_text: card.oracle_text ?? null,
-      is_commander: true,
-      price_eur: eur,
-      price_eur_foil: eurFoil,
-    });
+    updates.color_identity = unionIdentity((rows ?? []).map((r) => (r.color_identity as string[] | null) ?? []));
   }
 
   if (Object.keys(updates).length) {

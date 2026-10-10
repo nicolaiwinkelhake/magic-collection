@@ -19,6 +19,8 @@ import { analyzeDeck } from "@/lib/deckAnalysis";
 import { categorizeDeck } from "@/lib/deckCategories";
 import { PlaytestClient } from "@/components/PlaytestClient";
 import { DeckCharts } from "@/components/DeckCharts";
+import { RoleOverview } from "@/components/RoleOverview";
+import type { CardRole } from "@/lib/cardRoles";
 import { formatEur, formatDate } from "@/lib/format";
 import type { Deck, DeckCard } from "@/lib/deckTypes";
 
@@ -140,6 +142,8 @@ export function DeckDetailClient({
   const [editOpen, setEditOpen] = useState(false);
   const [newName, setNewName] = useState(deck.name);
   const [newCommander, setNewCommander] = useState("");
+  const [newPartner, setNewPartner] = useState("");
+  const [removePartner, setRemovePartner] = useState(false);
   const [editMsg, setEditMsg] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -149,6 +153,8 @@ export function DeckDetailClient({
     const body: Record<string, string> = {};
     if (newName.trim() && newName.trim() !== deck.name) body.name = newName.trim();
     if (newCommander.trim()) body.commanderName = newCommander.trim();
+    if (removePartner) body.partnerName = "";
+    else if (newPartner.trim()) body.partnerName = newPartner.trim();
     const res = await fetch(`/api/decks/${deck.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -161,6 +167,8 @@ export function DeckDetailClient({
       return;
     }
     setNewCommander("");
+    setNewPartner("");
+    setRemovePartner(false);
     setEditOpen(false);
     router.refresh();
   }
@@ -187,9 +195,49 @@ export function DeckDetailClient({
     router.refresh();
   }
 
+  // Kartenrollen (Ramp, Draw, Removal …) aus Scryfall-Tags, global gecacht.
+  // Fehlende werden in Runden nachgeschlagen; bis dahin schätzt die Analyse
+  // per Kartentext.
+  const [roles, setRoles] = useState<Map<string, CardRole[]>>(new Map());
+  const [rolesPending, setRolesPending] = useState<number | null>(null);
+  useEffect(() => {
+    const names = Array.from(new Set(initialCards.map((c) => c.name)));
+    if (!names.length) return;
+    let cancelled = false;
+    (async () => {
+      for (let round = 0; round < 20 && !cancelled; round++) {
+        const data = await fetch("/api/cards/roles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ names }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (!data || cancelled) break;
+        setRoles(new Map(Object.entries(data.roles as Record<string, CardRole[]>)));
+        setRolesPending(data.pending || null);
+        if (!data.pending) break;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCards]);
+
+  // Farbidentität nachfüllen (ältere Decks speicherten nur "colors").
+  useEffect(() => {
+    if (!initialCards.some((c) => c.color_identity == null)) return;
+    fetch(`/api/decks/${deck.id}/metadata`, { method: "POST" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && (d.updated > 0 || d.colorIdentity?.join() !== (deck.color_identity ?? []).join())) router.refresh();
+      })
+      .catch(() => {});
+  }, [initialCards, deck.id]);
+
   const { stats, suggestions } = useMemo(
-    () => analyzeDeck(initialCards, deck.color_identity ?? []),
-    [initialCards, deck.color_identity]
+    () => analyzeDeck(initialCards, deck.color_identity ?? [], roles),
+    [initialCards, deck.color_identity, roles]
   );
 
   const totalValue = useMemo(() => {
@@ -197,8 +245,8 @@ export function DeckDetailClient({
   }, [initialCards]);
 
   const categories = useMemo(
-    () => categorizeDeck(initialCards),
-    [initialCards]
+    () => categorizeDeck(initialCards, roles),
+    [initialCards, roles]
   );
 
   const formattedValue = formatEur(totalValue);
@@ -337,7 +385,10 @@ export function DeckDetailClient({
         )}
         <div className="flex-1">
           <h1 className="text-2xl font-semibold">{deck.name}</h1>
-          <p className="text-zinc-400">Commander: {deck.commander_name}</p>
+          <p className="text-zinc-400">
+            Commander: {deck.commander_name}
+            {deck.partner_name && <> + {deck.partner_name}</>}
+          </p>
         </div>
         <button
           onClick={() => setEditOpen((v) => !v)}
@@ -367,6 +418,24 @@ export function DeckDetailClient({
               placeholder={deck.commander_name}
               className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
             />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm text-zinc-400">
+              Partner / Background (optional)
+            </label>
+            <input
+              value={newPartner}
+              onChange={(e) => setNewPartner(e.target.value)}
+              placeholder={deck.partner_name ?? "z. B. Tymna the Weaver"}
+              disabled={removePartner}
+              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none disabled:opacity-50"
+            />
+            {deck.partner_name && (
+              <label className="flex items-center gap-2 text-sm text-zinc-400">
+                <input type="checkbox" checked={removePartner} onChange={(e) => setRemovePartner(e.target.checked)} />
+                Partner „{deck.partner_name}“ entfernen
+              </label>
+            )}
           </div>
           {editMsg && <p className="text-sm text-red-400">{editMsg}</p>}
           <div className="flex items-center justify-between pt-1">
@@ -452,20 +521,19 @@ export function DeckDetailClient({
       {/* Analyse */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
         <h2 className="font-medium text-lg">📊 Deck-Analyse</h2>
-        <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 text-center text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm">
           <Stat label="Karten" value={stats.totalCards} />
           <Stat label="Länder" value={stats.lands} />
-          <Stat label="Ramp" value={stats.ramp} />
-          <Stat label="Removal" value={stats.removal} />
-          <Stat label="Draw" value={stats.draw} />
           <Stat label="Ø Manawert" value={stats.avgCmc} />
-          <div className="bg-zinc-800 rounded-md py-2 col-span-3 sm:col-span-1">
+          <div className="bg-zinc-800 rounded-md py-2">
             <p className="text-lg font-semibold text-emerald-400">
               {formattedValue}
             </p>
             <p className="text-zinc-500 text-xs">Deckwert</p>
           </div>
         </div>
+
+        <RoleOverview cards={initialCards} roles={roles} pending={rolesPending} />
 
         <div className="space-y-2">
           {suggestions.map((s, i) => (

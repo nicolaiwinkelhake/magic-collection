@@ -10,6 +10,7 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [commanderName, setCommanderName] = useState("");
+  const [partnerName, setPartnerName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,7 +22,7 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
     const res = await fetch("/api/decks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, commanderName }),
+      body: JSON.stringify({ name, commanderName, partnerName: partnerName.trim() || undefined }),
     });
 
     const data = await res.json();
@@ -64,6 +65,12 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
             required
             className="flex-1 min-w-[200px] rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
           />
+          <input
+            placeholder="Partner / Background (optional)"
+            value={partnerName}
+            onChange={(e) => setPartnerName(e.target.value)}
+            className="flex-1 min-w-[200px] rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+          />
           <button
             type="submit"
             disabled={loading}
@@ -100,6 +107,7 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
                 <p className="font-medium truncate">{deck.name}</p>
                 <p className="text-sm text-zinc-500 truncate">
                   {deck.commander_name}
+                  {deck.partner_name && ` + ${deck.partner_name}`}
                 </p>
               </div>
             </Link>

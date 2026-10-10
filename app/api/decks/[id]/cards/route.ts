@@ -119,6 +119,7 @@ export async function POST(
           mana_cost: (card.mana_cost as string | null) ?? null,
           cmc: card.cmc, type_line: card.type_line,
           colors: (card.colors as string[]) ?? [],
+          color_identity: (card.color_identity as string[]) ?? (card.colors as string[]) ?? [],
           oracle_text: (card.oracle_text as string | null) ?? null,
           is_commander: false, price_eur: eur, price_eur_foil: eurFoil,
         });
@@ -228,6 +229,7 @@ export async function POST(
         cmc: r.card.cmc,
         type_line: r.card.type_line,
         colors: r.card.colors ?? [],
+        color_identity: r.card.color_identity ?? r.card.colors ?? [],
         oracle_text: r.card.oracle_text ?? null,
         is_commander: false,
         price_eur: eur,
