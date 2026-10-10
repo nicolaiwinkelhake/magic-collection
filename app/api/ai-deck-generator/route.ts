@@ -593,7 +593,7 @@ export async function POST(request: Request) {
       [commander.name]
     );
 
-    send({
+    const deckResult = {
       type: "result",
       phase: "deck",
       commander: { name: commander.name, imageUrl: commander.imageUrl, colorIdentity: identity },
@@ -611,6 +611,24 @@ export async function POST(request: Request) {
       cards,
       totalCount,
       combos,
-    });
+    };
+
+    // Ergebnis speichern – die Abfrage hat Geld gekostet und soll später
+    // wieder abrufbar sein (Tabelle ai_results, Migration 013).
+    const { data: savedRow, error: saveError } = await supabase
+      .from("ai_results")
+      .insert({
+        user_id: user.id,
+        kind: "deck_generator",
+        title: `${parsed.deckName} (${commander.name})`,
+        params: { bracket, commanderName: commander.name },
+        result: deckResult,
+        model: "claude-sonnet-4-6",
+      })
+      .select("id, created_at")
+      .single();
+    if (saveError) console.error("Generator-Ergebnis nicht gespeichert", saveError);
+
+    send({ ...deckResult, savedId: savedRow?.id ?? null, savedAt: savedRow?.created_at ?? null });
   });
 }

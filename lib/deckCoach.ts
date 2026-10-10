@@ -10,6 +10,12 @@ export const COACH_MODEL = "claude-opus-5-5";
 
 export type CoachMode = "collection" | "budget" | "best";
 
+export const COACH_MODE_LABEL: Record<CoachMode, string> = {
+  collection: "Nur aus meiner Sammlung",
+  budget: "Budget-Upgrade",
+  best: "Beste Upgrades",
+};
+
 export type CoachDeckCard = { name: string; typeLine: string; cmc: number; roles: CardRole[] | null };
 export type CoachCandidate = {
   name: string;
