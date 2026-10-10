@@ -89,7 +89,8 @@ export function DeckDetailClient({
       await fetch(`/api/decks/${deck.id}/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ names: [name] }),
+        // Karte ist schon in der Sammlung → nur ins Deck legen, nicht doppelt zählen.
+        body: JSON.stringify({ names: [name], addToCollection: false }),
       });
       setSuggestMsg({ text: `„${name}" ist in deiner Sammlung und wurde zum Deck hinzugefügt.`, type: "success" });
     } else {
@@ -389,6 +390,14 @@ export function DeckDetailClient({
             Commander: {deck.commander_name}
             {deck.partner_name && <> + {deck.partner_name}</>}
           </p>
+          <Link
+            href={`/commanders/${encodeURIComponent(deck.commander_name)}${
+              deck.partner_name ? `?partner=${encodeURIComponent(deck.partner_name)}` : ""
+            }`}
+            className="text-sm text-indigo-400 hover:underline"
+          >
+            Empfehlungen für diesen Commander →
+          </Link>
         </div>
         <button
           onClick={() => setEditOpen((v) => !v)}

@@ -81,3 +81,30 @@ export async function findCombos(
     return null;
   }
 }
+
+// Combos, an denen eine bestimmte Karte (z. B. der Commander) beteiligt ist,
+// nach Beliebtheit. Link: https://commanderspellbook.com/combo/<id>/
+export type CardCombo = Combo & { id: string; bracketTag: string | null };
+
+export async function findCombosWithCard(cardName: string, limit = 12): Promise<CardCombo[]> {
+  const params = new URLSearchParams({
+    q: `card:"${cardName.replace(/"/g, "")}"`,
+    ordering: "-popularity",
+    limit: String(limit),
+  });
+  try {
+    const res = await fetch(`https://backend.commanderspellbook.com/variants/?${params}`, {
+      headers: { "User-Agent": "MagicCollectionApp/1.0" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return ((data?.results ?? []) as Array<SpellbookVariant & { id: string; bracketTag?: string | null }>).map((v) => ({
+      ...toCombo(v),
+      id: v.id,
+      bracketTag: v.bracketTag ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
