@@ -45,7 +45,7 @@ lib/
 tests/               Vitest-Unit-Tests der Kernlogik
 supabase/
   schema.sql         Vollständiges Schema für FRISCHE Installation
-  migrations/        001..009 (für bestehende DBs)
+  migrations/        001..010 (für bestehende DBs)
 ```
 
 ## Datenmodell

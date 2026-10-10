@@ -27,6 +27,9 @@ export async function POST(
   }
 
   const body = await request.json();
+  // false: Karten nur ins Deck legen (z. B. eine bereits besessene Karte aus
+  // den Vorschlägen übernehmen) – sonst würde die Sammlung doppelt zählen.
+  const addToCollection = body.addToCollection !== false;
 
   // Bestehende Deckliste ersetzen statt ergänzen: alte (Nicht-Commander-)
   // Deckkarten entfernen und ihre Menge aus der Sammlung wieder abziehen,
@@ -171,7 +174,7 @@ export async function POST(
             price_updated_at: new Date().toISOString(),
           };
         });
-      await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
+      if (addToCollection) await supabase.from("cards").upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
     }
     const notFound = entries.filter((e) => !scryfallMap.has(e.scryfallId)).map((e) => e.name);
     return NextResponse.json({ inserted, notFound, repeated });
@@ -287,9 +290,11 @@ export async function POST(
       const key = `${row.scryfall_id}_${row.foil}`;
       row.quantity = (existingQtyByKey.get(key) ?? 0) + (row.quantity as number);
     }
-    await supabase
-      .from("cards")
-      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
+    if (addToCollection) {
+      await supabase
+        .from("cards")
+        .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
+    }
 
     // Preisverlauf je Karte festhalten (einmal pro Karte, unabhängig von der Menge)
     for (const p of priceRecords) {
