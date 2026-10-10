@@ -66,7 +66,9 @@ async function sendBatch(batch: ImportBatch, allowDuplicates: boolean): Promise<
         body: JSON.stringify({ batchKey: batch.key, allowDuplicates, items: batch.items }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
+      // Ohne Ergebnisliste (z. B. Umleitung auf eine HTML-Seite) gilt das
+      // Paket nicht als erledigt.
+      if (res.ok && Array.isArray(data.results)) {
         const results: ImportBatch["results"] = {};
         for (const r of data.results ?? []) results[r.i] = { status: r.status, cardName: r.cardName };
         return { ...batch, status: "done", replayed: data.replayed, error: undefined, results };
