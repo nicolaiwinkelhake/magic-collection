@@ -89,12 +89,28 @@ export function ScanClient() {
   async function confirmAdd() {
     if (!match) return;
     setBusy(true);
-    await fetch("/api/import", {
+    // Eigener Schlüssel je Scan: jedes Foto ist ein bewusstes Exemplar,
+    // vorhandene Karten bekommen +1.
+    const ok = await fetch("/api/import/batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries: [{ name: match.name, quantity: 1, foil: false }] }),
-    });
+      body: JSON.stringify({
+        batchKey: crypto.randomUUID(),
+        allowDuplicates: true,
+        items: [{ i: 0, name: match.name, quantity: 1, foil: false }],
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return false;
+        const data = await res.json();
+        return ["imported", "updated"].includes(data.results?.[0]?.status);
+      })
+      .catch(() => false);
     setBusy(false);
+    if (!ok) {
+      setStatus("Speichern fehlgeschlagen – bitte erneut versuchen.");
+      return;
+    }
     setAdded((a) => [match.name, ...a]);
     setMatch(null);
     setPreview(null);
