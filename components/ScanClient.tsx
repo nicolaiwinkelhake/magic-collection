@@ -89,12 +89,24 @@ export function ScanClient() {
   async function confirmAdd() {
     if (!match) return;
     setBusy(true);
-    await fetch("/api/import", {
+    // Antwort ist NDJSON; nur das letzte Event (result/error) ist relevant.
+    const ok = await fetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries: [{ name: match.name, quantity: 1, foil: false }] }),
-    });
+      body: JSON.stringify({ entries: [{ name: match.name, quantity: 1, foil: false }], allowDuplicates: true }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return false;
+        const lines = (await res.text()).trim().split("\n");
+        const last = JSON.parse(lines[lines.length - 1] ?? "{}");
+        return last.type === "result" && last.imported > 0;
+      })
+      .catch(() => false);
     setBusy(false);
+    if (!ok) {
+      setStatus("Speichern fehlgeschlagen – bitte erneut versuchen.");
+      return;
+    }
     setAdded((a) => [match.name, ...a]);
     setMatch(null);
     setPreview(null);

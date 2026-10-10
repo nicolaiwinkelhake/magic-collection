@@ -77,6 +77,31 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// /cards/collection (max. 75 Identifier) mit Retry: transiente Fehler
+// (429/5xx/Netzwerk) ließen sonst einen ganzen Block als "nicht gefunden"
+// durchfallen. null = Block auch nach Retries nicht abrufbar.
+export async function fetchCollectionWithRetry(
+  identifiers: Array<Record<string, string>>
+): Promise<ScryfallCard[] | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${SCRYFALL_BASE}/cards/collection`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": "MagicCollectionApp/1.0" },
+        body: JSON.stringify({ identifiers }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return (data.data ?? []) as ScryfallCard[];
+      }
+    } catch {
+      // Netzwerkfehler -> Retry
+    }
+    await sleep(800 * (attempt + 1));
+  }
+  return null;
+}
+
 // Bulk-Import mehrerer Kartennamen (z. B. eine Zeile pro Karte aus einem Textfeld)
 export async function fetchCardsByNames(names: string[]) {
   const trimmed = names.map((n) => n.trim()).filter(Boolean);

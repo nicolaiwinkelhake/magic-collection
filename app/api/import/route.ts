@@ -1,141 +1,73 @@
-import { createClient } from "@/lib/supabase/server";
-import { fetchCardByName, getPrices, sleep } from "@/lib/scryfall";
+import { requireUser, unauthorized } from "@/lib/apiAuth";
+import { fetchCardByName, fetchCollectionWithRetry, sleep, type ScryfallCard } from "@/lib/scryfall";
+import { ndjsonStream, writeImport, type ResolvedEntry } from "@/lib/importCards";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
+
+const CHUNK = 75;
+// Namen, die der Sammelabruf nicht exakt findet, werden einzeln "fuzzy"
+// gesucht (Tippfehler, Groß-/Kleinschreibung). Begrenzt, damit eine Liste
+// voller Unsinn nicht minutenlang einzeln abgefragt wird.
+const MAX_FUZZY = 60;
 
 // Erwartet { entries: [{ name, quantity, foil? }] }.
-// Karten werden über die Unique-Bedingung (user, scryfall_id, foil)
-// zusammengeführt: vorhandene Mengen werden erhöht statt Duplikate anzulegen.
-//
-// Antwort ist NDJSON (ein JSON-Objekt pro Zeile), damit der Client den
-// Fortschritt ("X von Y Karten") live anzeigen kann, statt nur auf eine
-// einzelne Antwort am Ende zu warten.
+// Antwort ist NDJSON: "progress"-Events, am Ende genau ein "result" oder "error".
 export async function POST(request: Request) {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await requireUser();
+  if (!user) return unauthorized();
 
-  if (!user) {
-    return new Response(JSON.stringify({ error: "Nicht angemeldet" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const body = await request.json();
-  const entries: Array<{ name: string; quantity?: number; foil?: boolean }> =
-    body.entries ?? [];
+  const body = await request.json().catch(() => ({}));
+  const entries: Array<{ name: string; quantity?: number; foil?: boolean }> = body.entries ?? [];
   const allowDuplicates: boolean = body.allowDuplicates ?? false;
 
   if (!entries.length) {
-    return new Response(JSON.stringify({ error: "Keine Karten übergeben" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return Response.json({ error: "Keine Karten übergeben" }, { status: 400 });
   }
 
-  const encoder = new TextEncoder();
+  return ndjsonStream(async (send) => {
+    const uniqueNames = Array.from(new Set(entries.map((e) => e.name.trim()).filter(Boolean)));
+    const total = uniqueNames.length;
+    send({ type: "progress", phase: "resolve", done: 0, total });
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      function send(obj: unknown) {
-        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+    // Stufe 1: Sammelabruf per exaktem Namen (75 je Request statt 1).
+    const byName = new Map<string, ScryfallCard>();
+    for (let i = 0; i < uniqueNames.length; i += CHUNK) {
+      const chunk = uniqueNames.slice(i, i + CHUNK);
+      const cards = await fetchCollectionWithRetry(chunk.map((name) => ({ name })));
+      for (const card of cards ?? []) {
+        byName.set(card.name.toLowerCase(), card);
+        // Doppelseitige Karten: Liste enthält oft nur die Vorderseite.
+        const front = card.name.split(" // ")[0];
+        if (front !== card.name) byName.set(front.toLowerCase(), card);
       }
+      send({ type: "progress", phase: "resolve", done: Math.min(i + CHUNK, total), total });
+      if (i + CHUNK < uniqueNames.length) await sleep(120);
+    }
 
-      const notFound: string[] = [];
-      const skipped: string[] = [];
-      let imported = 0;
+    // Stufe 2: Rest einzeln per Fuzzy-Suche.
+    const missing = uniqueNames.filter((n) => !byName.has(n.toLowerCase()));
+    for (const name of missing.slice(0, MAX_FUZZY)) {
+      const r = await fetchCardByName(name).catch(() => null);
+      if (r?.card) byName.set(name.toLowerCase(), r.card);
+      await sleep(100);
+    }
 
-      const uniqueNames = Array.from(new Set(entries.map((e) => e.name.trim()).filter(Boolean)));
-      const resolved = new Map<string, Awaited<ReturnType<typeof fetchCardByName>>>();
-
-      let done = 0;
-      const total = uniqueNames.length;
-      send({ type: "progress", done, total });
-
-      for (const name of uniqueNames) {
-        resolved.set(name, await fetchCardByName(name));
-        done += 1;
-        send({ type: "progress", done, total });
-        await sleep(100);
+    const resolved: ResolvedEntry[] = [];
+    const notFound: string[] = [];
+    for (const entry of entries) {
+      const name = entry.name.trim();
+      if (!name) continue;
+      const card = byName.get(name.toLowerCase());
+      if (!card) {
+        if (!notFound.includes(name)) notFound.push(name);
+        continue;
       }
+      resolved.push({ card, quantity: Math.max(1, entry.quantity ?? 1), foil: entry.foil ?? false });
+    }
 
-      for (const entry of entries) {
-        const name = entry.name.trim();
-        if (!name) continue;
-        const r = resolved.get(name);
-        const qty = Math.max(1, entry.quantity ?? 1);
-        const foil = entry.foil ?? false;
-
-        if (!r?.card) {
-          if (!notFound.includes(name)) notFound.push(name);
-          continue;
-        }
-
-        const { eur, eurFoil } = getPrices(r.card);
-
-        const { data: existing } = await supabase
-          .from("cards")
-          .select("id, quantity")
-          .eq("user_id", user.id)
-          .eq("scryfall_id", r.card.id)
-          .eq("foil", foil)
-          .maybeSingle();
-
-        if (existing) {
-          if (!allowDuplicates) {
-            if (!skipped.includes(r.card.name)) skipped.push(r.card.name);
-            continue;
-          }
-          await supabase
-            .from("cards")
-            .update({
-              quantity: existing.quantity + qty,
-              price_eur: eur,
-              price_eur_foil: eurFoil,
-              price_updated_at: new Date().toISOString(),
-            })
-            .eq("id", existing.id);
-        } else {
-          await supabase.from("cards").insert({
-            user_id: user.id,
-            scryfall_id: r.card.id,
-            name: r.card.name,
-            set_code: r.card.set,
-            collector_number: r.card.collector_number,
-            image_url: r.imageUrl,
-            mana_cost: r.card.mana_cost ?? null,
-            cmc: r.card.cmc,
-            type_line: r.card.type_line,
-            colors: r.card.colors ?? [],
-            rarity: r.card.rarity,
-            oracle_text: r.card.oracle_text ?? null,
-            quantity: qty,
-            foil,
-            price_eur: eur,
-            price_eur_foil: eurFoil,
-            price_updated_at: new Date().toISOString(),
-          });
-        }
-
-        await supabase.rpc("record_card_price", {
-          p_scryfall_id: r.card.id,
-          p_eur: eur,
-          p_eur_foil: eurFoil,
-        });
-
-        imported += qty;
-      }
-
-      await supabase.rpc("snapshot_collection_value");
-
-      send({ type: "result", imported, notFound, skipped });
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
+    const result = await writeImport(supabase, user.id, resolved, allowDuplicates, (done, total) =>
+      send({ type: "progress", phase: "save", done, total })
+    );
+    return { ...result, notFound };
   });
 }

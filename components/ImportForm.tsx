@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { parseDeckList } from "@/lib/parseDeckList";
 import { csvToEntries, moxfieldCsvToEntries } from "@/lib/csv";
 
+function progressLabel(p: { done: number; total: number; phase?: string } | null) {
+  if (!p) return "Importiere...";
+  const what = p.phase === "save" ? "Speichere" : "Suche Karten";
+  return `${what}... (${p.done}/${p.total})`;
+}
+
 export function ImportForm() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -13,7 +19,7 @@ export function ImportForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [allowDuplicates, setAllowDuplicates] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; phase?: string } | null>(null);
 
   // Letztes Import-Ergebnis überlebt einen Seiten-Refresh (F5),
   // damit die Liste "nicht gefundener" Karten nicht verloren geht.
@@ -27,67 +33,92 @@ export function ImportForm() {
     window.localStorage.setItem("import-last-message", msg);
   }
 
+  type ImportResult = { imported: number; notFound: string[]; skipped: string[]; failed?: string[] };
+
   // Liest die NDJSON-Stream-Antwort von /api/import bzw. /api/import-csv,
   // aktualisiert den Fortschritt live und gibt am Ende das Result-Event zurück.
-  async function streamImport(
-    url: string,
-    payload: Record<string, unknown>
-  ): Promise<{ imported: number; notFound: string[]; skipped: string[] } | null> {
+  // Jeder Fehlerfall (Netzwerk, Zeitlimit, Serverfehler) endet in einer
+  // sichtbaren Meldung statt in einem hängenden "Importiere...".
+  async function streamImport(url: string, payload: Record<string, unknown>): Promise<ImportResult | null> {
     setLoading(true);
     setMessage(null);
     setProgress(null);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        setMessage(`Fehler: ${data.error ?? `Server antwortet mit ${res.status}`}`);
+        return null;
+      }
 
-    if (!res.ok || !res.body) {
-      const data = await res.json().catch(() => ({}));
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result: ImportResult | null = null;
+      let serverError: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let event;
+          try {
+            event = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (event.type === "progress") setProgress({ done: event.done, total: event.total, phase: event.phase });
+          else if (event.type === "result") result = event;
+          else if (event.type === "error") serverError = event.error;
+        }
+      }
+
+      if (serverError) {
+        setPersistedMessage(`Fehler beim Import: ${serverError}`);
+        return null;
+      }
+      if (!result) {
+        setPersistedMessage(
+          "Der Import wurde unterbrochen (vermutlich Zeitlimit). Ein Teil der Karten kann schon gespeichert sein – " +
+            "bitte Sammlung prüfen und den Rest erneut importieren."
+        );
+        return null;
+      }
+      return result;
+    } catch {
+      setPersistedMessage("Verbindung zum Server abgebrochen. Bitte Sammlung prüfen und erneut versuchen.");
+      return null;
+    } finally {
       setLoading(false);
       setProgress(null);
-      setMessage(`Fehler: ${data.error ?? res.status}`);
-      return null;
     }
+  }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let result: { imported: number; notFound: string[]; skipped: string[] } | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const event = JSON.parse(line);
-        if (event.type === "progress") setProgress({ done: event.done, total: event.total });
-        else if (event.type === "result") result = event;
-      }
-    }
-
-    setLoading(false);
-    setProgress(null);
-
-    if (!result) {
-      setMessage("Fehler: Antwort unvollständig");
-      return null;
-    }
-    return result;
+  function resultMessage(result: ImportResult) {
+    let msg = `${result.imported} Karte(n) importiert.`;
+    if (result.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${result.skipped.join(", ")}.`;
+    if (result.notFound?.length) msg += ` Nicht gefunden: ${result.notFound.join(", ")}.`;
+    if (result.failed?.length) msg += ` Speichern fehlgeschlagen: ${result.failed.join(", ")}.`;
+    return msg;
   }
 
   async function sendEntries(entries: { name: string; quantity: number; foil: boolean }[]) {
-    if (!entries.length) return;
+    if (!entries.length) {
+      setMessage("Keine Karten erkannt. Bitte Format prüfen (ein Kartenname pro Zeile bzw. CSV mit Spalte „Name“).");
+      return;
+    }
     const result = await streamImport("/api/import", { entries, allowDuplicates });
     if (!result) return;
-    let msg = `${result.imported} Karte(n) importiert.`;
-    if (result.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${result.skipped.join(", ")}`;
-    if (result.notFound?.length) msg += ` Nicht gefunden: ${result.notFound.join(", ")}`;
-    setPersistedMessage(msg);
+    setPersistedMessage(resultMessage(result));
     setText("");
     router.refresh();
   }
@@ -103,15 +134,13 @@ export function ImportForm() {
 
     // CSV mit Scryfall-IDs (Moxfield, ManaBox, ...) → schnelles Endpoint ohne Namens-Lookup
     const moxEntries = moxfieldCsvToEntries(content);
-    if (moxEntries) {
+    if (moxEntries && !moxEntries.length) {
+      setMessage("Die CSV enthält keine Zeilen mit Scryfall-ID.");
+    } else if (moxEntries) {
       const result = await streamImport("/api/import-csv", { entries: moxEntries, allowDuplicates });
-      if (result) {
-        let msg = `${result.imported} Karte(n) importiert.`;
-        if (result.skipped?.length) msg += ` Übersprungen (schon vorhanden): ${result.skipped.join(", ")}`;
-        if (result.notFound?.length) msg += ` Nicht gefunden: ${result.notFound.join(", ")}`;
-        setPersistedMessage(msg);
-        router.refresh();
-      }
+      if (result) setPersistedMessage(resultMessage(result));
+      // Auch nach Abbruch neu laden: bereits gespeicherte Karten sichtbar machen.
+      router.refresh();
     } else {
       await sendEntries(csvToEntries(content));
     }
@@ -145,9 +174,7 @@ export function ImportForm() {
               className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
             >
               {loading
-                ? progress
-                  ? `Importiere... (${progress.done}/${progress.total})`
-                  : "Importiere..."
+                ? progressLabel(progress)
                 : "Importieren"}
             </button>
 
@@ -159,9 +186,7 @@ export function ImportForm() {
               }`}
             >
               {loading
-                ? progress
-                  ? `Importiere... (${progress.done}/${progress.total})`
-                  : "Importiere..."
+                ? progressLabel(progress)
                 : "CSV-Datei wählen"}
               <input
                 ref={fileRef}
