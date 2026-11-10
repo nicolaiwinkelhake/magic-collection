@@ -39,7 +39,27 @@ export function CollectionClient({
     type: "",
     set: "",
     sort: "color",
+    group: "none",
   });
+
+  // Gruppierung im Browser merken.
+  useEffect(() => {
+    try {
+      const g = window.localStorage.getItem("collection-group");
+      if (g && ["none", "set", "color", "rarity", "type"].includes(g)) {
+        setFilters((f) => ({ ...f, group: g as FilterState["group"] }));
+      }
+    } catch {
+      // Speicher gesperrt: Standard behalten.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("collection-group", filters.group);
+    } catch {
+      // ignorieren
+    }
+  }, [filters.group]);
 
   const availableSets = useMemo(() => {
     const codes = new Set<string>();
@@ -231,7 +251,7 @@ export function CollectionClient({
         <Filters state={filters} onChange={setFilters} sets={availableSets} />
       </div>
 
-      <CardGrid cards={filteredCards} />
+      <CardGrid cards={filteredCards} groupBy={filters.group} />
     </main>
   );
 }

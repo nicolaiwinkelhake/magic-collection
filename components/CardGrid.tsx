@@ -3,14 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { formatEur } from "@/lib/format";
+import { formatEur, formatDate } from "@/lib/format";
 import { cardValue } from "@/lib/valuation";
 import { EmptyState } from "@/components/ui/States";
 import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/CardView";
 import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card } from "@/lib/types";
+import { groupCards, type GroupKey } from "@/lib/collectionGroups";
 
-export function CardGrid({ cards }: { cards: Card[] }) {
+export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?: GroupKey }) {
   const router = useRouter();
 
   // Optimistische lokale Kopie: Änderungen sofort anzeigen, Server folgt.
@@ -89,51 +90,10 @@ export function CardGrid({ cards }: { cards: Card[] }) {
     });
   }
 
-  if (!local.length) {
-    return (
-      <EmptyState
-        icon="🔍"
-        title="Keine Karten gefunden"
-        hint="Importiere welche oder ändere die Filter."
-      />
-    );
-  }
-
-  return (
-    <>
-      {/* Werkzeugleiste: Ansicht + Auswahl */}
-      <div className="flex items-center justify-between gap-3 mb-3 min-h-[32px]">
-        <div aria-live="polite" className="min-w-0">
-          {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          {selectMode && selected.size > 0 && (
-            <button
-              onClick={() => removeCards([...selected])}
-              disabled={busy}
-              className="bg-red-600 hover:bg-red-500 transition rounded-lg px-3 h-8 text-xs font-medium disabled:opacity-50"
-            >
-              {selected.size} löschen
-            </button>
-          )}
-          <button
-            onClick={() => {
-              setSelectMode((v) => !v);
-              setSelected(new Set());
-            }}
-            className={`rounded-lg px-3 h-8 text-xs font-medium border transition ${
-              selectMode ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
-            }`}
-          >
-            {selectMode ? "Fertig" : "Auswählen"}
-          </button>
-          <CardViewToggle mode={view} onChange={setView} allowList />
-        </div>
-      </div>
-
-      {view === "list" ? (
+  const renderCards = (items: Card[]) =>
+    view === "list" ? (
         <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
-          {local.map((card) => {
+          {items.map((card) => {
             const isSelected = selected.has(card.id);
             const unit = cardValue({ ...card, quantity: 1 });
             return (
@@ -193,7 +153,7 @@ export function CardGrid({ cards }: { cards: Card[] }) {
         </ul>
       ) : (
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3">
-        {local.map((card) => {
+        {items.map((card) => {
           const isSelected = selected.has(card.id);
           return (
             <button
@@ -259,148 +219,269 @@ export function CardGrid({ cards }: { cards: Card[] }) {
           );
         })}
       </div>
+      );
+
+  const groups = groupCards(local, groupBy);
+
+  if (!local.length) {
+    return (
+      <EmptyState
+        icon="🔍"
+        title="Keine Karten gefunden"
+        hint="Importiere welche oder ändere die Filter."
+      />
+    );
+  }
+
+  return (
+    <>
+      {/* Werkzeugleiste: Ansicht + Auswahl */}
+      <div className="flex items-center justify-between gap-3 mb-3 min-h-[32px]">
+        <div aria-live="polite" className="min-w-0">
+          {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          {selectMode && selected.size > 0 && (
+            <button
+              onClick={() => removeCards([...selected])}
+              disabled={busy}
+              className="bg-red-600 hover:bg-red-500 transition rounded-lg px-3 h-8 text-xs font-medium disabled:opacity-50"
+            >
+              {selected.size} löschen
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+            className={`rounded-lg px-3 h-8 text-xs font-medium border transition ${
+              selectMode ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
+            }`}
+          >
+            {selectMode ? "Fertig" : "Auswählen"}
+          </button>
+          <CardViewToggle mode={view} onChange={setView} allowList />
+        </div>
+      </div>
+
+      {groups.length === 1 && groupBy === "none" ? (
+        renderCards(groups[0].cards)
+      ) : (
+        <div className="space-y-6">
+          {groups.map((g) => (
+            <section key={g.key} aria-label={g.label}>
+              <h3 className="flex items-baseline justify-between gap-3 mb-2 px-0.5">
+                <span className="text-sm font-semibold text-zinc-200">
+                  {g.label} <span className="ml-1 text-xs font-normal text-zinc-500 tabular-nums">{g.count}</span>
+                </span>
+                <span className="text-xs tabular-nums text-emerald-400">{formatEur(g.value)}</span>
+              </h3>
+              {renderCards(g.cards)}
+            </section>
+          ))}
+        </div>
       )}
 
-      {/* Editor-Overlay */}
+      {/* Kartendetail: großes Bild, Preise, Kartentext, Bestand bearbeiten */}
       {editing && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={`${editing.name} bearbeiten`}
+          aria-label={`${editing.name} – Details`}
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
           onClick={() => !busy && setEditing(null)}
         >
           <div
-            className="bg-zinc-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-5 w-full sm:max-w-sm space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl"
+            className="relative bg-zinc-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92dvh] overflow-y-auto shadow-2xl pb-[env(safe-area-inset-bottom)] animate-[sheet_200ms_ease-out] sm:animate-none"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start gap-3">
-              {editing.image_url && (
-                <button
-                  onClick={() => setPreview(editing)}
-                  aria-label={`${editing.name} groß anzeigen`}
-                  className="focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-md"
-                >
-                  <Image
-                    src={editing.image_url}
-                    alt={editing.name}
-                    width={72}
-                    height={100}
-                    className="rounded-md"
-                  />
-                </button>
-              )}
-              <div>
-                <p className="font-medium">{editing.name}</p>
-                {editing.name_de && <p className="text-sm text-zinc-400">{editing.name_de}</p>}
-                <p className="text-xs text-zinc-500">
-                  {editing.set_code?.toUpperCase()} ·{" "}
-                  {formatEur(cardValue({ ...editing, quantity: 1 }))}
-                  {editing.condition !== "NM" && (
-                    <span className="text-amber-400"> (zustandsbereinigt)</span>
-                  )}
-                </p>
-                {editing.image_url && (
-                  <p className="text-[11px] text-zinc-600 mt-1">
-                    Bild antippen für Großansicht
-                  </p>
-                )}
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/95 backdrop-blur border-b border-white/5">
+              <div className="min-w-0">
+                <p className="font-semibold truncate">{editing.name}</p>
+                {editing.name_de && <p className="text-xs text-zinc-400 truncate">{editing.name_de}</p>}
               </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Menge</span>
-              <div className="flex items-center gap-3">
-                <button
-                  disabled={busy}
-                  onClick={() => patch(editing, { quantity: editing.quantity - 1 })}
-                  aria-label="Menge verringern"
-                  className="w-8 h-8 rounded-md bg-zinc-800 text-lg disabled:opacity-50"
-                >
-                  −
-                </button>
-                <span className="w-6 text-center" aria-live="polite">
-                  {editing.quantity}
-                </span>
-                <button
-                  disabled={busy}
-                  onClick={() => patch(editing, { quantity: editing.quantity + 1 })}
-                  aria-label="Menge erhöhen"
-                  className="w-8 h-8 rounded-md bg-zinc-800 text-lg disabled:opacity-50"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-400">Foil</span>
-              <button
-                disabled={busy}
-                onClick={() => patch(editing, { foil: !editing.foil })}
-                className={`text-xs rounded-full px-3 py-1 border transition ${
-                  editing.foil
-                    ? "bg-emerald-900/40 text-emerald-300 border-emerald-800"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                }`}
-              >
-                {editing.foil ? "Foil ✓" : "Als Foil markieren"}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-zinc-400" htmlFor="cond">
-                Zustand
-              </label>
-              <select
-                id="cond"
-                disabled={busy}
-                value={editing.condition}
-                onChange={(e) => patch(editing, { condition: e.target.value })}
-                className="rounded-md bg-zinc-800 px-2 py-1.5 text-sm outline-none"
-              >
-                <option value="NM">Near Mint (NM)</option>
-                <option value="LP">Lightly Played (LP)</option>
-                <option value="MP">Moderately Played (MP)</option>
-                <option value="HP">Heavily Played (HP)</option>
-                <option value="DMG">Damaged (DMG)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-zinc-400" htmlFor="lang">
-                Sprache
-              </label>
-              <select
-                id="lang"
-                disabled={busy}
-                value={editing.language}
-                onChange={(e) => patch(editing, { language: e.target.value })}
-                className="rounded-md bg-zinc-800 px-2 py-1.5 text-sm outline-none"
-              >
-                <option value="EN">Englisch (EN)</option>
-                <option value="DE">Deutsch (DE)</option>
-                <option value="FR">Französisch (FR)</option>
-                <option value="IT">Italienisch (IT)</option>
-                <option value="ES">Spanisch (ES)</option>
-                <option value="JA">Japanisch (JA)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
-              <button
-                disabled={busy}
-                onClick={() => removeCards([editing.id])}
-                className="text-red-400 hover:underline text-sm disabled:opacity-50"
-              >
-                Aus Sammlung entfernen
-              </button>
               <button
                 onClick={() => setEditing(null)}
-                className="text-zinc-400 hover:underline text-sm"
+                aria-label="Schließen"
+                className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/15"
               >
-                Schließen
+                ✕
               </button>
+            </div>
+
+            <div className="p-4 grid gap-5 sm:grid-cols-[minmax(0,240px)_1fr]">
+              {/* Bild */}
+              <div className="mx-auto w-56 sm:w-full">
+                {editing.image_url ? (
+                  <button
+                    onClick={() => setPreview(editing)}
+                    aria-label={`${editing.name} groß anzeigen`}
+                    className="relative block w-full rounded-[4.75%/3.5%] overflow-hidden shadow-xl shadow-black/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    <Image src={editing.image_url} alt={editing.name} width={488} height={680} className="w-full h-auto" />
+                    {editing.foil && (
+                      <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/20 via-transparent to-cyan-300/25 mix-blend-screen" aria-hidden />
+                    )}
+                  </button>
+                ) : (
+                  <div className="aspect-[244/340] rounded-xl bg-zinc-800 grid place-items-center text-zinc-500 text-sm p-3 text-center">
+                    {editing.name}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4 min-w-0">
+                {/* Kartendaten */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm text-zinc-300">{editing.type_line}</p>
+                    <ManaCost cost={editing.mana_cost} />
+                  </div>
+                  <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <RarityDot rarity={editing.rarity} />
+                    <span className="uppercase">{editing.set_code}</span>
+                    {editing.collector_number && <span>#{editing.collector_number}</span>}
+                    {editing.rarity && <span className="capitalize">· {editing.rarity}</span>}
+                  </p>
+                  {editing.oracle_text && (
+                    <p className="text-sm text-zinc-300 whitespace-pre-line rounded-xl bg-white/5 px-3 py-2 leading-relaxed">
+                      {editing.oracle_text}
+                    </p>
+                  )}
+                </div>
+
+                {/* Preise */}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <PriceTile label="Normal" value={editing.price_eur} active={!editing.foil} />
+                  <PriceTile label="Foil" value={editing.price_eur_foil} active={editing.foil} />
+                  <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-2 py-2">
+                    <p className="text-sm font-semibold tabular-nums text-emerald-400">{formatEur(cardValue(editing))}</p>
+                    <p className="text-[11px] text-zinc-400">Dein Bestand</p>
+                  </div>
+                </div>
+                {editing.condition !== "NM" && (
+                  <p className="text-[11px] text-amber-400 -mt-2">Bestandswert zustandsbereinigt ({editing.condition}).</p>
+                )}
+
+                {/* Bestand */}
+                <div className="rounded-xl bg-white/5 divide-y divide-white/5">
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-sm text-zinc-300">Anzahl</span>
+                    <div className="flex items-center gap-1 rounded-full bg-black/30 p-1">
+                      <button
+                        disabled={busy}
+                        onClick={() => patch(editing, { quantity: editing.quantity - 1 })}
+                        aria-label="Menge verringern"
+                        className="grid place-items-center w-8 h-8 rounded-full bg-white/10 hover:bg-white/15 text-lg disabled:opacity-50"
+                      >
+                        −
+                      </button>
+                      <span className="w-8 text-center font-semibold tabular-nums" aria-live="polite">
+                        {editing.quantity}
+                      </span>
+                      <button
+                        disabled={busy}
+                        onClick={() => patch(editing, { quantity: editing.quantity + 1 })}
+                        aria-label="Menge erhöhen"
+                        className="grid place-items-center w-8 h-8 rounded-full bg-indigo-500 hover:bg-indigo-400 text-lg disabled:opacity-50"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-sm text-zinc-300">Foil</span>
+                    <button
+                      role="switch"
+                      aria-checked={editing.foil}
+                      disabled={busy}
+                      onClick={() => patch(editing, { foil: !editing.foil })}
+                      className={`relative w-11 h-6 rounded-full transition ${editing.foil ? "bg-fuchsia-500" : "bg-zinc-700"}`}
+                    >
+                      <span
+                        className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${editing.foil ? "left-[1.375rem]" : "left-0.5"}`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <label className="text-sm text-zinc-300" htmlFor="cond">
+                      Zustand
+                    </label>
+                    <select
+                      id="cond"
+                      disabled={busy}
+                      value={editing.condition}
+                      onChange={(e) => patch(editing, { condition: e.target.value })}
+                      className="rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-sm outline-none"
+                    >
+                      <option value="NM">Near Mint (NM)</option>
+                      <option value="LP">Lightly Played (LP)</option>
+                      <option value="MP">Moderately Played (MP)</option>
+                      <option value="HP">Heavily Played (HP)</option>
+                      <option value="DMG">Damaged (DMG)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <label className="text-sm text-zinc-300" htmlFor="lang">
+                      Sprache
+                    </label>
+                    <select
+                      id="lang"
+                      disabled={busy}
+                      value={editing.language}
+                      onChange={(e) => patch(editing, { language: e.target.value })}
+                      className="rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-sm outline-none"
+                    >
+                      <option value="EN">Englisch (EN)</option>
+                      <option value="DE">Deutsch (DE)</option>
+                      <option value="FR">Französisch (FR)</option>
+                      <option value="IT">Italienisch (IT)</option>
+                      <option value="ES">Spanisch (ES)</option>
+                      <option value="JA">Japanisch (JA)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Links */}
+                <div className="flex flex-wrap gap-2 text-sm">
+                  <a
+                    href={`https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(editing.name)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full bg-white/5 border border-white/10 hover:border-white/20 px-3 py-1.5"
+                  >
+                    Cardmarket ↗
+                  </a>
+                  <a
+                    href={
+                      editing.set_code && editing.collector_number
+                        ? `https://scryfall.com/card/${editing.set_code}/${encodeURIComponent(editing.collector_number)}`
+                        : `https://scryfall.com/search?q=${encodeURIComponent(`!"${editing.name}"`)}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full bg-white/5 border border-white/10 hover:border-white/20 px-3 py-1.5"
+                  >
+                    Scryfall ↗
+                  </a>
+                </div>
+
+                {editing.price_updated_at && (
+                  <p className="text-[11px] text-zinc-600">Preisstand: {formatDate(editing.price_updated_at)}</p>
+                )}
+
+                <button
+                  disabled={busy}
+                  onClick={() => removeCards([editing.id])}
+                  className="w-full rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 py-2.5 text-sm disabled:opacity-50"
+                >
+                  Aus Sammlung entfernen
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -430,5 +511,16 @@ export function CardGrid({ cards }: { cards: Card[] }) {
         </div>
       )}
     </>
+  );
+}
+
+function PriceTile({ label, value, active }: { label: string; value: number | null; active: boolean }) {
+  return (
+    <div className={`rounded-xl px-2 py-2 border ${active ? "bg-white/10 border-white/20" : "bg-white/5 border-transparent"}`}>
+      <p className={`text-sm font-semibold tabular-nums ${active ? "text-white" : "text-zinc-400"}`}>
+        {value != null ? formatEur(value) : "–"}
+      </p>
+      <p className="text-[11px] text-zinc-500">{label}</p>
+    </div>
   );
 }
