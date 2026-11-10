@@ -12,7 +12,7 @@
 // Karten- und Preisdaten werden bewusst NICHT dauerhaft gecacht, da sie
 // sich ändern – die App ist online gedacht, offline gibt es einen Hinweis.
 
-const CACHE = "magic-collection-v2";
+const CACHE = "magic-collection-v3";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/icon-512.png"];
 
@@ -50,17 +50,21 @@ self.addEventListener("fetch", (event) => {
   // Alles andere (RSC-Fetches, API-Routen, Bilder von Scryfall etc.)
   // immer frisch vom Netz laden, um veraltete Daten zu vermeiden.
   const url = new URL(request.url);
+  // /ocr/<version>/: Texterkennung (Version im Pfad → ebenfalls unveränderlich)
   const isBuildAsset =
     url.origin === self.location.origin &&
-    url.pathname.startsWith("/_next/static/");
+    (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/ocr/"));
 
   if (isBuildAsset) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
+          // Nur erfolgreiche Antworten dauerhaft merken
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
+          }
           return res;
         });
       })

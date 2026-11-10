@@ -9,5 +9,11 @@ export default async function ScanPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  return <ScanClient />;
+  // Decks als mögliches Ziel für gescannte Karten
+  const { data: decks } = await supabase
+    .from("decks")
+    .select("id, name")
+    .order("created_at", { ascending: false });
+
+  return <ScanClient decks={decks ?? []} />;
 }

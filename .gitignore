@@ -4,3 +4,6 @@ node_modules
 .env
 *.log
 .DS_Store
+
+# Texterkennung, wird vor dev/build aus node_modules kopiert
+public/ocr/
