@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Worker } from "tesseract.js";
 import { formatEur } from "@/lib/format";
+import { PrintPicker } from "@/components/ui/PrintPicker";
 import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type OcrLine } from "@/lib/ocr";
 import { coverGuide, type Rect } from "@/lib/scanGeometry";
 import { initialWatch, markScanned, toGray, watchFrame, type WatchState } from "@/lib/frameWatch";
@@ -135,7 +136,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [printPicker, setPrintPicker] = useState<{ key: string; prints: ScanMatch[] | null } | null>(null);
+  const [printFor, setPrintFor] = useState<string | null>(null); // Stapel-Schlüssel
   const [saving, setSaving] = useState<{ done: number; total: number } | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
@@ -319,7 +320,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     async function tick() {
       if (stopped) return;
       const video = videoRef.current;
-      if (video?.videoWidth && !scanningRef.current && !printPicker && !sheetOpen) {
+      if (video?.videoWidth && !scanningRef.current && !printFor && !sheetOpen) {
         const g = guide!.video;
         ctx.drawImage(
           video,
@@ -359,7 +360,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     };
     // scanFrame/prefs absichtlich aus dem Abschluss: Neustart nur bei Kamera/Rahmen/Modus
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraOn, prefs.auto, guide, printPicker, sheetOpen]);
+  }, [cameraOn, prefs.auto, guide, printFor, sheetOpen]);
 
   // Foto/Galerie
   async function scanFromFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -408,42 +409,6 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     setScanning(false);
     if (match) accept(match);
     else setStatus(`Keine Karte für „${name}“ gefunden.`);
-  }
-
-  // Andere Drucke derselben Karte (direkt bei Scryfall, neueste zuerst).
-  async function openPrints(item: ScanItem) {
-    setPrintPicker({ key: item.key, prints: null });
-    try {
-      const q = new URLSearchParams({ q: `!"${item.name.replace(/"/g, "")}"`, unique: "prints", order: "released" });
-      const res = await fetch(`https://api.scryfall.com/cards/search?${q}`);
-      const data = await res.json();
-      type Raw = {
-        id: string;
-        name: string;
-        set: string;
-        set_name: string;
-        collector_number: string;
-        type_line: string;
-        prices?: { eur?: string | null; eur_foil?: string | null };
-        image_uris?: { normal?: string };
-        card_faces?: { image_uris?: { normal?: string } }[];
-      };
-      const prints: ScanMatch[] = ((data.data ?? []) as Raw[]).map((c) => ({
-        id: c.id,
-        name: c.name,
-        imageUrl: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal ?? null,
-        eur: c.prices?.eur ? parseFloat(c.prices.eur) : null,
-        eurFoil: c.prices?.eur_foil ? parseFloat(c.prices.eur_foil) : null,
-        typeLine: c.type_line,
-        set: c.set,
-        setName: c.set_name,
-        collectorNumber: c.collector_number,
-        exact: true,
-      }));
-      setPrintPicker({ key: item.key, prints });
-    } catch {
-      setPrintPicker({ key: item.key, prints: [] });
-    }
   }
 
   // Speichern: in Paketen, mit Wiederholung bei Netz-/Scryfall-Fehlern.
@@ -554,7 +519,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       stack={stack}
       onQty={(k, q) => setStack((s) => setQuantity(s, k, q))}
       onFoil={(k, f) => setStack((s) => updateItem(s, k, { foil: f }))}
-      onPrints={openPrints}
+      onPrints={(item) => setPrintFor(item.key)}
     />
   );
 
@@ -807,52 +772,16 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       )}
 
       {/* Druck auswählen */}
-      {printPicker && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70" onClick={() => setPrintPicker(null)}>
-          <div
-            className="w-full sm:max-w-lg max-h-[85dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-zinc-900 border border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">Druck wählen</h2>
-              <button onClick={() => setPrintPicker(null)} aria-label="Schließen" className="w-9 h-9 rounded-full bg-white/10">
-                ✕
-              </button>
-            </div>
-            {printPicker.prints == null ? (
-              <p className="text-sm text-zinc-400">Lade Drucke…</p>
-            ) : printPicker.prints.length === 0 ? (
-              <p className="text-sm text-zinc-400">Keine weiteren Drucke gefunden.</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {printPicker.prints.map((p) => {
-                  const current = stack.find((s) => s.key === printPicker.key)?.id === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        setStack((s) => updateItem(s, printPicker.key, { print: p }));
-                        setPrintPicker(null);
-                      }}
-                      className={`text-left rounded-lg overflow-hidden border ${current ? "border-emerald-400 ring-2 ring-emerald-500/50" : "border-white/10"}`}
-                    >
-                      {p.imageUrl ? (
-                        <Image src={p.imageUrl} alt={p.name} width={146} height={204} className="w-full h-auto" />
-                      ) : (
-                        <div className="aspect-[63/88] bg-zinc-800" />
-                      )}
-                      <span className="block px-1.5 py-1 text-[10px] leading-tight">
-                        <span className="block truncate text-zinc-300">{p.setName}</span>
-                        <span className="text-zinc-500 uppercase">{p.set} #{p.collectorNumber}</span>
-                        <span className="block text-emerald-400">{p.eur != null ? formatEur(p.eur) : "–"}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+      {printFor && stack.find((x) => x.key === printFor) && (
+        <PrintPicker
+          name={stack.find((x) => x.key === printFor)!.name}
+          currentId={stack.find((x) => x.key === printFor)!.id}
+          onPick={(p) => {
+            setStack((s) => updateItem(s, printFor, { print: p }));
+            setPrintFor(null);
+          }}
+          onClose={() => setPrintFor(null)}
+        />
       )}
     </main>
   );

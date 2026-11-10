@@ -11,6 +11,7 @@ import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card } from "@/lib/types";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
+import { PrintPicker } from "@/components/ui/PrintPicker";
 
 export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?: GroupKey }) {
   const router = useRouter();
@@ -24,6 +25,9 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
   const [preview, setPreview] = useState<Card | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [printFor, setPrintFor] = useState<Card | null>(null);
+  const [printBusy, setPrintBusy] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
 
   // Mehrfachauswahl (Bulk-Aktionen)
   const [selectMode, setSelectMode] = useState(false);
@@ -53,11 +57,53 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: card.id, ...changes }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res?.ok) {
       revert("Änderung konnte nicht gespeichert werden – Stand zurückgesetzt.");
       return;
     }
+    applyServerCard(card.id, await res.json().catch(() => null));
+    router.refresh();
+  }
+
+  // Antwort des Servers übernehmen. Wurde in eine vorhandene Zeile
+  // zusammengelegt (gleicher Druck + Foil gab es schon), verschwindet die
+  // alte Zeile und die Detailansicht zeigt die zusammengelegte.
+  function applyServerCard(oldId: string, data: { card?: Card; mergedInto?: string } | null) {
+    const card = data?.card;
+    if (!card) return;
+    setLocal((prev) => {
+      const without = data?.mergedInto ? prev.filter((c) => c.id !== oldId) : prev;
+      return without.some((c) => c.id === card.id)
+        ? without.map((c) => (c.id === card.id ? card : c))
+        : without.map((c) => (c.id === oldId ? card : c));
+    });
+    setEditing((e) => (e && (e.id === oldId || e.id === card.id) ? card : e));
+  }
+
+  // Druck wechseln (nicht optimistisch: Server prüft und legt ggf. zusammen).
+  async function changePrint(card: Card, scryfallId: string) {
+    setPrintBusy(true);
+    setPrintError(null);
+    let res: Response | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      res = await fetch("/api/cards", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: card.id, scryfallId }),
+      }).catch(() => null);
+      // Nur bei "Scryfall kurz weg" erneut – sonst ist die Antwort endgültig.
+      if (res && res.status !== 503) break;
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+    const data = await res?.json().catch(() => null);
+    setPrintBusy(false);
+    if (!res?.ok) {
+      setPrintError(data?.error ?? "Druck konnte nicht geändert werden – bitte erneut versuchen.");
+      return;
+    }
+    applyServerCard(card.id, data);
+    setPrintFor(null);
     router.refresh();
   }
 
@@ -303,7 +349,7 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
           subtitle={editing.name_de || undefined}
           label={`${editing.name} – Details`}
           closeDisabled={busy}
-          keyboardDisabled={!!preview}
+          keyboardDisabled={!!preview || !!printFor}
         >
             <div className="px-4 pt-3 pb-4 sm:p-4 grid gap-4 sm:gap-5 sm:grid-cols-[minmax(0,260px)_1fr]">
               {/* Bild */}
@@ -339,6 +385,16 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
                     {editing.collector_number && <span>#{editing.collector_number}</span>}
                     {editing.rarity && <span className="capitalize">· {editing.rarity}</span>}
                   </p>
+                  <button
+                    onClick={() => {
+                      setPrintError(null);
+                      setPrintFor(editing);
+                    }}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 hover:border-white/25 px-3 py-1.5 text-xs disabled:opacity-50"
+                  >
+                    Druck / Edition ändern
+                  </button>
                   {editing.oracle_text && (
                     <p className="text-sm text-zinc-300 whitespace-pre-line rounded-xl bg-white/5 px-3 py-2 leading-relaxed">
                       {editing.oracle_text}
@@ -479,6 +535,17 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
               </div>
             </div>
         </SwipeSheet>
+      )}
+
+      {printFor && (
+        <PrintPicker
+          name={printFor.name}
+          currentId={printFor.scryfall_id}
+          busy={printBusy}
+          error={printError}
+          onPick={(p) => void changePrint(printFor, p.id)}
+          onClose={() => setPrintFor(null)}
+        />
       )}
 
       {/* Großansicht (Kartenvorschau) */}

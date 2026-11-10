@@ -3,6 +3,8 @@
 
 export type ScryfallCard = {
   id: string;
+  // gleiche Karte über alle Drucke hinweg (bei manchen Layouts nur in card_faces)
+  oracle_id?: string;
   name: string;
   set: string;
   collector_number: string;
@@ -30,6 +32,7 @@ export type ScryfallCard = {
   };
   // Bei doppelseitigen Karten (Modal DFC) liegen Bilder pro Seite vor
   card_faces?: Array<{
+    oracle_id?: string;
     image_uris?: { small: string; normal: string; large: string; png: string };
   }>;
 };
