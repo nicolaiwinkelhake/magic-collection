@@ -42,7 +42,7 @@ export default async function RootLayout({
 
   return (
     <html lang="de">
-      <body>
+      <body className={user ? "has-tabbar" : undefined}>
         <AppNav email={user?.email ?? null} />
         {children}
         <PWAProvider />
