@@ -6,7 +6,8 @@ import Image from "next/image";
 import type { Worker } from "tesseract.js";
 import { getInfoWorker, getNameWorker, terminateAll, warmUp } from "@/lib/ocrEngine";
 import { detectCard } from "@/lib/cardDetect";
-import { cardHash, pickBest, type CardHash } from "@/lib/imageHash";
+import { pickBest, type CardHash } from "@/lib/imageHash";
+import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
 import { loadPrints } from "@/components/ui/PrintPicker";import { formatEur } from "@/lib/format";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type OcrLine } from "@/lib/ocr";
@@ -40,43 +41,11 @@ const MIN_OCR_HEIGHT = 140;
 const THUMB_W = 32;
 const THUMB_H = 45;
 const DETECT_W = 120; // Breite des Suchbilds für die Kartenkanten
-const HASH_W = 63; // Bildvergleich auf 63×88 (Kartenformat)
-const HASH_H = 88;
 const MAX_HASH_PRINTS = 40;
 
 // Treffer und Bild-Fingerabdrücke je Sitzung merken (gleiche Karte erneut = sofort)
 const resolveCache = new Map<string, ScanMatch | null>();
-const printHashCache = new Map<string, CardHash | null>();
 
-function grayOf(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, w: number, h: number) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d", { willReadFrequently: true })!;
-  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, w, h);
-  return toGray(ctx.getImageData(0, 0, w, h).data);
-}
-
-// Bild eines Drucks über den eigenen Bild-Proxy laden (gleiche Herkunft →
-// Pixel lesbar) und als Fingerabdruck merken.
-async function printHash(id: string, imageUrl: string | null): Promise<CardHash | null> {
-  if (printHashCache.has(id)) return printHashCache.get(id)!;
-  if (!imageUrl) return null;
-  const hash = await new Promise<CardHash | null>((resolve) => {
-    const img = new window.Image();
-    img.onload = () => {
-      try {
-        resolve(cardHash(grayOf(img, 0, 0, img.naturalWidth, img.naturalHeight, HASH_W, HASH_H), HASH_W, HASH_H));
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = `/api/card-image?url=${encodeURIComponent(imageUrl)}`;
-  });
-  printHashCache.set(id, hash);
-  return hash;
-}
 const STACK_KEY = "scan-stack-v1";
 const PREFS_KEY = "scan-prefs-v1";
 
@@ -318,8 +287,10 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     return { match: null, read: names[0] ?? "" };
   }
 
-  function accept(match: ScanMatch, foil = prefsRef.current.foil) {
-    setStack((s) => addScan(s, match, foil));
+  function accept(match: ScanMatch, foil = prefsRef.current.foil, camHash?: CardHash) {
+    // Fingerabdruck nur merken, wenn der Druck nicht sicher ist (spart Speicher)
+    const keep = !match.exact && camHash ? Array.from(camHash) : undefined;
+    setStack((s) => addScan(s, match, foil, Date.now(), keep));
     setSuggestions([]);
     setManualName("");
     setStatus(null);
@@ -367,11 +338,11 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       // Gefundene Karte bevorzugen, sonst den festen Rahmen
       const card = detectedRef.current?.video ?? guide.video;
       // Bild der Karte sofort festhalten (für den Bildvergleich der Drucke)
-      const camHash = cardHash(grayOf(video, card.x * W, card.y * H, card.w * W, card.h * H, HASH_W, HASH_H), HASH_W, HASH_H);
+      const camHash = hashOf(video, card.x * W, card.y * H, card.w * W, card.h * H);
       const { names, info } = await readCard(video, card, W, H);
       const { match, read } = await resolveCandidates(names, info, !auto);
       if (match) {
-        accept(match);
+        accept(match, prefsRef.current.foil, camHash);
         if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
         return true;
       }
@@ -900,6 +871,10 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
         <PrintPicker
           name={stack.find((x) => x.key === printFor)!.name}
           currentId={stack.find((x) => x.key === printFor)!.id}
+          reference={(() => {
+            const h = stack.find((x) => x.key === printFor)!.camHash;
+            return h ? Uint8Array.from(h) : undefined;
+          })()}
           onPick={(p) => {
             setStack((s) => updateItem(s, printFor, { print: p }));
             setPrintFor(null);
@@ -1000,7 +975,13 @@ function StackList({
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{s.name}</p>
             <button onClick={() => onPrints(s)} className="text-xs text-zinc-500 hover:text-zinc-300 truncate max-w-full text-left">
-              <span className="uppercase">{s.set}</span> #{s.collectorNumber} · Druck ändern
+              <span className="uppercase">{s.set}</span> #{s.collectorNumber} ·{" "}
+              {s.exact ? (
+                "Druck ändern"
+              ) : (
+                // Set/Nummer nicht gelesen und Bildvergleich nicht eindeutig
+                <span className="rounded-full bg-amber-400/15 text-amber-300 px-1.5">Druck prüfen</span>
+              )}
             </button>
             <div className="mt-1 flex items-center gap-2">
               <button
