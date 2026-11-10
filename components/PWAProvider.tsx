@@ -72,12 +72,12 @@ export function PWAProvider() {
         position: "fixed",
         left: 12,
         right: 12,
-        bottom: 12,
-        zIndex: 50,
+        zIndex: 40,
         maxWidth: 420,
         margin: "0 auto",
       }}
-      className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 shadow-lg"
+      // Auf Handy/Tablet über der Tab-Leiste, sonst unten am Rand.
+      className="bottom-3 max-lg:bottom-[calc(5rem+env(safe-area-inset-bottom))] bg-zinc-900 border border-zinc-700 rounded-xl p-4 shadow-lg"
     >
       <div className="flex items-start gap-3">
         <span className="text-2xl">🪄</span>

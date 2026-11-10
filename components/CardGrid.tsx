@@ -10,6 +10,7 @@ import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/Card
 import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card } from "@/lib/types";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
+import { SwipeSheet } from "@/components/ui/SwipeSheet";
 
 export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?: GroupKey }) {
   const router = useRouter();
@@ -81,6 +82,10 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
     router.refresh();
   }
 
+  function openCard(card: Card) {
+    setEditing(card);
+  }
+
   function toggleSelected(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -99,7 +104,7 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
             return (
               <li key={card.id}>
                 <button
-                  onClick={() => (selectMode ? toggleSelected(card.id) : setEditing(card))}
+                  onClick={() => (selectMode ? toggleSelected(card.id) : openCard(card))}
                   aria-label={
                     selectMode
                       ? `${card.name} ${isSelected ? "abwählen" : "auswählen"}`
@@ -159,7 +164,7 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
             <button
               key={card.id}
               onClick={() =>
-                selectMode ? toggleSelected(card.id) : setEditing(card)
+                selectMode ? toggleSelected(card.id) : openCard(card)
               }
               aria-label={
                 selectMode
@@ -223,6 +228,10 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
 
   const groups = groupCards(local, groupBy);
 
+  // Durch die Sammlung blättern: Reihenfolge wie angezeigt (inkl. Gruppen).
+  const ordered = groups.flatMap((g) => g.cards);
+  const editIndex = editing ? ordered.findIndex((c) => c.id === editing.id) : -1;
+
   if (!local.length) {
     return (
       <EmptyState
@@ -284,35 +293,21 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
       )}
 
       {/* Kartendetail: großes Bild, Preise, Kartentext, Bestand bearbeiten */}
-      {editing && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${editing.name} – Details`}
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-          onClick={() => !busy && setEditing(null)}
+      {editing && editIndex >= 0 && (
+        <SwipeSheet
+          index={editIndex}
+          count={ordered.length}
+          onIndexChange={(i) => setEditing(ordered[i])}
+          onClose={() => setEditing(null)}
+          title={editing.name}
+          subtitle={editing.name_de || undefined}
+          label={`${editing.name} – Details`}
+          closeDisabled={busy}
+          keyboardDisabled={!!preview}
         >
-          <div
-            className="relative bg-zinc-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92dvh] overflow-y-auto shadow-2xl pb-[env(safe-area-inset-bottom)] animate-[sheet_200ms_ease-out] sm:animate-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-4 py-3 bg-zinc-900/95 backdrop-blur border-b border-white/5">
-              <div className="min-w-0">
-                <p className="font-semibold truncate">{editing.name}</p>
-                {editing.name_de && <p className="text-xs text-zinc-400 truncate">{editing.name_de}</p>}
-              </div>
-              <button
-                onClick={() => setEditing(null)}
-                aria-label="Schließen"
-                className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/15"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-4 grid gap-5 sm:grid-cols-[minmax(0,240px)_1fr]">
+            <div className="px-4 pt-3 pb-4 sm:p-4 grid gap-4 sm:gap-5 sm:grid-cols-[minmax(0,260px)_1fr]">
               {/* Bild */}
-              <div className="mx-auto w-56 sm:w-full">
+              <div className="mx-auto w-[78%] max-w-[300px] sm:w-full sm:max-w-none">
                 {editing.image_url ? (
                   <button
                     onClick={() => setPreview(editing)}
@@ -483,8 +478,7 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </SwipeSheet>
       )}
 
       {/* Großansicht (Kartenvorschau) */}

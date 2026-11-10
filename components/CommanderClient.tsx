@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { filterCards, type ListCard, type ListFilters } from "@/lib/commanderLists";
 import { edhrecCardLink } from "@/lib/edhrecLinks";
+import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
 import { formatEur } from "@/lib/format";
 import type { CommanderTheme } from "@/lib/commanderProfile";
 
@@ -43,6 +44,7 @@ export function CommanderClient({
   const [targetDeck, setTargetDeck] = useState<string>(decks[0]?.id ?? "");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ list: string; index: number } | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams({ name });
@@ -253,10 +255,14 @@ export function CommanderClient({
             <p className="text-sm text-zinc-500">Keine Karten für die aktuellen Filter.</p>
           ) : (
             <ul className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-              {list.cards.map((card) => (
+              {list.cards.map((card, i) => (
                 <CardTile
                   key={card.id}
                   card={card}
+                  onOpen={() => {
+                    setNotice(null);
+                    setViewing({ list: list.key, index: i });
+                  }}
                   busy={busy === card.name}
                   canAddToDeck={Boolean(targetDeck)}
                   onWishlist={() => addToWishlist(card)}
@@ -299,18 +305,89 @@ export function CommanderClient({
           </ul>
         </section>
       )}
+      {(() => {
+        const list = viewing && lists.find((l) => l.key === viewing.list);
+        const current = list?.cards[viewing?.index ?? -1];
+        if (!viewing || !list || !current) return null;
+        return (
+          <CardViewer
+            cards={list.cards.map((x) => ({
+              key: x.id,
+              name: x.name,
+              image_url: x.image,
+              type_line: x.typeLine,
+              mana_cost: x.manaCost,
+              price_eur: x.eur,
+              price_eur_foil: x.eurFoil,
+            }))}
+            index={viewing.index}
+            onIndexChange={(index) => {
+              setNotice(null);
+              setViewing({ list: list.key, index });
+            }}
+            onClose={() => setViewing(null)}
+            info={(vc) => {
+              const card = list.cards.find((x) => x.id === vc.key);
+              if (!card) return null;
+              return (
+                <div className="space-y-1 text-sm">
+                  {notice && (
+                    <p className="rounded-lg bg-emerald-500/15 text-emerald-300 px-3 py-2" aria-live="polite">
+                      {notice}
+                    </p>
+                  )}
+                  <p className="text-indigo-300">{list.label}</p>
+                  {card.gameChanger && <p className="text-amber-400">Game Changer</p>}
+                  {card.owned > 0 ? (
+                    <p className="text-emerald-400">✔ {card.owned}× in deiner Sammlung</p>
+                  ) : (
+                    <p className="text-zinc-500">Nicht in deiner Sammlung</p>
+                  )}
+                  {card.inDecks.length > 0 && <p className="text-zinc-400">In Decks: {card.inDecks.join(", ")}</p>}
+                  {card.friends.length > 0 && (
+                    <p className="text-sky-400">👥 {card.friends.map((f) => f.friendEmail.split("@")[0]).join(", ")}</p>
+                  )}
+                </div>
+              );
+            }}
+            actions={(vc) => {
+              const card = list.cards.find((x) => x.id === vc.key);
+              if (!card) return null;
+              return (
+                <>
+                  {targetDeck && card.owned > 0 && (
+                    <button onClick={() => addToDeck(card)} disabled={busy === card.name} className={viewerButton.primary}>
+                      + Deck
+                    </button>
+                  )}
+                  {card.owned === 0 && (
+                    <button onClick={() => addToWishlist(card)} disabled={busy === card.name} className={viewerButton.primary}>
+                      + Wunschliste
+                    </button>
+                  )}
+                  <a href={edhrecCardLink(card.name)} target="_blank" rel="noreferrer" className={viewerButton.secondary}>
+                    EDHREC ↗
+                  </a>
+                </>
+              );
+            }}
+          />
+        );
+      })()}
     </main>
   );
 }
 
 function CardTile({
   card,
+  onOpen,
   busy,
   canAddToDeck,
   onWishlist,
   onDeck,
 }: {
   card: ListCard;
+  onOpen: () => void;
   busy: boolean;
   canAddToDeck: boolean;
   onWishlist: () => void;
@@ -318,7 +395,11 @@ function CardTile({
 }) {
   return (
     <li className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden flex flex-col">
-      <a href={edhrecCardLink(card.name)} target="_blank" rel="noreferrer" title={`${card.name} auf EDHREC`}>
+      <button
+        onClick={onOpen}
+        aria-label={`${card.name} ansehen`}
+        className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+      >
         {card.image ? (
           <Image src={card.image} alt={card.name} width={244} height={340} className="w-full h-auto" />
         ) : (
@@ -326,7 +407,7 @@ function CardTile({
             {card.name}
           </div>
         )}
-      </a>
+      </button>
       <div className="p-2 space-y-1 text-xs flex-1 flex flex-col">
         <div className="flex justify-between gap-1">
           <span className="text-zinc-300">{card.eur !== null ? formatEur(card.eur) : "–"}</span>

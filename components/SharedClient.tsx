@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatEur } from "@/lib/format";
 import type { Card } from "@/lib/types";
 import { selectAll } from "@/lib/supabase/selectAll";
+import { CardViewer } from "@/components/ui/CardViewer";
 
 export function SharedClient({
   owners,
@@ -18,6 +19,7 @@ export function SharedClient({
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
 
   async function load(ownerId: string) {
     setSelected(ownerId);
@@ -86,10 +88,12 @@ export function SharedClient({
                 <p className="text-zinc-500 text-sm">Lade…</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {filtered.map((c) => (
-                    <div
+                  {filtered.map((c, i) => (
+                    <button
                       key={c.id}
-                      className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800"
+                      onClick={() => setViewIndex(i)}
+                      aria-label={`${c.name} ansehen`}
+                      className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 text-left hover:border-indigo-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
                       {c.image_url ? (
                         <Image src={c.image_url} alt={c.name} width={244} height={340} className="w-full h-auto" />
@@ -103,13 +107,21 @@ export function SharedClient({
                           ×{c.quantity}
                         </span>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </>
           )}
         </>
+      )}
+      {viewIndex != null && filtered[viewIndex] && (
+        <CardViewer
+          cards={filtered.map((c) => ({ ...c, key: c.id }))}
+          index={viewIndex}
+          onIndexChange={setViewIndex}
+          onClose={() => setViewIndex(null)}
+        />
       )}
     </main>
   );

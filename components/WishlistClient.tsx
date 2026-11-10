@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
+import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
 
 type WishItem = {
   id: string;
@@ -24,6 +25,7 @@ export function WishlistClient({
   const [names, setNames] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
 
   const total = items.reduce((s, i) => s + (i.price_eur ?? 0), 0);
 
@@ -105,13 +107,19 @@ export function WishlistClient({
                 key={item.id}
                 className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 group"
               >
-                {item.image_url ? (
-                  <Image src={item.image_url} alt={item.name} width={244} height={340} className="w-full h-auto" />
-                ) : (
-                  <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
-                    {item.name}
-                  </div>
-                )}
+                <button
+                  onClick={() => setViewIndex(items.indexOf(item))}
+                  aria-label={`${item.name} ansehen`}
+                  className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                >
+                  {item.image_url ? (
+                    <Image src={item.image_url} alt={item.name} width={244} height={340} className="w-full h-auto" />
+                  ) : (
+                    <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
+                      {item.name}
+                    </div>
+                  )}
+                </button>
                 <button
                   onClick={() => remove(item.id)}
                   title="Entfernen"
@@ -120,12 +128,12 @@ export function WishlistClient({
                   ✕
                 </button>
                 {item.price_eur !== null && (
-                  <div className="absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
+                  <div className="pointer-events-none absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
                     {formatEur(item.price_eur)}
                   </div>
                 )}
                 {owners?.length ? (
-                  <div className="absolute bottom-6 inset-x-0 bg-emerald-700/90 text-[10px] px-2 py-1 font-medium">
+                  <div className="pointer-events-none absolute bottom-6 inset-x-0 bg-emerald-700/90 text-[10px] px-2 py-1 font-medium">
                     ✅ {owners.map((e) => e.split("@")[0]).join(", ")} hat sie
                   </div>
                 ) : null}
@@ -133,6 +141,31 @@ export function WishlistClient({
             );
           })}
         </div>
+      )}
+      {viewIndex != null && items[viewIndex] && (
+        <CardViewer
+          cards={items.map((i) => ({ key: i.id, name: i.name, image_url: i.image_url, price_eur: i.price_eur }))}
+          index={viewIndex}
+          onIndexChange={setViewIndex}
+          onClose={() => setViewIndex(null)}
+          info={(c) => {
+            const owners = ownership[c.name];
+            return owners?.length ? (
+              <p className="text-sm text-emerald-400">✅ {owners.map((e) => e.split("@")[0]).join(", ")} hat sie</p>
+            ) : null;
+          }}
+          actions={(c) => (
+            <button
+              onClick={() => {
+                setViewIndex(null);
+                void remove(c.key);
+              }}
+              className={viewerButton.danger}
+            >
+              Von der Wunschliste entfernen
+            </button>
+          )}
+        />
       )}
     </main>
   );
