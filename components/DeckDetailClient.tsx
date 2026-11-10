@@ -30,6 +30,7 @@ import { formatEur, formatDate } from "@/lib/format";
 import type { Deck, DeckCard } from "@/lib/deckTypes";
 import { ColorIdentity, ManaCost } from "@/components/ui/Mana";
 import { groupByType } from "@/lib/deckTypeGroups";
+import { CardViewer, viewerButton, type ViewerCard } from "@/components/ui/CardViewer";
 
 const artCrop = (url: string) => url.replace("/normal/", "/art_crop/").replace("/large/", "/art_crop/");
 
@@ -57,6 +58,9 @@ export function DeckDetailClient({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<DeckTab>("analysis");
+  // Kartendetail zum Durchwischen: Deckliste bzw. Vorschläge einer Kategorie
+  const [viewKey, setViewKey] = useState<string | null>(null);
+  const [suggestView, setSuggestView] = useState<{ category: string; index: number } | null>(null);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [cardView, setCardView] = useCardView(true);
   const csvRef = useRef<HTMLInputElement>(null);
@@ -286,6 +290,25 @@ export function DeckDetailClient({
   }, [initialCards]);
 
   const typeGroups = useMemo(() => groupByType(stackedCards), [stackedCards]);
+
+  // Reihenfolge wie in der Kartenliste angezeigt (nach Typ gruppiert).
+  const viewerStacks = useMemo(() => typeGroups.flatMap((g) => g.stacks), [typeGroups]);
+  const viewerCards: ViewerCard[] = useMemo(
+    () =>
+      viewerStacks.map((stack) => ({
+        key: stack[0].id,
+        name: stack[0].name,
+        image_url: stack[0].image_url,
+        type_line: stack[0].type_line,
+        mana_cost: stack[0].mana_cost,
+        oracle_text: stack[0].oracle_text,
+        price_eur: stack[0].price_eur,
+        price_eur_foil: stack[0].price_eur_foil,
+        quantity: stack.length,
+      })),
+    [viewerStacks],
+  );
+  const viewIndex = viewKey ? viewerCards.findIndex((c) => c.key === viewKey) : -1;
 
   useEffect(() => {
     if (!initialCards.length) return;
@@ -730,18 +753,24 @@ export function DeckDetailClient({
                 Mehr {group.label}
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-                {group.cards.map((c) => (
+                {group.cards.map((c, i) => (
                   <div
                     key={c.id}
                     className="relative rounded-lg overflow-hidden bg-zinc-950 border border-zinc-800 group"
                   >
-                    {c.imageUrl ? (
-                      <Image src={c.imageUrl} alt={c.name} width={244} height={340} className="w-full h-auto" />
-                    ) : (
-                      <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-xs p-2 text-center">
-                        {c.name}
-                      </div>
-                    )}
+                    <button
+                      onClick={() => setSuggestView({ category: group.category, index: i })}
+                      aria-label={`${c.name} ansehen`}
+                      className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    >
+                      {c.imageUrl ? (
+                        <Image src={c.imageUrl} alt={c.name} width={244} height={340} className="w-full h-auto" />
+                      ) : (
+                        <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-xs p-2 text-center">
+                          {c.name}
+                        </div>
+                      )}
+                    </button>
                     <button
                       onClick={() => addSuggestion(c.name)}
                       className="absolute inset-x-0 bottom-0 bg-indigo-600/90 hover:bg-indigo-500 transition text-xs py-1.5 font-medium opacity-0 group-hover:opacity-100"
@@ -749,7 +778,7 @@ export function DeckDetailClient({
                       + Hinzufügen
                     </button>
                     {c.eur !== null && (
-                      <span className="absolute top-1 left-1 bg-black/70 text-[10px] rounded px-1.5 py-0.5">
+                      <span className="pointer-events-none absolute top-1 left-1 bg-black/70 text-[10px] rounded px-1.5 py-0.5">
                         {formatEur(c.eur)}
                       </span>
                     )}
@@ -998,6 +1027,11 @@ export function DeckDetailClient({
                       const owners = ownership[card.name];
                       return (
                         <li key={card.id} className="flex items-center gap-3 px-3 py-2">
+                          <button
+                            onClick={() => setViewKey(card.id)}
+                            aria-label={`${card.name} ansehen`}
+                            className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                          >
                           <span className="shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800">
                             {card.image_url && (
                               <Image src={card.image_url} alt="" width={40} height={56} className="w-full h-full object-cover" />
@@ -1020,6 +1054,7 @@ export function DeckDetailClient({
                               <span className="block text-xs text-zinc-500 truncate">{card.type_line}</span>
                             )}
                           </span>
+                          </button>
                           <span className="shrink-0 text-sm tabular-nums text-emerald-400">
                             {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
                           </span>
@@ -1045,7 +1080,11 @@ export function DeckDetailClient({
                       const owners = ownership[card.name];
                       return (
                         <div key={card.id} className="relative">
-                          <div className="relative rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40">
+                          <button
+                            onClick={() => setViewKey(card.id)}
+                            aria-label={`${card.name} ansehen`}
+                            className="relative block w-full rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40 transition hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                          >
                             {card.image_url ? (
                               <Image
                                 src={card.image_url}
@@ -1060,7 +1099,7 @@ export function DeckDetailClient({
                               </div>
                             )}
                             <QuantityBadge count={count} />
-                          </div>
+                          </button>
                           {!card.is_commander && (
                             <button
                               onClick={() => removeDeckCard(card.id, card.name)}
@@ -1149,6 +1188,94 @@ export function DeckDetailClient({
           )}
         </>
       )}
+      {viewIndex >= 0 && (
+        <CardViewer
+          cards={viewerCards}
+          index={viewIndex}
+          onIndexChange={(i) => setViewKey(viewerCards[i].key)}
+          onClose={() => setViewKey(null)}
+          info={(c) => {
+            const owners = ownership[c.name];
+            const isCommander = viewerStacks.find((st) => st[0].id === c.key)?.[0].is_commander;
+            return (
+              <div className="space-y-1 text-sm">
+                {isCommander && <p className="text-amber-300">♛ Commander</p>}
+                {owners?.length ? (
+                  <p className="text-sky-400">👥 {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat sie</p>
+                ) : null}
+              </div>
+            );
+          }}
+          actions={(c) => {
+            const head = viewerStacks.find((st) => st[0].id === c.key)?.[0];
+            if (!head || head.is_commander) return null;
+            return (
+              <button
+                onClick={() => {
+                  setViewKey(null);
+                  void removeDeckCard(head.id, head.name);
+                }}
+                className={viewerButton.danger}
+              >
+                {(c.quantity ?? 1) > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
+              </button>
+            );
+          }}
+        />
+      )}
+
+      {(() => {
+        const group = suggestView && suggestGroups.find((g) => g.category === suggestView.category);
+        if (!suggestView || !group || !group.cards[suggestView.index]) return null;
+        return (
+          <CardViewer
+            cards={group.cards.map((c) => ({ key: c.id, name: c.name, image_url: c.imageUrl, price_eur: c.eur }))}
+            index={suggestView.index}
+            onIndexChange={(index) => {
+              setSuggestMsg(null);
+              setSuggestView({ category: group.category, index });
+            }}
+            onClose={() => setSuggestView(null)}
+            info={(vc) => {
+              const c = group.cards.find((x) => x.id === vc.key);
+              if (!c) return null;
+              return (
+                <div className="space-y-1 text-sm">
+                  {suggestMsg && (
+                    <p
+                      className={`rounded-lg px-3 py-2 ${
+                        suggestMsg.type === "success"
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : suggestMsg.type === "error"
+                            ? "bg-red-500/15 text-red-300"
+                            : "bg-sky-500/15 text-sky-300"
+                      }`}
+                      aria-live="polite"
+                    >
+                      {suggestMsg.text}
+                    </p>
+                  )}
+                  <p className="text-indigo-300">Vorschlag: mehr {group.label}</p>
+                  {c.ownedQuantity > 0 ? (
+                    <p className="text-emerald-400">In deiner Sammlung ×{c.ownedQuantity}</p>
+                  ) : (
+                    <p className="text-zinc-500">Nicht in deiner Sammlung – landet auf der Wunschliste</p>
+                  )}
+                  {c.usedInDecks.length > 0 && <p className="text-zinc-400">In Decks: {c.usedInDecks.join(", ")}</p>}
+                  {c.friendsOwning.length > 0 && (
+                    <p className="text-sky-400">👥 {c.friendsOwning.map((f) => f.friendEmail.split("@")[0]).join(", ")}</p>
+                  )}
+                </div>
+              );
+            }}
+            actions={(vc) => (
+              <button onClick={() => void addSuggestion(vc.name)} className={viewerButton.primary}>
+                + Hinzufügen
+              </button>
+            )}
+          />
+        );
+      })()}
     </main>
   );
 }

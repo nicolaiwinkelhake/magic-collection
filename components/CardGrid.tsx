@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { formatEur, formatDate } from "@/lib/format";
@@ -10,7 +10,7 @@ import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/Card
 import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card } from "@/lib/types";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
-import { neighborIndex, swipeStep } from "@/lib/swipe";
+import { SwipeSheet } from "@/components/ui/SwipeSheet";
 
 export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?: GroupKey }) {
   const router = useRouter();
@@ -21,11 +21,6 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
 
   const [view, setView] = useCardView(true);
   const [editing, setEditing] = useState<Card | null>(null);
-  // Wischen in der Detailansicht
-  const [slideDir, setSlideDir] = useState<-1 | 0 | 1>(0);
-  const [dragX, setDragX] = useState(0);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<Card | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -88,7 +83,6 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
   }
 
   function openCard(card: Card) {
-    setSlideDir(0);
     setEditing(card);
   }
 
@@ -237,60 +231,6 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
   // Durch die Sammlung blättern: Reihenfolge wie angezeigt (inkl. Gruppen).
   const ordered = groups.flatMap((g) => g.cards);
   const editIndex = editing ? ordered.findIndex((c) => c.id === editing.id) : -1;
-  const prevCard = neighborIndex(editIndex, -1, ordered.length);
-  const nextCard = neighborIndex(editIndex, 1, ordered.length);
-
-  function step(dir: -1 | 1) {
-    const i = neighborIndex(editIndex, dir, ordered.length);
-    if (i == null) return;
-    setSlideDir(dir);
-    setEditing(ordered[i]);
-  }
-
-  // Tastatur: Pfeile blättern, Escape schließt.
-  useEffect(() => {
-    if (!editing || preview) return;
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "SELECT" || t.tagName === "INPUT")) return;
-      if (e.key === "ArrowRight") step(1);
-      else if (e.key === "ArrowLeft") step(-1);
-      else if (e.key === "Escape" && !busy) setEditing(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  // Beim Blättern wieder oben anfangen.
-  useEffect(() => {
-    sheetRef.current?.scrollTo({ top: 0 });
-  }, [editing?.id]);
-
-  function onTouchStart(e: React.TouchEvent) {
-    const t = e.touches[0];
-    touchStart.current = { x: t.clientX, y: t.clientY };
-  }
-  function onTouchMove(e: React.TouchEvent) {
-    if (!touchStart.current) return;
-    const t = e.touches[0];
-    const dx = t.clientX - touchStart.current.x;
-    const dy = t.clientY - touchStart.current.y;
-    // Nur waagerechtes Ziehen mitführen, senkrecht bleibt Scrollen.
-    if (Math.abs(dx) > Math.abs(dy) * 1.5) {
-      // Am Rand gedämpft ziehen, damit klar ist: hier geht es nicht weiter.
-      const blocked = (dx < 0 && nextCard == null) || (dx > 0 && prevCard == null);
-      setDragX(blocked ? dx / 4 : dx);
-    }
-  }
-  function onTouchEnd(e: React.TouchEvent) {
-    const start = touchStart.current;
-    touchStart.current = null;
-    setDragX(0);
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dir = swipeStep(t.clientX - start.x, t.clientY - start.y);
-    if (dir !== 0) step(dir);
-  }
 
   if (!local.length) {
     return (
@@ -353,98 +293,21 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
       )}
 
       {/* Kartendetail: großes Bild, Preise, Kartentext, Bestand bearbeiten */}
-      {editing && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${editing.name} – Details`}
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-          onClick={() => !busy && setEditing(null)}
+      {editing && editIndex >= 0 && (
+        <SwipeSheet
+          index={editIndex}
+          count={ordered.length}
+          onIndexChange={(i) => setEditing(ordered[i])}
+          onClose={() => setEditing(null)}
+          title={editing.name}
+          subtitle={editing.name_de || undefined}
+          label={`${editing.name} – Details`}
+          closeDisabled={busy}
+          keyboardDisabled={!!preview}
         >
-          {/* Blättern-Pfeile neben dem Fenster (Desktop) */}
-          {prevCard != null && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                step(-1);
-              }}
-              aria-label="Vorherige Karte"
-              className="hidden sm:grid absolute left-4 top-1/2 -translate-y-1/2 place-items-center w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-2xl"
-            >
-              ‹
-            </button>
-          )}
-          {nextCard != null && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                step(1);
-              }}
-              aria-label="Nächste Karte"
-              className="hidden sm:grid absolute right-4 top-1/2 -translate-y-1/2 place-items-center w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-2xl"
-            >
-              ›
-            </button>
-          )}
-          <div
-            ref={sheetRef}
-            className="relative bg-zinc-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92dvh] overflow-y-auto overflow-x-hidden shadow-2xl pb-[env(safe-area-inset-bottom)] animate-[sheet_200ms_ease-out] sm:animate-none"
-            onClick={(e) => e.stopPropagation()}
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-            onTouchCancel={() => {
-              touchStart.current = null;
-              setDragX(0);
-            }}
-          >
-            <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-3 bg-zinc-900/95 backdrop-blur border-b border-white/5">
-              <button
-                onClick={() => step(-1)}
-                disabled={prevCard == null}
-                aria-label="Vorherige Karte"
-                className="sm:hidden shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10 text-xl disabled:opacity-30"
-              >
-                ‹
-              </button>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold truncate">{editing.name}</p>
-                <p className="text-xs text-zinc-500 truncate">
-                  {editIndex + 1} / {ordered.length}
-                  {editing.name_de ? ` · ${editing.name_de}` : ""}
-                </p>
-              </div>
-              <button
-                onClick={() => step(1)}
-                disabled={nextCard == null}
-                aria-label="Nächste Karte"
-                className="sm:hidden shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10 text-xl disabled:opacity-30"
-              >
-                ›
-              </button>
-              <button
-                onClick={() => setEditing(null)}
-                aria-label="Schließen"
-                className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/15"
-              >
-                ✕
-              </button>
-            </div>
-            <div
-              key={editing.id}
-              style={dragX ? { transform: `translateX(${dragX}px)`, transition: "none" } : undefined}
-              className={`transition-transform duration-200 ${
-                slideDir === 1
-                  ? "animate-[swipe-from-right_180ms_ease-out]"
-                  : slideDir === -1
-                    ? "animate-[swipe-from-left_180ms_ease-out]"
-                    : ""
-              }`}
-            >
-
-            <div className="p-4 grid gap-5 sm:grid-cols-[minmax(0,240px)_1fr]">
+            <div className="px-4 pt-3 pb-4 sm:p-4 grid gap-4 sm:gap-5 sm:grid-cols-[minmax(0,260px)_1fr]">
               {/* Bild */}
-              <div className="mx-auto w-56 sm:w-full">
+              <div className="mx-auto w-[78%] max-w-[300px] sm:w-full sm:max-w-none">
                 {editing.image_url ? (
                   <button
                     onClick={() => setPreview(editing)}
@@ -615,9 +478,7 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
                 </button>
               </div>
             </div>
-            </div>
-          </div>
-        </div>
+        </SwipeSheet>
       )}
 
       {/* Großansicht (Kartenvorschau) */}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
+import { CardViewer } from "@/components/ui/CardViewer";
 
 type CardRow = {
   scryfall_id: string;
@@ -27,6 +28,7 @@ type Row = {
 export function SetsClient({ rows }: { rows: Row[] }) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ code: string; index: number } | null>(null);
 
   const filtered = rows.filter(
     (r) =>
@@ -95,8 +97,13 @@ export function SetsClient({ rows }: { rows: Row[] }) {
                 {isOpen && (
                   <div className="border-t border-zinc-800 p-3">
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                      {r.cards.map((c) => (
-                        <div key={c.scryfall_id + String(c.foil)} className="relative rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700">
+                      {r.cards.map((c, i) => (
+                        <button
+                          key={c.scryfall_id + String(c.foil)}
+                          onClick={() => setViewing({ code: r.code, index: i })}
+                          aria-label={`${c.name} ansehen`}
+                          className="relative rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700 text-left hover:border-indigo-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                        >
                           {c.image_url ? (
                             <Image
                               src={c.image_url}
@@ -126,7 +133,7 @@ export function SetsClient({ rows }: { rows: Row[] }) {
                               <span className="text-zinc-400 ml-1 shrink-0">{formatEur(c.price_eur)}</span>
                             )}
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -136,6 +143,18 @@ export function SetsClient({ rows }: { rows: Row[] }) {
           })}
         </div>
       )}
+      {(() => {
+        const set = viewing && rows.find((r) => r.code === viewing.code);
+        if (!viewing || !set || !set.cards[viewing.index]) return null;
+        return (
+          <CardViewer
+            cards={set.cards.map((c) => ({ ...c, key: c.scryfall_id + String(c.foil), set_code: set.code }))}
+            index={viewing.index}
+            onIndexChange={(index) => setViewing({ code: set.code, index })}
+            onClose={() => setViewing(null)}
+          />
+        );
+      })()}
     </main>
   );
 }
