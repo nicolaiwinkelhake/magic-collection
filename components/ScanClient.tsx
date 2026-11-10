@@ -4,11 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Worker } from "tesseract.js";
-import { formatEur } from "@/lib/format";
+import { getInfoWorker, getNameWorker, terminateAll, warmUp } from "@/lib/ocrEngine";
+import { detectCard } from "@/lib/cardDetect";
+import { cardHash, pickBest, type CardHash } from "@/lib/imageHash";
+import { loadPrints } from "@/components/ui/PrintPicker";import { formatEur } from "@/lib/format";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type OcrLine } from "@/lib/ocr";
-import { coverGuide, type Rect } from "@/lib/scanGeometry";
-import { initialWatch, markScanned, toGray, watchFrame, type WatchState } from "@/lib/frameWatch";
+import { coverGuide, fromVisible, visibleRegion, type Rect } from "@/lib/scanGeometry";
+import { contrast, initialWatch, markScanned, toGray, watchFrame, WATCH, type WatchState } from "@/lib/frameWatch";
 import {
   addScan,
   setQuantity,
@@ -36,6 +39,44 @@ const INFO_AREA = { x: 0.02, y: 0.91, w: 0.53, h: 0.08 };
 const MIN_OCR_HEIGHT = 140;
 const THUMB_W = 32;
 const THUMB_H = 45;
+const DETECT_W = 120; // Breite des Suchbilds für die Kartenkanten
+const HASH_W = 63; // Bildvergleich auf 63×88 (Kartenformat)
+const HASH_H = 88;
+const MAX_HASH_PRINTS = 40;
+
+// Treffer und Bild-Fingerabdrücke je Sitzung merken (gleiche Karte erneut = sofort)
+const resolveCache = new Map<string, ScanMatch | null>();
+const printHashCache = new Map<string, CardHash | null>();
+
+function grayOf(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, w: number, h: number) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, w, h);
+  return toGray(ctx.getImageData(0, 0, w, h).data);
+}
+
+// Bild eines Drucks über den eigenen Bild-Proxy laden (gleiche Herkunft →
+// Pixel lesbar) und als Fingerabdruck merken.
+async function printHash(id: string, imageUrl: string | null): Promise<CardHash | null> {
+  if (printHashCache.has(id)) return printHashCache.get(id)!;
+  if (!imageUrl) return null;
+  const hash = await new Promise<CardHash | null>((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      try {
+        resolve(cardHash(grayOf(img, 0, 0, img.naturalWidth, img.naturalHeight, HASH_W, HASH_H), HASH_W, HASH_H));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = `/api/card-image?url=${encodeURIComponent(imageUrl)}`;
+  });
+  printHashCache.set(id, hash);
+  return hash;
+}
 const STACK_KEY = "scan-stack-v1";
 const PREFS_KEY = "scan-prefs-v1";
 
@@ -115,7 +156,8 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const workerRef = useRef<Worker | null>(null);
+  // gefundene Karte im Bild (Video- und Bildschirmkoordinaten)
+  const detectedRef = useRef<{ video: Rect; screen: Rect } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLCanvasElement | null>(null);
   const watchRef = useRef<WatchState>(initialWatch());
@@ -123,6 +165,8 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
 
   const [cameraOn, setCameraOn] = useState(false);
   const [guide, setGuide] = useState<{ video: Rect; screen: Rect } | null>(null);
+  const [detected, setDetected] = useState<Rect | null>(null); // Bildschirm, relativ
+  const [toast, setToast] = useState<string | null>(null);
   const [torch, setTorch] = useState<boolean | null>(null); // null = nicht verfügbar
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -157,7 +201,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   useEffect(() => {
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      void workerRef.current?.terminate();
+      void terminateAll();
     };
   }, []);
 
@@ -179,14 +223,15 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     return () => window.removeEventListener("resize", updateGuide);
   }, [cameraOn, updateGuide]);
 
-  // Texterkennung einmal laden und wiederverwenden (Deutsch + Englisch).
-  async function getWorker(): Promise<Worker> {
-    if (workerRef.current) return workerRef.current;
+  // Texterkennung vorladen (selbst ausgeliefert, zwei Worker parallel).
+  async function prepareOcr() {
     setStatus("Lade Texterkennung (nur beim ersten Mal)…");
-    const { createWorker } = await import("tesseract.js");
-    workerRef.current = await createWorker(["eng", "deu"]);
-    setStatus(null);
-    return workerRef.current;
+    try {
+      await warmUp();
+      setStatus(null);
+    } catch {
+      setStatus("Texterkennung konnte nicht geladen werden – Verbindung prüfen. Namen eintippen geht weiterhin.");
+    }
   }
 
   async function startCamera() {
@@ -202,7 +247,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       const caps = (track.getCapabilities?.() ?? {}) as { torch?: boolean };
       setTorch(caps.torch ? false : null);
       setCameraOn(true);
-      void getWorker();
+      void prepareOcr();
     } catch {
       setCameraError("Kamera nicht verfügbar oder nicht erlaubt. Du kannst stattdessen ein Foto auswählen.");
     }
@@ -226,18 +271,22 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     }
   }
 
-  async function ocrLines(canvas: HTMLCanvasElement): Promise<OcrLine[]> {
-    const worker = await getWorker();
+  async function ocrLines(canvas: HTMLCanvasElement, worker: Worker): Promise<OcrLine[]> {
     const { data } = await worker.recognize(canvas);
     const lines = (data.lines ?? []).map((l) => ({ text: l.text, confidence: l.confidence }));
     return lines.length ? lines : [{ text: data.text, confidence: data.confidence }];
   }
 
-  async function readInfo(source: CanvasImageSource, card: Rect, w: number, h: number): Promise<CardInfo | null> {
+  // Name und Infozeile gleichzeitig lesen (zwei Worker).
+  async function readCard(source: CanvasImageSource, card: Rect, w: number, h: number) {
+    const n = subArea(card, NAME_AREA, w, h);
     const a = subArea(card, INFO_AREA, w, h);
-    const lines = await ocrLines(regionToCanvas(source, a.sx, a.sy, a.sw, a.sh));
-    const info = parseCardInfo(lines.map((l) => l.text).join(" "));
-    return info.set || info.number ? info : null;
+    const nameCanvas = regionToCanvas(source, n.sx, n.sy, n.sw, n.sh);
+    const infoCanvas = regionToCanvas(source, a.sx, a.sy, a.sw, a.sh);
+    const [nameWorker, infoWorker] = await Promise.all([getNameWorker(), getInfoWorker()]);
+    const [nameLines, infoLines] = await Promise.all([ocrLines(nameCanvas, nameWorker), ocrLines(infoCanvas, infoWorker)]);
+    const info = parseCardInfo(infoLines.map((l) => l.text).join(" "));
+    return { names: nameCandidates(nameLines), info: info.set || info.number ? info : null };
   }
 
   async function resolve(name: string, info: CardInfo | null, suggest: boolean): Promise<ScanMatch | null> {
@@ -246,11 +295,17 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       params.set("set", info.set);
       params.set("number", info.number);
     }
+    if (info?.lang) params.set("lang", info.lang);
+    const cacheKey = params.toString();
+    if (!suggest && resolveCache.has(cacheKey)) return resolveCache.get(cacheKey)!;
     if (!suggest) params.set("suggest", "0");
     const res = await fetch(`/api/scryfall/resolve?${params}`).catch(() => null);
     const data = await res?.json().catch(() => null);
     if (suggest) setSuggestions(data?.suggestions ?? []);
-    return res?.ok && data?.id ? (data as ScanMatch) : null;
+    const match = res?.ok && data?.id ? (data as ScanMatch) : null;
+    // Nur echte Antworten merken (nicht Netzfehler)
+    if (res && (res.ok || res.status === 404)) resolveCache.set(cacheKey, match);
+    return match;
   }
 
   // Kandidaten nacheinander prüfen, erster Treffer gewinnt.
@@ -274,6 +329,32 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     navigator.vibrate?.(40);
   }
 
+  // Druck per Bildvergleich bestimmen, wenn Set/Nummer nicht lesbar waren:
+  // Fingerabdruck der Kamera gegen die Drucke dieser Karte (neueste zuerst).
+  async function refinePrint(match: ScanMatch, foil: boolean, camHash: CardHash) {
+    try {
+      const prints = (await loadPrints(match.name)).slice(0, MAX_HASH_PRINTS);
+      if (prints.length < 2) return;
+      const hashed: Array<(typeof prints)[number] & { hash: CardHash }> = [];
+      for (const p of prints) {
+        const h = await printHash(p.id, p.imageUrl);
+        if (h) hashed.push({ ...p, hash: h });
+      }
+      const best = pickBest(camHash, hashed);
+      if (!best || best.best.id === match.id) return;
+      const key = `${match.id}|${foil ? 1 : 0}`;
+      setStack((s) => {
+        const item = s.find((x) => x.key === key);
+        // nur frisch gescannte Einzelkarte umstellen, nie vorhandene Mengen
+        return item && item.quantity === 1 ? updateItem(s, key, { print: { ...best.best, exact: true } }) : s;
+      });
+      setToast(`Druck per Bild erkannt: ${best.best.setName ?? best.best.set?.toUpperCase()}`);
+      setTimeout(() => setToast(null), 2500);
+    } catch {
+      // Bildvergleich ist eine Zugabe – ohne ihn bleibt der Standarddruck
+    }
+  }
+
   // Bild aus dem Rahmen lesen. `auto`: aus der Automatik ausgelöst.
   async function scanFrame(auto: boolean): Promise<boolean> {
     const video = videoRef.current;
@@ -283,12 +364,15 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     try {
       const W = video.videoWidth;
       const H = video.videoHeight;
-      const n = subArea(guide.video, NAME_AREA, W, H);
-      const names = nameCandidates(await ocrLines(regionToCanvas(video, n.sx, n.sy, n.sw, n.sh)));
-      const info = await readInfo(video, guide.video, W, H);
+      // Gefundene Karte bevorzugen, sonst den festen Rahmen
+      const card = detectedRef.current?.video ?? guide.video;
+      // Bild der Karte sofort festhalten (für den Bildvergleich der Drucke)
+      const camHash = cardHash(grayOf(video, card.x * W, card.y * H, card.w * W, card.h * H, HASH_W, HASH_H), HASH_W, HASH_H);
+      const { names, info } = await readCard(video, card, W, H);
       const { match, read } = await resolveCandidates(names, info, !auto);
       if (match) {
         accept(match);
+        if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
         return true;
       }
       if (!auto) {
@@ -320,21 +404,44 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     async function tick() {
       if (stopped) return;
       const video = videoRef.current;
-      if (video?.videoWidth && !scanningRef.current && !printFor && !sheetOpen) {
-        const g = guide!.video;
+      const view = viewRef.current;
+      if (video?.videoWidth && view && !scanningRef.current && !printFor && !sheetOpen) {
+        // 1) Karte im sichtbaren Bild suchen
+        const vis = visibleRegion(video.videoWidth, video.videoHeight, view.clientWidth, view.clientHeight);
+        const dw = DETECT_W;
+        const dh = Math.round((DETECT_W * vis.h * video.videoHeight) / (vis.w * video.videoWidth));
+        const found = detectCard(
+          grayOf(video, vis.x * video.videoWidth, vis.y * video.videoHeight, vis.w * video.videoWidth, vis.h * video.videoHeight, dw, dh),
+          dw,
+          dh,
+        );
+        detectedRef.current = found ? { video: fromVisible(found, vis), screen: found } : null;
+        setDetected(found);
+        // 2) Ruhe-/Wechselprüfung auf dem ganzen sichtbaren Bild – das wackelt
+        //    nicht mit dem erkannten Kartenrahmen (sonst würde dieselbe Karte
+        //    mehrfach gezählt). Karte vorhanden: erkannt oder genug Kontrast
+        //    im Hilfsrahmen.
         ctx.drawImage(
           video,
-          g.x * video.videoWidth,
-          g.y * video.videoHeight,
-          g.w * video.videoWidth,
-          g.h * video.videoHeight,
+          vis.x * video.videoWidth,
+          vis.y * video.videoHeight,
+          vis.w * video.videoWidth,
+          vis.h * video.videoHeight,
           0,
           0,
           THUMB_W,
           THUMB_H,
         );
         const frame = toGray(ctx.getImageData(0, 0, THUMB_W, THUMB_H).data);
-        const r = watchFrame(watchRef.current, frame);
+        const gv = guide!.video;
+        const guideContrast = contrast(
+          grayOf(video, gv.x * video.videoWidth, gv.y * video.videoHeight, gv.w * video.videoWidth, gv.h * video.videoHeight, 24, 34),
+        );
+        // Ersatz, falls die Kanten nicht erkannt werden (z. B. weiße Karte auf
+        // hellem Tisch): sehr kontrastreicher Inhalt im Hilfsrahmen. Doppelte
+        // Schwelle, damit gemusterte Tische nicht als Karte gelten.
+        const present = Boolean(found) || guideContrast >= WATCH.minContrast * 2;
+        const r = watchFrame(watchRef.current, frame, present);
         watchRef.current = r.state;
         if (r.shouldScan) {
           const ok = await scanFrame(true);
@@ -378,16 +485,19 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       full.width = w;
       full.height = h;
       full.getContext("2d")!.drawImage(bitmap, 0, 0, w, h);
+      // Karte im Foto suchen; sonst ganzes Foto (wenn im Kartenformat) bzw.
+      // obere Hälfte zeilenweise
+      const dh = Math.round((DETECT_W * h) / w);
+      const found = detectCard(grayOf(full, 0, 0, w, h, DETECT_W, dh), DETECT_W, dh);
       const ratio = w / h;
       let result;
-      if (ratio > 0.62 && ratio < 0.82) {
-        // Foto zeigt (fast) nur die Karte → Bereiche wie im Rahmen
-        const whole: Rect = { x: 0, y: 0, w: 1, h: 1 };
-        const n = subArea(whole, NAME_AREA, w, h);
-        const names = nameCandidates(await ocrLines(regionToCanvas(full, n.sx, n.sy, n.sw, n.sh)));
-        result = await resolveCandidates(names, await readInfo(full, whole, w, h), true);
+      const card: Rect | null = found ?? (ratio > 0.62 && ratio < 0.82 ? { x: 0, y: 0, w: 1, h: 1 } : null);
+      if (card) {
+        const { names, info } = await readCard(full, card, w, h);
+        result = await resolveCandidates(names, info, true);
       } else {
-        result = await resolveCandidates(nameCandidates(await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5)), 4), null, true);
+        const lines = await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5), await getNameWorker());
+        result = await resolveCandidates(nameCandidates(lines, 4), null, true);
       }
       if (result.match) accept(result.match);
       else {
@@ -550,8 +660,9 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Karten scannen</h1>
         <p className="text-sm text-zinc-400">
-          Karte in den Rahmen legen und kurz ruhig halten – sie wird automatisch erkannt (Name, Set und Nummer) und landet
-          auf dem Stapel. Danach einfach die nächste Karte hinlegen.
+          Karte ins Bild legen und kurz ruhig halten – sie wird automatisch gefunden und erkannt (Name, Set, Nummer,
+          bei Bedarf der Druck per Bildvergleich) und landet auf dem Stapel. Danach einfach die nächste Karte hinlegen.
+          Deutsche und englische Karten.
         </p>
       </header>
 
@@ -614,33 +725,41 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
           <div ref={viewRef} className="relative flex-1 overflow-hidden">
             <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover" />
 
-            {guide && (
-              <div
-                className={`absolute rounded-[4.75%/3.5%] border-[3px] transition-colors duration-200 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] ${
-                  flash === "ok" ? "border-emerald-400" : scanning ? "border-indigo-400 animate-pulse" : "border-white/80"
-                }`}
-                style={{
-                  left: `${guide.screen.x * 100}%`,
-                  top: `${guide.screen.y * 100}%`,
-                  width: `${guide.screen.w * 100}%`,
-                  height: `${guide.screen.h * 100}%`,
-                }}
-                aria-hidden
-              >
-                {[NAME_AREA, INFO_AREA].map((a, i) => (
-                  <div
-                    key={i}
-                    className="absolute border border-dashed border-white/40 rounded"
-                    style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%`, width: `${a.w * 100}%`, height: `${a.h * 100}%` }}
-                  />
-                ))}
-                {flash === "ok" && (
-                  <div className="absolute inset-0 grid place-items-center">
-                    <span className="grid place-items-center w-16 h-16 rounded-full bg-emerald-500 text-3xl text-white shadow-xl">✓</span>
-                  </div>
-                )}
-              </div>
-            )}
+            {guide && (() => {
+              // Gefundene Karte hervorheben, sonst den Rahmen als Hilfe zeigen
+              const r = detected ?? guide.screen;
+              return (
+                <div
+                  className={`absolute rounded-[4.75%/3.5%] transition-all duration-150 ${
+                    detected ? "border-[3px]" : "border-2 border-dashed"
+                  } ${
+                    flash === "ok"
+                      ? "border-emerald-400"
+                      : scanning
+                        ? "border-indigo-400 animate-pulse"
+                        : detected
+                          ? "border-sky-300"
+                          : "border-white/70"
+                  } ${detected ? "" : "shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"}`}
+                  style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}
+                  aria-hidden
+                >
+                  {!detected &&
+                    [NAME_AREA, INFO_AREA].map((a, i) => (
+                      <div
+                        key={i}
+                        className="absolute border border-dashed border-white/40 rounded"
+                        style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%`, width: `${a.w * 100}%`, height: `${a.h * 100}%` }}
+                      />
+                    ))}
+                  {flash === "ok" && (
+                    <div className="absolute inset-0 grid place-items-center">
+                      <span className="grid place-items-center w-16 h-16 rounded-full bg-emerald-500 text-3xl text-white shadow-xl">✓</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Kopfleiste */}
             <div className="absolute top-0 inset-x-0 flex items-center justify-between gap-2 p-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
@@ -668,6 +787,11 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
 
             {/* Statuszeile über dem unteren Bereich */}
             <div className="absolute bottom-2 inset-x-0 px-3 flex flex-col items-center gap-2">
+              {toast && (
+                <p className="max-w-sm text-center text-xs text-zinc-900 bg-emerald-300 rounded-full px-3 py-1.5" aria-live="polite">
+                  {toast}
+                </p>
+              )}
               {(status || scanning) && (
                 <p className="max-w-sm text-center text-xs text-white bg-black/60 backdrop-blur rounded-full px-3 py-1.5" aria-live="polite">
                   {scanning ? "Lese Karte…" : status}

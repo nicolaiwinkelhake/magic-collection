@@ -54,13 +54,21 @@ export type WatchState = {
 
 export const initialWatch = (): WatchState => ({ prev: null, stillCount: 0, lastScan: null, armed: true });
 
-/** Ein Bild auswerten: neuer Zustand + ob jetzt gelesen werden soll. */
-export function watchFrame(state: WatchState, frame: Float32Array): { state: WatchState; shouldScan: boolean } {
+/**
+ * Ein Bild auswerten: neuer Zustand + ob jetzt gelesen werden soll.
+ * `present`: liegt eine Karte im Bild? Standard: genug Kontrast im Bild;
+ * der Scanner gibt hier das Ergebnis der Kartenerkennung mit.
+ */
+export function watchFrame(
+  state: WatchState,
+  frame: Float32Array,
+  present: boolean = contrast(frame) >= WATCH.minContrast,
+): { state: WatchState; shouldScan: boolean } {
   const still = state.prev ? frameDiff(state.prev, frame) < WATCH.stillDiff : false;
   const stillCount = still ? state.stillCount + 1 : 0;
   // Nach einem Scan erst wieder scharf, wenn sich das Bild deutlich verändert hat.
   const armed = state.armed || (state.lastScan ? frameDiff(state.lastScan, frame) > WATCH.changedDiff : true);
-  const shouldScan = armed && stillCount >= WATCH.stillFrames && contrast(frame) >= WATCH.minContrast;
+  const shouldScan = armed && stillCount >= WATCH.stillFrames && present;
   return { state: { ...state, prev: frame, stillCount, armed }, shouldScan };
 }
 

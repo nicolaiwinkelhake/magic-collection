@@ -38,3 +38,16 @@ export function coverGuide(
     screen: { x: (x - visX) / visW, y: (y - visY) / visH, w: w / visW, h: h / visH },
   };
 }
+
+/** Sichtbarer Ausschnitt des Videos (object-fit: cover), relativ zum Video. */
+export function visibleRegion(videoW: number, videoH: number, elW: number, elH: number): Rect {
+  const scale = Math.max(elW / videoW, elH / videoH);
+  const visW = elW / scale;
+  const visH = elH / scale;
+  return { x: (videoW - visW) / 2 / videoW, y: (videoH - visH) / 2 / videoH, w: visW / videoW, h: visH / videoH };
+}
+
+/** Rechteck relativ zum sichtbaren Ausschnitt → relativ zum ganzen Video. */
+export function fromVisible(r: Rect, vis: Rect): Rect {
+  return { x: vis.x + r.x * vis.w, y: vis.y + r.y * vis.h, w: r.w * vis.w, h: r.h * vis.h };
+}

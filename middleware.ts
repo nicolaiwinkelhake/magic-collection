@@ -56,6 +56,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // ocr/: Texterkennungs-Dateien (öffentlich, groß) ohne Login-Prüfung ausliefern
+    "/((?!_next/static|_next/image|ocr/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
