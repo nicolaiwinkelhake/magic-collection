@@ -41,7 +41,7 @@ const TABS: NavLink[] = [
 ];
 const SHEET: NavLink[] = [{ href: "/commanders", label: "Commander", icon: "crown" }, ...MORE];
 
-const HIDDEN_ON = ["/login", "/signup", "/auth"];
+const HIDDEN_ON = ["/login", "/signup", "/auth", "/forgot-password", "/reset-password"];
 
 export function AppNav({ email }: { email: string | null }) {
   const pathname = usePathname() ?? "";
