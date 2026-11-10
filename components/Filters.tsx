@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ManaPip } from "@/components/ui/Mana";
+import { GROUP_LABEL, type GroupKey } from "@/lib/collectionGroups";
 
 const COLOR_OPTIONS = [
   { code: "W", label: "Weiß" },
@@ -27,6 +28,7 @@ export type FilterState = {
   type: string;
   set: string;
   sort: SortKey;
+  group: GroupKey;
 };
 
 // Suchleiste mit Lupe, darunter eine wischbare Chip-Leiste (Farben als
@@ -133,6 +135,24 @@ export function Filters({
             <option value="cmc">Sortieren: Manawert</option>
             <option value="price">Sortieren: Preis</option>
             <option value="set">Sortieren: Set</option>
+          </select>
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">▼</span>
+        </label>
+
+        <label className="shrink-0 relative">
+          <span className="sr-only">Gruppieren</span>
+          <select
+            value={state.group}
+            onChange={(e) => onChange({ ...state, group: e.target.value as GroupKey })}
+            className={`appearance-none h-8 rounded-full border pl-3 pr-7 text-xs font-medium outline-none ${
+              state.group !== "none" ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300"
+            }`}
+          >
+            {(Object.keys(GROUP_LABEL) as GroupKey[]).map((k) => (
+              <option key={k} value={k}>
+                {k === "none" ? "Gruppieren: aus" : `Gruppieren: ${GROUP_LABEL[k]}`}
+              </option>
+            ))}
           </select>
           <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">▼</span>
         </label>
