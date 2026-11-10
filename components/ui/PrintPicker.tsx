@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import type { ScanMatch } from "@/lib/scanStack";
+import type { CardHash } from "@/lib/imageHash";
+import { distancesTo } from "@/lib/printHashClient";
+
+// So viele Drucke (neueste zuerst) werden höchstens mit dem Foto verglichen –
+// Standardländer haben Hunderte, die übrigen bleiben per Suche erreichbar.
+const MAX_COMPARE = 200;
 
 // Alle Drucke einer Karte zur Auswahl (Scryfall, neueste zuerst), mit
 // Suchfeld für Set-Name/-Kürzel/Nummer. Lädt auch weitere Seiten, damit
@@ -80,6 +86,7 @@ export async function loadPrints(name: string): Promise<Print[]> {
 export function PrintPicker({
   name,
   currentId,
+  reference,
   busy = false,
   error,
   onPick,
@@ -87,6 +94,8 @@ export function PrintPicker({
 }: {
   name: string;
   currentId?: string;
+  /** Fingerabdruck des Kamerabilds: dann nach Ähnlichkeit sortieren */
+  reference?: CardHash;
   busy?: boolean;
   error?: string | null;
   onPick: (print: Print) => void;
@@ -96,6 +105,8 @@ export function PrintPicker({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [attempt, setAttempt] = useState(0);
+  // Bildabstand je Druck (kleiner = ähnlicher), wird nach und nach gefüllt
+  const [dist, setDist] = useState<Record<string, number | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +119,28 @@ export function PrintPicker({
       cancelled = true;
     };
   }, [name, attempt]);
+
+  // Fingerabdruck nach Inhalt stabil halten – die Elternseite (Scanner)
+  // rendert oft neu und erzeugt dabei jedes Mal ein neues Array.
+  const refKey = reference ? Array.from(reference).join("") : "";
+  const stableRef = useMemo(() => (refKey ? Uint8Array.from(refKey, (c) => Number(c)) : undefined), [refKey]);
+
+  // Mit Kamerabild: Drucke nacheinander vergleichen (neueste zuerst)
+  useEffect(() => {
+    const reference = stableRef;
+    if (!reference || !prints?.length) return;
+    const signal = { cancelled: false };
+    setDist({});
+    void distancesTo(
+      reference,
+      prints.slice(0, MAX_COMPARE),
+      (id, d) => setDist((prev) => ({ ...prev, [id]: d })),
+      { signal },
+    );
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [stableRef, prints]);
 
   // Escape schließt
   useEffect(() => {
@@ -129,9 +162,17 @@ export function PrintPicker({
             p.releasedAt?.startsWith(f),
         )
       : list;
+    if (reference) {
+      // Nach Ähnlichkeit zum Foto; noch nicht verglichene dahinter (Datum)
+      const d = (id: string) => dist[id] ?? Number.POSITIVE_INFINITY;
+      return [...filtered].sort((a, b) => d(a.id) - d(b.id));
+    }
     // aktuellen Druck nach vorn
     return [...filtered].sort((a, b) => (a.id === currentId ? -1 : b.id === currentId ? 1 : 0));
-  }, [prints, filter, currentId]);
+  }, [prints, filter, currentId, reference, dist]);
+
+  const compared = Object.keys(dist).length;
+  const toCompare = Math.min(prints?.length ?? 0, MAX_COMPARE);
 
   return (
     <div
@@ -170,6 +211,13 @@ export function PrintPicker({
             aria-label="Drucke filtern"
             className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm outline-none focus:border-indigo-400/70"
           />
+          {reference && prints && prints.length > 1 && (
+            <p className="text-xs text-sky-300">
+              Nach Ähnlichkeit zu deinem Foto sortiert
+              {compared < toCompare ? ` · vergleiche ${compared}/${toCompare} …` : ""}
+              {prints.length > MAX_COMPARE && compared >= toCompare && ` · die ${MAX_COMPARE} neuesten verglichen, ältere per Suche`}
+            </p>
+          )}
           {error && <p className="text-sm text-red-400">{error}</p>}
           {busy && <p className="text-sm text-indigo-300">Speichere …</p>}
         </div>
@@ -192,7 +240,7 @@ export function PrintPicker({
             <p className="text-sm text-zinc-400">Keine passenden Drucke.</p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {shown.map((p) => {
+              {shown.map((p, i) => {
                 const current = p.id === currentId;
                 return (
                   <button
@@ -220,6 +268,9 @@ export function PrintPicker({
                         {p.eurFoil != null && <span className="text-fuchsia-300"> · F {formatEur(p.eurFoil)}</span>}
                       </span>
                       {current && <span className="block text-emerald-300">aktuell</span>}
+                      {reference && i === 0 && dist[p.id] != null && compared >= Math.min(toCompare, 2) && (
+                        <span className="block text-sky-300">am ähnlichsten</span>
+                      )}
                     </span>
                   </button>
                 );

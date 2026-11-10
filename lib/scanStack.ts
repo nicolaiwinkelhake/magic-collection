@@ -19,12 +19,20 @@ export type ScanItem = ScanMatch & {
   foil: boolean;
   quantity: number;
   scannedAt: number;
+  /** Fingerabdruck des Kamerabilds (für "Druck ändern" nach Ähnlichkeit) */
+  camHash?: number[];
 };
 
 const itemKey = (id: string, foil: boolean) => `${id}|${foil ? 1 : 0}`;
 
 /** Neue Karte oben auf den Stapel; gleicher Druck + Foil erhöht nur die Menge. */
-export function addScan(stack: ScanItem[], match: ScanMatch, foil: boolean, now = Date.now()): ScanItem[] {
+export function addScan(
+  stack: ScanItem[],
+  match: ScanMatch,
+  foil: boolean,
+  now = Date.now(),
+  camHash?: number[],
+): ScanItem[] {
   const key = itemKey(match.id, foil);
   const existing = stack.find((s) => s.key === key);
   if (existing) {
@@ -33,7 +41,7 @@ export function addScan(stack: ScanItem[], match: ScanMatch, foil: boolean, now 
       ...stack.filter((s) => s.key !== key),
     ];
   }
-  return [{ ...match, key, foil, quantity: 1, scannedAt: now }, ...stack];
+  return [{ ...match, key, foil, quantity: 1, scannedAt: now, ...(camHash ? { camHash } : {}) }, ...stack];
 }
 
 /** Letzten Scan zurücknehmen (Menge −1 bzw. entfernen). */

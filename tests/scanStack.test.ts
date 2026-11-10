@@ -13,6 +13,11 @@ describe("scanStack", () => {
     expect(s).toHaveLength(3);
   });
 
+  it("merkt den Fingerabdruck des Kamerabilds", () => {
+    const s = addScan([], m("a"), false, 1, [1, 0, 1]);
+    expect(s[0].camHash).toEqual([1, 0, 1]);
+  });
+
   it("rückgängig nimmt eine Kopie bzw. den Eintrag weg", () => {
     let s = addScan(addScan([], m("a"), false), m("a"), false);
     s = undoLast(s);
