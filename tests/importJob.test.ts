@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   batchFingerprint,
+  BATCH_SIZE,
   buildJob,
   chunkItems,
   groupEntries,
@@ -69,7 +70,7 @@ describe("batchFingerprint / buildJob", () => {
     const a = await buildJob(entries, opts);
     const b = await buildJob(entries, opts);
     expect(a.batches.map((x) => x.key)).toEqual(b.batches.map((x) => x.key));
-    expect(new Set(a.batches.map((x) => x.key)).size).toBe(3);
+    expect(new Set(a.batches.map((x) => x.key)).size).toBe(Math.ceil(230 / BATCH_SIZE));
   });
 });
 

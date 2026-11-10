@@ -36,7 +36,9 @@ export async function POST(request: Request) {
         image_url: r.imageUrl,
         price_eur: eur,
       },
-      { onConflict: "user_id,scryfall_id" }
+      // DO NOTHING bei Konflikt: es gibt keine Update-Policy, ein normales
+      // Upsert scheiterte daher an bereits vorhandenen Karten.
+      { onConflict: "user_id,scryfall_id", ignoreDuplicates: true }
     );
     if (!error) added += 1;
   }

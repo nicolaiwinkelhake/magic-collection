@@ -6,7 +6,9 @@
 // gespeichert (Migration 005). Der Status jeder Position bleibt im Browser
 // erhalten, damit man nach einem Abbruch genau weiß, was drin ist.
 
-export const BATCH_SIZE = 100;
+// 50 statt 100: kürzere Anfragen (sicher unter dem Zeitlimit) und ein
+// feiner laufender Ladebalken.
+export const BATCH_SIZE = 50;
 
 export type ImportItem = {
   i: number; // Index innerhalb des Pakets

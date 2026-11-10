@@ -56,3 +56,9 @@ body::after {
   from { transform: translateX(-40px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* Ladebalken ohne bekannte Dauer (z. B. Deck-Import in einer Anfrage). */
+@keyframes indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
