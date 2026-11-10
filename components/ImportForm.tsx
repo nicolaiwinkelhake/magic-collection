@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { parseDeckList } from "@/lib/parseDeckList";
-import { csvToEntries, moxfieldCsvToEntries } from "@/lib/csv";
+import { fileToEntries, textToEntries } from "@/lib/importSource";
 import {
   buildJob,
   itemStatus,
@@ -15,8 +14,31 @@ import {
   type SourceEntry,
 } from "@/lib/importJob";
 
-const STORAGE_KEY = "import-job-v1";
 const MAX_ATTEMPTS = 3;
+
+// Derselbe robuste Import (Pakete, Wiederholen, Bericht, Fortsetzen nach
+// Abbruch) für verschiedene Ziele.
+export type ImportTarget = "collection" | "wishlist";
+
+const TARGETS: Record<
+  ImportTarget,
+  { endpoint: string; storageKey: string; title: string; duplicates: boolean; labels: Partial<Record<ItemStatus, string>> }
+> = {
+  collection: {
+    endpoint: "/api/import/batch",
+    storageKey: "import-job-v1",
+    title: "Karten importieren",
+    duplicates: true,
+    labels: {},
+  },
+  wishlist: {
+    endpoint: "/api/wishlist/import",
+    storageKey: "import-job-wishlist-v1",
+    title: "Karten zur Wunschliste hinzufügen",
+    duplicates: false,
+    labels: { imported: "Neu auf der Wunschliste", skipped: "Stand schon drauf" },
+  },
+};
 
 const STATUS_LABEL: Record<ItemStatus, string> = {
   imported: "Neu importiert",
@@ -36,19 +58,19 @@ const STATUS_STYLE: Record<ItemStatus, string> = {
   pending: "text-zinc-500",
 };
 
-function loadJob(): ImportJob | null {
+function loadJob(storageKey: string): ImportJob | null {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     return raw ? (JSON.parse(raw) as ImportJob) : null;
   } catch {
     return null;
   }
 }
 
-function saveJob(job: ImportJob | null) {
+function saveJob(storageKey: string, job: ImportJob | null) {
   try {
-    if (job) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(job));
-    else window.localStorage.removeItem(STORAGE_KEY);
+    if (job) window.localStorage.setItem(storageKey, JSON.stringify(job));
+    else window.localStorage.removeItem(storageKey);
   } catch {
     // Speicher voll/gesperrt: Bericht gilt dann nur für diese Sitzung.
   }
@@ -56,11 +78,11 @@ function saveJob(job: ImportJob | null) {
 
 // Ein Paket senden, bei Netzwerk-/Serverfehlern mit Pause wiederholen.
 // Wiederholen ist gefahrlos: der Server bucht denselben batchKey nie doppelt.
-async function sendBatch(batch: ImportBatch, allowDuplicates: boolean): Promise<ImportBatch> {
+async function sendBatch(endpoint: string, batch: ImportBatch, allowDuplicates: boolean): Promise<ImportBatch> {
   let lastError = "Unbekannter Fehler";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch("/api/import/batch", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ batchKey: batch.key, allowDuplicates, items: batch.items }),
@@ -84,11 +106,14 @@ async function sendBatch(batch: ImportBatch, allowDuplicates: boolean): Promise<
   return { ...batch, status: "error", error: lastError };
 }
 
-export function ImportForm() {
+export function ImportForm({ target = "collection", defaultOpen = false }: { target?: ImportTarget; defaultOpen?: boolean }) {
+  const cfg = TARGETS[target];
+  const label = (st: ItemStatus) => cfg.labels[st] ?? STATUS_LABEL[st];
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const [activeBatch, setActiveBatch] = useState<number | null>(null);
   const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [job, setJobState] = useState<ImportJob | null>(null);
@@ -98,12 +123,12 @@ export function ImportForm() {
   const setJob = useCallback((next: ImportJob | null) => {
     jobRef.current = next;
     setJobState(next);
-    saveJob(next);
-  }, []);
+    saveJob(cfg.storageKey, next);
+  }, [cfg.storageKey]);
 
   // Bericht des letzten Imports überlebt Neuladen/Schließen der Seite.
   useEffect(() => {
-    const saved = loadJob();
+    const saved = loadJob(cfg.storageKey);
     if (saved) {
       jobRef.current = saved;
       setJobState(saved);
@@ -128,11 +153,13 @@ export function ImportForm() {
         const current = jobRef.current!;
         const batch = current.batches[idx];
         if (batch.status === "done") continue;
-        const updated = await sendBatch(batch, current.allowDuplicates);
+        setActiveBatch(idx);
+        const updated = await sendBatch(cfg.endpoint, batch, current.allowDuplicates);
         const latest = jobRef.current!;
         setJob({ ...latest, batches: latest.batches.map((b, j) => (j === idx ? updated : b)) });
       }
     } finally {
+      setActiveBatch(null);
       setRunning(false);
       router.refresh();
     }
@@ -144,17 +171,18 @@ export function ImportForm() {
       setNotice("Keine Karten erkannt. Bitte Format prüfen (ein Kartenname pro Zeile bzw. CSV mit Spalte „Name“).");
       return;
     }
-    const newJob = await buildJob(entries, { source, mode, allowDuplicates });
+    const newJob = await buildJob(entries, { source, mode, allowDuplicates: cfg.duplicates && allowDuplicates });
     setJob(newJob);
     await runJob();
   }
 
   async function handleTextImport() {
-    const entries: SourceEntry[] = [];
-    text.split(/\r?\n/).forEach((line, idx) => {
-      for (const e of parseDeckList(line)) entries.push({ ...e, line: idx + 1 });
-    });
-    await startImport(entries, "Texteingabe", "text");
+    const parsed = textToEntries(text);
+    if (parsed.problem) {
+      setNotice(parsed.problem);
+      return;
+    }
+    await startImport(parsed.entries, "Texteingabe", parsed.mode);
     setText("");
   }
 
@@ -162,27 +190,19 @@ export function ImportForm() {
     const file = e.target.files?.[0];
     if (fileRef.current) fileRef.current.value = "";
     if (!file) return;
-    const content = await file.text();
-
-    // CSV mit Scryfall-IDs (Moxfield, ManaBox, ...) → exakte Auflösung per ID
-    const moxEntries = moxfieldCsvToEntries(content);
-    if (moxEntries) {
-      if (!moxEntries.length) {
-        setNotice("Die CSV hat eine Spalte „Scryfall ID“, aber keine Zeile mit ID.");
-        return;
-      }
-      await startImport(
-        moxEntries.map((m, idx) => ({ ...m, line: idx + 1 })),
-        file.name,
-        "csv"
-      );
-    } else {
-      await startImport(
-        csvToEntries(content).map((c, idx) => ({ ...c, line: idx + 1 })),
-        file.name,
-        "text"
-      );
+    let content: string;
+    try {
+      content = await file.text();
+    } catch {
+      setNotice("Die Datei konnte nicht gelesen werden.");
+      return;
     }
+    const parsed = fileToEntries(content);
+    if (parsed.problem) {
+      setNotice(parsed.problem);
+      return;
+    }
+    await startImport(parsed.entries, file.name, parsed.mode);
   }
 
   function retryFailed() {
@@ -222,8 +242,8 @@ export function ImportForm() {
           <span className="grid place-items-center w-7 h-7 rounded-full bg-indigo-500 text-white text-lg leading-none" aria-hidden>
             +
           </span>
-          Karten importieren
-          <span className="hidden sm:inline text-xs font-normal text-zinc-500">Liste, CSV (z. B. ManaBox/Moxfield)</span>
+          {cfg.title}
+          <span className="hidden sm:inline text-xs font-normal text-zinc-500">Liste oder CSV (z. B. ManaBox/Moxfield)</span>
         </span>
         <span className={`text-zinc-500 transition ${open ? "rotate-180" : ""}`} aria-hidden>
           ▾
@@ -274,16 +294,18 @@ export function ImportForm() {
               (Moxfield- oder ManaBox-CSV mit Scryfall-ID wird exakt zugeordnet)
             </span>
           </div>
-          <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
-            <input
-              type="checkbox"
-              checked={allowDuplicates}
-              onChange={(e) => setAllowDuplicates(e.target.checked)}
-              disabled={running}
-              className="rounded"
-            />
-            Duplikate zulassen (Menge bereits vorhandener Karten erhöhen statt überspringen)
-          </label>
+          {cfg.duplicates && (
+            <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={allowDuplicates}
+                onChange={(e) => setAllowDuplicates(e.target.checked)}
+                disabled={running}
+                className="rounded"
+              />
+              Duplikate zulassen (Menge bereits vorhandener Karten erhöhen statt überspringen)
+            </label>
+          )}
           <p className="text-xs text-zinc-500">
             Sicher bei Abbruch: Bereits gespeicherte Pakete werden beim erneuten Hochladen derselben Datei
             erkannt und nicht doppelt gebucht.
@@ -305,14 +327,7 @@ export function ImportForm() {
                 </span>
               </div>
 
-              <div className="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">
-                <div
-                  className={`h-full transition-all ${summary.error.items ? "bg-red-500" : "bg-indigo-500"}`}
-                  style={{
-                    width: `${summary.batchesTotal ? Math.round((summary.batchesDone / summary.batchesTotal) * 100) : 0}%`,
-                  }}
-                />
-              </div>
+              <ImportProgress job={job} activeBatch={activeBatch} running={running} />
 
               <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
                 {(["imported", "updated", "skipped", "not_found", "error", "pending"] as ItemStatus[])
@@ -320,7 +335,7 @@ export function ImportForm() {
                   .map((st) => (
                     <li key={st} className="rounded-md bg-zinc-800/60 px-3 py-2">
                       <div className={`font-semibold ${STATUS_STYLE[st]}`}>{summary[st].cards} Karten</div>
-                      <div className="text-xs text-zinc-400">{STATUS_LABEL[st]}</div>
+                      <div className="text-xs text-zinc-400">{label(st)}</div>
                     </li>
                   ))}
               </ul>
@@ -364,7 +379,7 @@ export function ImportForm() {
                 </div>
               )}
 
-              <ImportDetails job={job} />
+              <ImportDetails job={job} label={label} />
             </section>
           )}
         </div>
@@ -376,7 +391,7 @@ export function ImportForm() {
 const DETAIL_ORDER: ItemStatus[] = ["error", "not_found", "pending", "imported", "updated", "skipped"];
 const MAX_LIST = 300;
 
-function ImportDetails({ job }: { job: ImportJob }) {
+function ImportDetails({ job, label }: { job: ImportJob; label: (st: ItemStatus) => string }) {
   const groups = new Map<ItemStatus, Array<{ label: string; key: string }>>();
   for (const b of job.batches) {
     for (const it of b.items) {
@@ -400,7 +415,7 @@ function ImportDetails({ job }: { job: ImportJob }) {
         return (
           <details key={st} open={st === "error" || st === "not_found"} className="text-sm">
             <summary className={`cursor-pointer ${STATUS_STYLE[st]}`}>
-              {STATUS_LABEL[st]} ({list.length} Positionen)
+              {label(st)} ({list.length} Positionen)
             </summary>
             <ul className="mt-1 ml-4 max-h-60 overflow-y-auto space-y-0.5 text-zinc-300">
               {list.slice(0, MAX_LIST).map((x) => (
@@ -413,6 +428,50 @@ function ImportDetails({ job }: { job: ImportJob }) {
           </details>
         );
       })}
+    </div>
+  );
+}
+
+// Ladebalken nach Karten (nicht nach Paketen): erledigte Pakete grün bzw.
+// rot bei Fehlern, das gerade laufende Paket als pulsierender Abschnitt.
+export function ImportProgress({
+  job,
+  activeBatch,
+  running,
+}: {
+  job: ImportJob;
+  activeBatch: number | null;
+  running: boolean;
+}) {
+  const sizeOf = (b: ImportJob["batches"][number]) => b.items.reduce((n, it) => n + it.quantity, 0);
+  const total = job.batches.reduce((n, b) => n + sizeOf(b), 0) || 1;
+  const done = job.batches.filter((b) => b.status === "done").reduce((n, b) => n + sizeOf(b), 0);
+  const failed = job.batches.filter((b) => b.status === "error").reduce((n, b) => n + sizeOf(b), 0);
+  const active = activeBatch != null && running ? sizeOf(job.batches[activeBatch]) : 0;
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  const percent = Math.round((done / total) * 100);
+
+  return (
+    <div className="space-y-1">
+      <div
+        className="flex w-full h-3 rounded-full bg-zinc-800 overflow-hidden"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label="Importfortschritt"
+      >
+        <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: pct(done) }} />
+        {failed > 0 && <div className="h-full bg-red-500 transition-all duration-500" style={{ width: pct(failed) }} />}
+        {active > 0 && <div className="h-full bg-indigo-400/70 animate-pulse transition-all" style={{ width: pct(active) }} />}
+      </div>
+      <p className="flex justify-between text-xs text-zinc-400 tabular-nums">
+        <span>
+          {done} von {total} Karten verarbeitet
+          {failed > 0 && <span className="text-red-400"> · {failed} fehlgeschlagen</span>}
+        </span>
+        <span>{percent} %</span>
+      </p>
     </div>
   );
 }

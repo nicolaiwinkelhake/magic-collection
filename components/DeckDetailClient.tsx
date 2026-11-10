@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { parseDeckList } from "@/lib/parseDeckList";
-import { moxfieldCsvToEntries } from "@/lib/csv";
+import { fileToEntries, textToEntries, type ParsedSource } from "@/lib/importSource";
 import Image from "next/image";
 import {
   LineChart,
@@ -66,6 +65,7 @@ export function DeckDetailClient({
   const csvRef = useRef<HTMLInputElement>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ total: number; attempt: number } | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [replaceMode, setReplaceMode] = useState(false);
@@ -325,34 +325,16 @@ export function DeckDetailClient({
 
   async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const content = await file.text();
-    const entries = moxfieldCsvToEntries(content);
-    if (!entries?.length) {
-      setImportMessage("CSV konnte nicht gelesen werden. Bitte Moxfield-Format verwenden.");
-      return;
-    }
-    if (replaceMode && !confirm("Bestehende Deckliste wirklich durch diese Karten ersetzen? Der Commander bleibt erhalten.")) {
-      return;
-    }
-    setImporting(true);
-    setImportMessage(null);
-    const res = await fetch(`/api/decks/${deck.id}/cards`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries, replace: replaceMode }),
-    });
-    const data = await res.json();
-    setImporting(false);
-    if (!res.ok) { setImportMessage(`Fehler: ${data.error}`); return; }
-    let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-    if (data.repeated?.length) {
-      msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
-    }
-    if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
-    setImportMessage(msg);
     if (csvRef.current) csvRef.current.value = "";
-    router.refresh();
+    if (!file) return;
+    let content: string;
+    try {
+      content = await file.text();
+    } catch {
+      setImportMessage("Die Datei konnte nicht gelesen werden.");
+      return;
+    }
+    await runDeckImport(fileToEntries(content));
   }
 
   // Deckliste über einen Link laden und ins Textfeld übernehmen (dann wie
@@ -379,62 +361,66 @@ export function DeckDetailClient({
 
   async function handleImport() {
     if (!importText.trim()) return;
+    const ok = await runDeckImport(textToEntries(importText));
+    if (ok) setImportText("");
+  }
+
+  // Gleiche Erkennung wie Sammlung/Wunschliste (Textliste, ManaBox-/Moxfield-
+  // CSV mit IDs, andere CSVs). Der Server löst erst alle Karten auf und
+  // schreibt danach; meldet er 503 (Scryfall kurz weg), wurde noch nichts
+  // geändert und ein neuer Versuch ist gefahrlos.
+  async function runDeckImport(parsed: ParsedSource): Promise<boolean> {
+    if (parsed.problem) {
+      setImportMessage(parsed.problem);
+      return false;
+    }
     if (replaceMode && !confirm("Bestehende Deckliste wirklich durch diese Karten ersetzen? Der Commander bleibt erhalten.")) {
-      return;
+      return false;
     }
-
-    // CSV in Textarea erkannt → automatisch als Moxfield-CSV behandeln
-    const csvEntries = moxfieldCsvToEntries(importText);
-    if (csvEntries) {
-      setImporting(true);
-      setImportMessage(null);
-      const res = await fetch(`/api/decks/${deck.id}/cards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries: csvEntries, replace: replaceMode }),
-      });
-      const data = await res.json();
-      setImporting(false);
-      if (!res.ok) { setImportMessage(`Fehler: ${data.error}`); return; }
-      let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-      if (data.repeated?.length) {
-        msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
-      }
-      if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
-      setImportMessage(msg);
-      setImportText("");
-      router.refresh();
-      return;
-    }
-
-    const nameEntries = parseDeckList(importText);
-    if (!nameEntries.length) return;
-
+    const total = parsed.entries.reduce((n, e) => n + e.quantity, 0);
     setImporting(true);
     setImportMessage(null);
-
-    const res = await fetch(`/api/decks/${deck.id}/cards`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nameEntries, replace: replaceMode }),
-    });
-
-    const data = await res.json();
-    setImporting(false);
-
-    if (!res.ok) {
-      setImportMessage(`Fehler: ${data.error}`);
-      return;
+    try {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        setImportProgress({ total, attempt });
+        let res: Response;
+        try {
+          res = await fetch(`/api/decks/${deck.id}/cards`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entries: parsed.entries, replace: replaceMode }),
+          });
+        } catch {
+          // Unklar, ob der Server schon geschrieben hat – nicht blind wiederholen.
+          setImportMessage("Verbindung abgebrochen. Bitte prüfe die Kartenliste, bevor du es erneut versuchst.");
+          router.refresh();
+          return false;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 503 && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 2000 * attempt));
+          continue;
+        }
+        if (!res.ok) {
+          let msg = `Fehler: ${data.error ?? `Server antwortet mit ${res.status}`}`;
+          if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+          setImportMessage(msg);
+          return false;
+        }
+        let msg = `${data.inserted} Karte(n) hinzugefügt.`;
+        if (data.repeated?.length) {
+          msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
+        }
+        if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
+        setImportMessage(msg);
+        router.refresh();
+        return true;
+      }
+      return false;
+    } finally {
+      setImporting(false);
+      setImportProgress(null);
     }
-
-    let msg = `${data.inserted} Karte(n) hinzugefügt.`;
-    if (data.repeated?.length) {
-      msg += ` Mehrfach vorhanden: ${data.repeated.map((r: { name: string; count: number }) => `${r.name} (${r.count}x)`).join(", ")}.`;
-    }
-    if (data.notFound?.length) msg += ` Nicht gefunden: ${data.notFound.join(", ")}`;
-    setImportMessage(msg);
-    setImportText("");
-    router.refresh();
   }
 
   return (
@@ -959,8 +945,12 @@ export function DeckDetailClient({
                   {importing ? "Importiere..." : "Hinzufügen"}
                 </button>
                 <span className="text-zinc-600 text-sm">oder</span>
-                <label className="bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm cursor-pointer">
-                  {importing ? "Importiere..." : "Moxfield CSV wählen"}
+                <label
+                  className={`bg-zinc-800 border border-zinc-700 hover:border-zinc-500 transition rounded-md px-4 py-2 text-sm ${
+                    importing ? "opacity-50 pointer-events-none" : "cursor-pointer"
+                  }`}
+                >
+                  {importing ? "Importiere..." : "CSV-Datei wählen"}
                   <input
                     ref={csvRef}
                     type="file"
@@ -980,6 +970,24 @@ export function DeckDetailClient({
                 />
                 Deckliste ersetzen (bestehende Nicht-Commander-Karten werden entfernt, Sammlungsmenge entsprechend reduziert)
               </label>
+              <p className="text-xs text-zinc-500">
+                Liste („2x Sol Ring“) oder CSV aus ManaBox, Moxfield, Archidekt … – CSVs mit Scryfall-ID werden exakt zugeordnet.
+              </p>
+              {importProgress && (
+                <div className="space-y-1" aria-live="polite">
+                  <div
+                    className="relative h-3 w-full overflow-hidden rounded-full bg-zinc-800"
+                    role="progressbar"
+                    aria-label="Deck-Import läuft"
+                  >
+                    <div className="absolute inset-y-0 w-2/5 rounded-full bg-indigo-400 animate-[indeterminate_1.2s_ease-in-out_infinite]" />
+                  </div>
+                  <p className="text-xs text-zinc-400">
+                    {importProgress.total} Karten werden nachgeschlagen und ins Deck gelegt …
+                    {importProgress.attempt > 1 && ` (Scryfall antwortete nicht – Versuch ${importProgress.attempt} von 3)`}
+                  </p>
+                </div>
+              )}
               {importMessage && (
                 <p className="text-sm text-zinc-300">{importMessage}</p>
               )}

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { WishlistClient } from "@/components/WishlistClient";
+import { selectAll } from "@/lib/supabase/selectAll";
 
 export default async function WishlistPage() {
   const supabase = createClient();
@@ -9,21 +10,25 @@ export default async function WishlistPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: items } = await supabase
-    .from("wishlist")
-    .select("*")
-    .order("name", { ascending: true });
+  // Seitenweise laden: ohne Blättern zeigte die Liste max. 1000 Einträge.
+  type WishRow = { id: string; name: string; image_url: string | null; price_eur: number | null };
+  const items = await selectAll<WishRow>(() =>
+    supabase.from("wishlist").select("*").order("name", { ascending: true }).order("id"),
+  ).catch(() => [] as WishRow[]);
 
-  // Für jede Wunschkarte prüfen, welche Freunde sie besitzen
+  // Für jede Wunschkarte prüfen, welche Freunde sie besitzen – in kleinen
+  // parallelen Gruppen statt einzeln nacheinander (große Wunschlisten
+  // luden sonst sehr lange).
   const ownership: Record<string, string[]> = {};
-  for (const item of items ?? []) {
-    const { data } = await supabase.rpc("friends_owning_card", {
-      card_name: item.name,
-    });
-    if (data?.length) {
-      ownership[item.name] = data.map((r: any) => r.friend_email);
-    }
+  const names = Array.from(new Set(items.map((i) => i.name)));
+  for (let start = 0; start < names.length; start += 10) {
+    await Promise.all(
+      names.slice(start, start + 10).map(async (name) => {
+        const { data } = await supabase.rpc("friends_owning_card", { card_name: name });
+        if (data?.length) ownership[name] = data.map((r: { friend_email: string }) => r.friend_email);
+      }),
+    );
   }
 
-  return <WishlistClient items={items ?? []} ownership={ownership} />;
+  return <WishlistClient items={items} ownership={ownership} />;
 }

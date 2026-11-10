@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
+import { ImportForm } from "@/components/ImportForm";
 
 type WishItem = {
   id: string;
@@ -22,36 +23,9 @@ export function WishlistClient({
   ownership: Record<string, string[]>;
 }) {
   const router = useRouter();
-  const [names, setNames] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [viewIndex, setViewIndex] = useState<number | null>(null);
 
   const total = items.reduce((s, i) => s + (i.price_eur ?? 0), 0);
-
-  async function add(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setMessage(null);
-    const res = await fetch("/api/wishlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ names }),
-    });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) {
-      setMessage(`Fehler: ${data.error}`);
-      return;
-    }
-    setNames("");
-    setMessage(
-      data.notFound?.length
-        ? `${data.added} hinzugefügt. Nicht gefunden: ${data.notFound.join(", ")}`
-        : `${data.added} zur Wunschliste hinzugefügt.`
-    );
-    router.refresh();
-  }
 
   async function remove(id: string) {
     await fetch("/api/wishlist", {
@@ -71,23 +45,7 @@ export function WishlistClient({
         </Link>
       </header>
 
-      <form onSubmit={add} className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
-        <textarea
-          value={names}
-          onChange={(e) => setNames(e.target.value)}
-          rows={3}
-          placeholder={"Mana Drain\nRhystic Study"}
-          className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
-        />
-        <button
-          type="submit"
-          disabled={loading || !names.trim()}
-          className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
-        >
-          {loading ? "Füge hinzu..." : "Hinzufügen"}
-        </button>
-        {message && <p className="text-sm text-zinc-300">{message}</p>}
-      </form>
+      <ImportForm target="wishlist" defaultOpen={items.length === 0} />
 
       <p className="text-sm text-zinc-500">
         {items.length} Karten · Gesamtwert{" "}
