@@ -46,3 +46,13 @@ body::after {
 /* Horizontale Chip-Leisten ohne sichtbaren Scrollbalken. */
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Kartendetail: Einschieben beim Wischen zur nächsten/vorherigen Karte. */
+@keyframes swipe-from-right {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes swipe-from-left {
+  from { transform: translateX(-40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
