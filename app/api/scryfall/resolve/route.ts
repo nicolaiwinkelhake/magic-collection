@@ -66,8 +66,9 @@ export async function GET(request: Request) {
   }
 
   // Vorschläge: Autovervollständigung auf die ersten Wörter (englische Namen).
+  // Im automatischen Scan ohne Vorschläge (spart eine Anfrage je Karte).
   let suggestions: string[] = [];
-  if (name) {
+  if (name && params.get("suggest") !== "0") {
     const data = await getJson<{ data?: string[] }>(
       `${SCRYFALL}/cards/autocomplete?${new URLSearchParams({ q: name.split(" ").slice(0, 2).join(" ") })}`
     );
