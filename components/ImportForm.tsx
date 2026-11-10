@@ -212,9 +212,22 @@ export function ImportForm() {
   const batchErrors = job ? Array.from(new Set(job.batches.filter((b) => b.error).map((b) => b.error!))) : [];
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-      <button onClick={() => setOpen(!open)} className="text-indigo-400 font-medium">
-        {open ? "Import schließen ▲" : "Karten importieren ▼"}
+    <div className={`rounded-xl border border-white/10 ${open ? "bg-zinc-900/80 p-4" : "bg-white/5"}`}>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className={`w-full flex items-center justify-between gap-3 text-sm font-medium ${open ? "" : "px-4 py-3"}`}
+      >
+        <span className="flex items-center gap-2">
+          <span className="grid place-items-center w-7 h-7 rounded-full bg-indigo-500 text-white text-lg leading-none" aria-hidden>
+            +
+          </span>
+          Karten importieren
+          <span className="hidden sm:inline text-xs font-normal text-zinc-500">Liste, CSV (z. B. ManaBox/Moxfield)</span>
+        </span>
+        <span className={`text-zinc-500 transition ${open ? "rotate-180" : ""}`} aria-hidden>
+          ▾
+        </span>
       </button>
 
       {open && (

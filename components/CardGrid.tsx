@@ -7,6 +7,7 @@ import { formatEur } from "@/lib/format";
 import { cardValue } from "@/lib/valuation";
 import { EmptyState } from "@/components/ui/States";
 import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/CardView";
+import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card } from "@/lib/types";
 
 export function CardGrid({ cards }: { cards: Card[] }) {
@@ -16,7 +17,7 @@ export function CardGrid({ cards }: { cards: Card[] }) {
   const [local, setLocal] = useState<Card[]>(cards);
   useEffect(() => setLocal(cards), [cards]);
 
-  const [view, setView] = useCardView();
+  const [view, setView] = useCardView(true);
   const [editing, setEditing] = useState<Card | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,18 +101,17 @@ export function CardGrid({ cards }: { cards: Card[] }) {
 
   return (
     <>
-      {/* Bulk-Leiste */}
-      <div className="flex items-center justify-between mb-3 min-h-[32px]">
-        <div aria-live="polite">
+      {/* Werkzeugleiste: Ansicht + Auswahl */}
+      <div className="flex items-center justify-between gap-3 mb-3 min-h-[32px]">
+        <div aria-live="polite" className="min-w-0">
           {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
         </div>
-        <div className="flex items-center gap-3">
-          <CardViewToggle mode={view} onChange={setView} />
+        <div className="flex items-center gap-2">
           {selectMode && selected.size > 0 && (
             <button
               onClick={() => removeCards([...selected])}
               disabled={busy}
-              className="bg-red-700 hover:bg-red-600 transition rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+              className="bg-red-600 hover:bg-red-500 transition rounded-lg px-3 h-8 text-xs font-medium disabled:opacity-50"
             >
               {selected.size} löschen
             </button>
@@ -121,14 +121,78 @@ export function CardGrid({ cards }: { cards: Card[] }) {
               setSelectMode((v) => !v);
               setSelected(new Set());
             }}
-            className="text-sm text-indigo-400 hover:underline"
+            className={`rounded-lg px-3 h-8 text-xs font-medium border transition ${
+              selectMode ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
+            }`}
           >
-            {selectMode ? "Auswahl beenden" : "Auswählen"}
+            {selectMode ? "Fertig" : "Auswählen"}
           </button>
+          <CardViewToggle mode={view} onChange={setView} allowList />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      {view === "list" ? (
+        <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
+          {local.map((card) => {
+            const isSelected = selected.has(card.id);
+            const unit = cardValue({ ...card, quantity: 1 });
+            return (
+              <li key={card.id}>
+                <button
+                  onClick={() => (selectMode ? toggleSelected(card.id) : setEditing(card))}
+                  aria-label={
+                    selectMode
+                      ? `${card.name} ${isSelected ? "abwählen" : "auswählen"}`
+                      : `${card.name} bearbeiten`
+                  }
+                  aria-pressed={selectMode ? isSelected : undefined}
+                  className={`w-full flex items-center gap-3 px-3 py-2 text-left transition focus:outline-none focus-visible:bg-white/10 ${
+                    isSelected ? "bg-indigo-500/15" : "hover:bg-white/5"
+                  }`}
+                >
+                  {selectMode && (
+                    <span
+                      aria-hidden="true"
+                      className={`w-5 h-5 shrink-0 rounded-full border-2 grid place-items-center text-[10px] font-bold ${
+                        isSelected ? "bg-indigo-500 border-indigo-300 text-white" : "border-zinc-600 text-transparent"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                  )}
+                  <span className="relative shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800">
+                    {card.image_url && (
+                      <Image src={card.image_url} alt="" width={40} height={56} className="w-full h-full object-cover" />
+                    )}
+                    {card.foil && (
+                      <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/30 via-transparent to-cyan-300/30" aria-hidden />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate font-medium text-sm">{card.name}</span>
+                      <ManaCost cost={card.mana_cost} size="xs" />
+                    </span>
+                    <span className="flex items-center gap-1.5 text-xs text-zinc-500 mt-0.5">
+                      <RarityDot rarity={card.rarity} />
+                      <span className="uppercase">{card.set_code}</span>
+                      {card.collector_number && <span>#{card.collector_number}</span>}
+                      {card.foil && <span className="text-fuchsia-300">Foil</span>}
+                      {card.condition && card.condition !== "NM" && <span className="text-amber-400">{card.condition}</span>}
+                      {card.language && card.language !== "EN" && <span>{card.language}</span>}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block text-sm font-medium tabular-nums text-emerald-400">{formatEur(unit)}</span>
+                    {card.quantity > 1 && <span className="block text-xs text-zinc-500 tabular-nums">×{card.quantity}</span>}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3">
         {local.map((card) => {
           const isSelected = selected.has(card.id);
           return (
@@ -143,54 +207,59 @@ export function CardGrid({ cards }: { cards: Card[] }) {
                   : `${card.name} bearbeiten`
               }
               aria-pressed={selectMode ? isSelected : undefined}
-              className={`group relative rounded-lg overflow-hidden bg-zinc-900 border transition text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
-                isSelected
-                  ? "border-indigo-400 ring-2 ring-indigo-500/60"
-                  : "border-zinc-800 hover:border-indigo-500"
+              className={`group relative text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-[10px] ${
+                isSelected ? "ring-2 ring-indigo-400" : ""
               }`}
             >
-              {card.image_url ? (
-                <Image
-                  src={card.image_url}
-                  alt={card.name}
-                  width={244}
-                  height={340}
-                  className="w-full h-auto"
-                />
-              ) : (
-                <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
-                  {card.name}
-                </div>
-              )}
+              <span className="relative block rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40 transition group-hover:-translate-y-0.5 group-hover:shadow-lg group-hover:shadow-black/60">
+                {card.image_url ? (
+                  <Image
+                    src={card.image_url}
+                    alt={card.name}
+                    width={244}
+                    height={340}
+                    className="w-full h-auto"
+                  />
+                ) : (
+                  <span className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
+                    {card.name}
+                  </span>
+                )}
+                {card.foil && (
+                  <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/20 via-transparent to-cyan-300/25 mix-blend-screen" aria-hidden />
+                )}
+                <QuantityBadge count={card.quantity} />
+              </span>
               {selectMode && (
                 <span
                   aria-hidden="true"
-                  className={`absolute top-1 left-1 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                  className={`absolute top-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
                     isSelected
                       ? "bg-indigo-500 border-indigo-300 text-white"
-                      : "bg-black/50 border-zinc-500 text-transparent"
+                      : "bg-black/50 border-zinc-400 text-transparent"
                   }`}
                 >
                   ✓
                 </span>
               )}
-              <QuantityBadge count={card.quantity} />
               {/* Infozeile unter dem Bild statt Beschriftungen auf der Karte */}
               {view === "details" && (
-                <div className="flex items-center justify-between gap-1 px-2 py-1 text-[11px] text-zinc-400 border-t border-zinc-800">
-                  <span className="tabular-nums text-zinc-300">{formatEur(cardValue({ ...card, quantity: 1 }))}</span>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    {card.foil && <span title="Foil" aria-label="Foil">✨</span>}
+                <span className="flex items-center justify-between gap-1 px-0.5 pt-1.5 text-[11px]">
+                  <span className="tabular-nums font-medium text-emerald-400">{formatEur(cardValue({ ...card, quantity: 1 }))}</span>
+                  <span className="flex items-center gap-1.5 min-w-0 text-zinc-500">
+                    {card.foil && <span className="text-fuchsia-300" title="Foil">Foil</span>}
                     {card.condition && card.condition !== "NM" && (
                       <span className="text-amber-400" title="Zustand">{card.condition}</span>
                     )}
+                    <span className="uppercase">{card.set_code}</span>
                   </span>
-                </div>
+                </span>
               )}
             </button>
           );
         })}
       </div>
+      )}
 
       {/* Editor-Overlay */}
       {editing && (
@@ -198,11 +267,11 @@ export function CardGrid({ cards }: { cards: Card[] }) {
           role="dialog"
           aria-modal="true"
           aria-label={`${editing.name} bearbeiten`}
-          className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
           onClick={() => !busy && setEditing(null)}
         >
           <div
-            className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-full max-w-sm space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto"
+            className="bg-zinc-900 border border-white/10 rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-5 w-full sm:max-w-sm space-y-4 max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3">

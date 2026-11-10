@@ -161,7 +161,7 @@ export function CollectionClient({
   }
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <main className="max-w-7xl mx-auto px-4 py-5 sm:py-8 space-y-4">
       {backfilling && (
         <div className="flex items-center gap-2 bg-indigo-900/40 border border-indigo-700 rounded-lg px-4 py-2 text-sm text-indigo-300">
           <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
@@ -176,8 +176,49 @@ export function CollectionClient({
           Deutsche Kartennamen werden ergänzt… noch {germanPending} Namen offen.
         </p>
       )}
-      <header>
-        <h1 className="text-2xl font-semibold">Sammlung</h1>
+      {/* Kopfbereich: Gesamtwert groß, Kennzahlen darunter */}
+      <header className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/20 via-zinc-900/80 to-emerald-500/10 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-sm font-medium text-zinc-400">Sammlung</h1>
+            <p className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums">{formattedTotal}</p>
+            {filteredCards.length !== initialCards.length && (
+              <p className="text-xs text-zinc-500 mt-0.5">Wert der gefilterten Karten</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefreshPrices}
+              disabled={refreshing}
+              title="Preise aktualisieren"
+              aria-label="Preise aktualisieren"
+              className="grid place-items-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition disabled:opacity-50"
+            >
+              <svg viewBox="0 0 24 24" className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5" />
+              </svg>
+            </button>
+            <a
+              href="/api/export"
+              title="CSV-Export"
+              aria-label="CSV-Export"
+              className="grid place-items-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/15 transition"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+              </svg>
+            </a>
+          </div>
+        </div>
+        <dl className="mt-4 grid grid-cols-3 gap-2 text-center sm:max-w-md">
+          <Stat label="Karten" value={filteredCount === overallCount ? `${overallCount}` : `${filteredCount}/${overallCount}`} />
+          <Stat
+            label="Einträge"
+            value={filteredCards.length === initialCards.length ? `${initialCards.length}` : `${filteredCards.length}/${initialCards.length}`}
+          />
+          <Stat label="Sets" value={`${availableSets.length}`} />
+        </dl>
+        {refreshing && <p className="mt-3 text-xs text-indigo-300" aria-live="polite">Preise werden aktualisiert…</p>}
       </header>
 
       <ImportForm />
@@ -186,29 +227,20 @@ export function CollectionClient({
         <p className="text-red-400">Fehler beim Laden: {loadError}</p>
       )}
 
-      <Filters state={filters} onChange={setFilters} sets={availableSets} />
-
-      <p className="text-sm text-zinc-500 flex items-center gap-3">
-        <span>
-          {filteredCount} von {overallCount} Karten ({filteredCards.length} von {initialCards.length} Einträge) ·
-          Gesamtwert:{" "}
-          <span className="text-emerald-400 font-medium">
-            {formattedTotal}
-          </span>
-        </span>
-        <button
-          onClick={handleRefreshPrices}
-          disabled={refreshing}
-          className="text-indigo-400 hover:underline disabled:opacity-50"
-        >
-          {refreshing ? "Aktualisiere Preise..." : "Preise aktualisieren"}
-        </button>
-        <a href="/api/export" className="text-indigo-400 hover:underline">
-          CSV-Export
-        </a>
-      </p>
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0f0f12]/85 backdrop-blur-xl">
+        <Filters state={filters} onChange={setFilters} sets={availableSets} />
+      </div>
 
       <CardGrid cards={filteredCards} />
     </main>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-black/25 px-2 py-2">
+      <dd className="text-base font-semibold tabular-nums">{value}</dd>
+      <dt className="text-[11px] text-zinc-400">{label}</dt>
+    </div>
   );
 }

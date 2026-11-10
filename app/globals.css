@@ -15,9 +15,8 @@ body::before {
   z-index: -2;
   pointer-events: none;
   background:
-    radial-gradient(circle at 20% 75%, rgba(29, 158, 117, 0.45), transparent 45%),
-    radial-gradient(circle at 78% 20%, rgba(127, 119, 221, 0.45), transparent 45%),
-    radial-gradient(circle at 50% 50%, rgba(4, 44, 83, 0.5), transparent 55%);
+    radial-gradient(circle at 20% 85%, rgba(29, 158, 117, 0.18), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(127, 119, 221, 0.22), transparent 45%);
   filter: blur(70px);
 }
 
@@ -29,5 +28,21 @@ body::after {
   pointer-events: none;
   background-image: radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
   background-size: 26px 26px;
-  opacity: 0.08;
+  opacity: 0.04;
 }
+
+/* Platz für die Tab-Leiste unten (nur Handy/Tablet, nur angemeldet). */
+@media (max-width: 1023px) {
+  body.has-tabbar {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@keyframes sheet {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Horizontale Chip-Leisten ohne sichtbaren Scrollbalken. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

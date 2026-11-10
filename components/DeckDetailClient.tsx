@@ -28,6 +28,10 @@ import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/Card
 import type { CardRole } from "@/lib/cardRoles";
 import { formatEur, formatDate } from "@/lib/format";
 import type { Deck, DeckCard } from "@/lib/deckTypes";
+import { ColorIdentity, ManaCost } from "@/components/ui/Mana";
+import { groupByType } from "@/lib/deckTypeGroups";
+
+const artCrop = (url: string) => url.replace("/normal/", "/art_crop/").replace("/large/", "/art_crop/");
 
 const DECK_TABS = [
   { key: "analysis", label: "Analyse" },
@@ -54,7 +58,7 @@ export function DeckDetailClient({
   const router = useRouter();
   const [tab, setTab] = useState<DeckTab>("analysis");
   const [exportMsg, setExportMsg] = useState<string | null>(null);
-  const [cardView, setCardView] = useCardView();
+  const [cardView, setCardView] = useCardView(true);
   const csvRef = useRef<HTMLInputElement>(null);
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
@@ -281,6 +285,8 @@ export function DeckDetailClient({
     return Array.from(groups.values());
   }, [initialCards]);
 
+  const typeGroups = useMemo(() => groupByType(stackedCards), [stackedCards]);
+
   useEffect(() => {
     if (!initialCards.length) return;
     setLoadingOwnership(true);
@@ -409,45 +415,76 @@ export function DeckDetailClient({
   }
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-      <Link href="/decks" className="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-white transition">
-        ← Zurück zu Decks
-      </Link>
-      <header className="flex items-center gap-4">
+    <main className="max-w-6xl mx-auto px-4 py-4 sm:py-8 space-y-4">
+      {/* Kopfbereich: Commander-Artwork als Banner */}
+      <header className="relative -mx-4 sm:mx-0 overflow-hidden sm:rounded-2xl border-y sm:border border-white/10 bg-zinc-900">
         {deck.commander_image_url && (
           <Image
-            src={deck.commander_image_url}
-            alt={deck.commander_name}
-            width={80}
-            height={112}
-            className="rounded-md"
+            src={artCrop(deck.commander_image_url)}
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1152px) 1152px, 100vw"
+            className="object-cover object-[center_25%]"
           />
         )}
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold">{deck.name}</h1>
-          <p className="text-zinc-400">
-            Commander: {deck.commander_name}
-            {deck.partner_name && <> + {deck.partner_name}</>}
-          </p>
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f12] via-[#0f0f12]/70 to-black/20" aria-hidden />
+        <div className="relative flex items-center justify-between p-3">
           <Link
-            href={`/commanders/${encodeURIComponent(deck.commander_name)}${
-              deck.partner_name ? `?partner=${encodeURIComponent(deck.partner_name)}` : ""
-            }`}
-            className="text-sm text-indigo-400 hover:underline"
+            href="/decks"
+            aria-label="Zurück zu Decks"
+            className="grid place-items-center w-9 h-9 rounded-full bg-black/50 backdrop-blur hover:bg-black/70 transition"
           >
-            Empfehlungen für diesen Commander →
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
           </Link>
+          <button
+            onClick={() => setEditOpen((v) => !v)}
+            aria-expanded={editOpen}
+            className="rounded-full bg-black/50 backdrop-blur hover:bg-black/70 transition px-3 h-9 text-sm"
+          >
+            Bearbeiten
+          </button>
         </div>
-        <button
-          onClick={() => setEditOpen((v) => !v)}
-          className="text-sm text-indigo-400 hover:underline"
-        >
-          Bearbeiten
-        </button>
+        <div className="relative flex items-end gap-4 px-4 pb-4 pt-10 sm:pt-16">
+          {deck.commander_image_url && (
+            <Image
+              src={deck.commander_image_url}
+              alt={deck.commander_name}
+              width={96}
+              height={134}
+              className="hidden sm:block w-24 h-auto rounded-[6px] shadow-xl shadow-black/60 ring-1 ring-white/10"
+            />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <ColorIdentity colors={deck.color_identity} />
+            </div>
+            <h1 className="mt-1 text-2xl sm:text-3xl font-semibold leading-tight drop-shadow">{deck.name}</h1>
+            <p className="text-sm text-zinc-300 truncate">
+              {deck.commander_name}
+              {deck.partner_name && <> + {deck.partner_name}</>}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <span className="font-semibold text-emerald-400 tabular-nums">{formattedValue}</span>
+              <span className="text-zinc-300 tabular-nums">{stats.totalCards} Karten</span>
+              <span className="text-zinc-400 tabular-nums">Ø {stats.avgCmc} MW</span>
+              <Link
+                href={`/commanders/${encodeURIComponent(deck.commander_name)}${
+                  deck.partner_name ? `?partner=${encodeURIComponent(deck.partner_name)}` : ""
+                }`}
+                className="text-indigo-300 hover:text-indigo-200"
+              >
+                Empfehlungen →
+              </Link>
+            </div>
+          </div>
+        </div>
       </header>
 
       {editOpen && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4 space-y-3">
           <div className="space-y-1">
             <label className="text-sm text-zinc-400">Deckname</label>
             <input
@@ -513,31 +550,36 @@ export function DeckDetailClient({
       )}
 
       {/* Reiter */}
-      <nav className="flex flex-wrap gap-1 border-b border-zinc-800" aria-label="Deck-Bereiche">
-        {DECK_TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            aria-current={tab === t.key ? "page" : undefined}
-            className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-              tab === t.key ? "border-indigo-500 text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <nav
+        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0f0f12]/85 backdrop-blur-xl"
+        aria-label="Deck-Bereiche"
+      >
+        <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl bg-white/5 border border-white/10 p-1">
+          {DECK_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              aria-current={tab === t.key ? "page" : undefined}
+              className={`flex-1 shrink-0 whitespace-nowrap rounded-lg px-3 h-9 text-sm font-medium transition ${
+                tab === t.key ? "bg-white/15 text-white shadow" : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </nav>
 
       {tab === "analysis" && (
         <>
         {/* Analyse */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4 space-y-4">
           <h2 className="font-medium text-lg">📊 Deck-Analyse</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm">
             <Stat label="Karten" value={stats.totalCards} />
             <Stat label="Länder" value={stats.lands} />
             <Stat label="Ø Manawert" value={stats.avgCmc} />
-            <div className="bg-zinc-800 rounded-md py-2">
+            <div className="bg-white/5 rounded-xl py-2">
               <p className="text-lg font-semibold text-emerald-400">
                 {formattedValue}
               </p>
@@ -564,11 +606,11 @@ export function DeckDetailClient({
           </div>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <ManaBasePanel cards={initialCards} />
         </div>
         {/* Commander-Bracket / Power-Level */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-medium">Power-Level (Commander-Bracket)</h2>
             {!bracketLoaded && (
@@ -635,17 +677,17 @@ export function DeckDetailClient({
 
       {tab === "improve" && (
         <>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <DeckCoachPanel
             deckId={deck.id}
             deckCards={initialCards.map((c) => ({ id: c.id, name: c.name, is_commander: c.is_commander }))}
           />
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <DeckCombosPanel deckId={deck.id} />
         </div>
         {/* Scryfall-basierte Kartenvorschläge */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-medium">Kartenvorschläge</h2>
             {!suggestLoaded && (
@@ -765,7 +807,7 @@ export function DeckDetailClient({
           const categoryOrder = ["Land", "Kreatur", "Instant", "Hexerei", "Verzauberung", "Artefakt", "Planeswalker", "Sonstiges"];
 
           return (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+            <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4 space-y-3">
               <h2 className="font-medium">Baubarkeit aus deiner Sammlung</h2>
               {total === 0 ? (
                 <p className="text-sm text-zinc-500">Noch keine Karten im Deck.</p>
@@ -847,7 +889,7 @@ export function DeckDetailClient({
           {exportMsg && <span className="self-center text-emerald-300">{exportMsg}</span>}
         </div>
         {/* Import */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <button
             onClick={() => setImportOpen(!importOpen)}
             className="text-indigo-400 font-medium"
@@ -917,7 +959,7 @@ export function DeckDetailClient({
         </div>
 
         {/* Rollen-Kategorien */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
           <h2 className="font-medium mb-3">Karten nach Rolle</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {categories.map((group) => (
@@ -933,72 +975,125 @@ export function DeckDetailClient({
         </div>
 
         <div>
-          <h2 className="font-medium text-lg mb-3">
-            Kartenliste {loadingOwnership && (
-              <span className="text-xs text-zinc-500">(prüfe Freunde...)</span>
-            )}
-          </h2>
-          <div className="flex justify-end mb-3 -mt-1">
-            <CardViewToggle mode={cardView} onChange={setCardView} />
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="font-medium text-lg">
+              Kartenliste {loadingOwnership && (
+                <span className="text-xs font-normal text-zinc-500">(prüfe Freunde...)</span>
+              )}
+            </h2>
+            <CardViewToggle mode={cardView} onChange={setCardView} allowList />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {stackedCards.map((group) => {
-              const card = group[0];
-              const count = group.length;
-              const owners = ownership[card.name];
-              return (
-                <div
-                  key={card.id}
-                  className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800"
-                >
-                  {card.image_url ? (
-                    <Image
-                      src={card.image_url}
-                      alt={card.name}
-                      width={244}
-                      height={340}
-                      className="w-full h-auto"
-                    />
-                  ) : (
-                    <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
-                      {card.name}
-                    </div>
-                  )}
-                  <QuantityBadge count={count} />
-                  {card.is_commander && (
-                    <span className="absolute top-1 left-1 bg-amber-600/90 text-[10px] font-semibold rounded-full px-1.5 py-0.5">
-                      ♛
-                    </span>
-                  )}
-                  {!card.is_commander && (
-                    <button
-                      onClick={() => removeDeckCard(card.id, card.name)}
-                      title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
-                      aria-label={`${card.name} aus dem Deck entfernen`}
-                      className="absolute top-1 left-1 z-10 bg-black/60 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs opacity-70 hover:opacity-100"
-                    >
-                      ✕
-                    </button>
-                  )}
-                  {/* Infozeile unter dem Bild statt Beschriftungen auf der Karte */}
-                  {cardView === "details" && (
-                    <div className="flex items-center justify-between gap-1 px-2 py-1 text-[11px] text-zinc-400 border-t border-zinc-800">
-                      <span className="tabular-nums text-zinc-300">
-                        {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
-                      </span>
-                      {owners?.length ? (
-                        <span
-                          className="text-sky-400 truncate"
-                          title={`${owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat diese Karte`}
-                        >
-                          👥 {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")}
-                        </span>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="space-y-5">
+            {typeGroups.map((g) => (
+              <section key={g.key} aria-label={g.label}>
+                <h3 className="flex items-baseline gap-2 mb-2 text-sm font-semibold text-zinc-300">
+                  {g.label}
+                  <span className="text-xs font-normal text-zinc-500 tabular-nums">{g.count}</span>
+                </h3>
+                {cardView === "list" ? (
+                  <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
+                    {g.stacks.map((group) => {
+                      const card = group[0];
+                      const count = group.length;
+                      const owners = ownership[card.name];
+                      return (
+                        <li key={card.id} className="flex items-center gap-3 px-3 py-2">
+                          <span className="shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800">
+                            {card.image_url && (
+                              <Image src={card.image_url} alt="" width={40} height={56} className="w-full h-full object-cover" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2">
+                              {count > 1 && <span className="text-xs text-zinc-500 tabular-nums">{count}×</span>}
+                              <span className="truncate text-sm font-medium">{card.name}</span>
+                              <ManaCost cost={card.mana_cost} size="xs" />
+                            </span>
+                            {owners?.length ? (
+                              <span
+                                className="block text-xs text-sky-400 truncate"
+                                title={`${owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat diese Karte`}
+                              >
+                                👥 {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")}
+                              </span>
+                            ) : (
+                              <span className="block text-xs text-zinc-500 truncate">{card.type_line}</span>
+                            )}
+                          </span>
+                          <span className="shrink-0 text-sm tabular-nums text-emerald-400">
+                            {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
+                          </span>
+                          {!card.is_commander && (
+                            <button
+                              onClick={() => removeDeckCard(card.id, card.name)}
+                              title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
+                              aria-label={`${card.name} aus dem Deck entfernen`}
+                              className="shrink-0 grid place-items-center w-8 h-8 rounded-full text-zinc-500 hover:text-white hover:bg-red-600/80 transition"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-3">
+                    {g.stacks.map((group) => {
+                      const card = group[0];
+                      const count = group.length;
+                      const owners = ownership[card.name];
+                      return (
+                        <div key={card.id} className="relative">
+                          <div className="relative rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40">
+                            {card.image_url ? (
+                              <Image
+                                src={card.image_url}
+                                alt={card.name}
+                                width={244}
+                                height={340}
+                                className="w-full h-auto"
+                              />
+                            ) : (
+                              <div className="aspect-[244/340] flex items-center justify-center text-zinc-600 text-sm p-2 text-center">
+                                {card.name}
+                              </div>
+                            )}
+                            <QuantityBadge count={count} />
+                          </div>
+                          {!card.is_commander && (
+                            <button
+                              onClick={() => removeDeckCard(card.id, card.name)}
+                              title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
+                              aria-label={`${card.name} aus dem Deck entfernen`}
+                              className="absolute top-1.5 left-1.5 z-10 bg-black/60 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs opacity-70 hover:opacity-100"
+                            >
+                              ✕
+                            </button>
+                          )}
+                          {/* Infozeile unter dem Bild statt Beschriftungen auf der Karte */}
+                          {cardView === "details" && (
+                            <div className="flex items-center justify-between gap-1 px-0.5 pt-1.5 text-[11px]">
+                              <span className="tabular-nums font-medium text-emerald-400">
+                                {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
+                              </span>
+                              {owners?.length ? (
+                                <span
+                                  className="text-sky-400 truncate"
+                                  title={`${owners.map((o) => o.friendEmail.split("@")[0]).join(", ")} hat diese Karte`}
+                                >
+                                  👥 {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")}
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ))}
           </div>
         </div>
         </>
@@ -1024,7 +1119,7 @@ export function DeckDetailClient({
         <>
         {/* Deckwert-Verlauf */}
         {valueHistory.length >= 2 && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
             <h2 className="font-medium mb-3">Deckwert-Verlauf</h2>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
@@ -1060,7 +1155,7 @@ export function DeckDetailClient({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-zinc-800 rounded-md py-2">
+    <div className="bg-white/5 rounded-xl py-2">
       <p className="text-lg font-semibold">{value}</p>
       <p className="text-zinc-500 text-xs">{label}</p>
     </div>
