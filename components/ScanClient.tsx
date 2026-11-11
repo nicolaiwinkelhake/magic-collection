@@ -55,7 +55,7 @@ const resolveCache = new Map<string, ScanMatch | null>();
 const STACK_KEY = "scan-stack-v1";
 const PREFS_KEY = "scan-prefs-v1";
 
-type Target = { kind: "collection" } | { kind: "wishlist" } | { kind: "deck"; deckId: string };
+type Target = { kind: "collection"; folderId?: string | null } | { kind: "wishlist" } | { kind: "deck"; deckId: string };
 type Prefs = { auto: boolean; foil: boolean; sound: boolean; target: Target };
 const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, target: { kind: "collection" } };
 
@@ -128,7 +128,14 @@ function beep(ok = true) {
   }
 }
 
-export function ScanClient({ decks }: { decks: { id: string; name: string }[] }) {
+export function ScanClient({
+  decks,
+  folders = [],
+}: {
+  decks: { id: string; name: string }[];
+  /** eigene Ordner der Sammlung (Migration 014) */
+  folders?: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -171,11 +178,15 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     setLoaded(true);
     const p = load(PREFS_KEY, DEFAULT_PREFS);
     // Gelöschtes Deck als Ziel → zurück auf Sammlung
+    // Gelöschter Ordner als Ziel → Sammlung/Unsortiert
+    if (p.target.kind === "collection" && p.target.folderId && !folders.some((f) => f.id === (p.target as { folderId?: string }).folderId)) {
+      p.target = { kind: "collection" };
+    }
     if (p.target.kind === "deck" && !decks.some((d) => d.id === (p.target as { deckId: string }).deckId)) {
       p.target = { kind: "collection" };
     }
     setPrefs(p);
-  }, [decks]);
+  }, [decks, folders]);
   // Erst speichern, wenn geladen wurde – sonst überschreibt der leere
   // Anfangszustand den gespeicherten Stapel (z. B. bei doppeltem Rendern).
   useEffect(() => {
@@ -583,6 +594,7 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
           // fester Schlüssel je Paket → Wiederholen bucht nicht doppelt
           batchKey: crypto.randomUUID(),
           allowDuplicates: true,
+          folderId: target.kind === "collection" ? target.folderId ?? null : undefined,
           items: chunk.map((s, i) => ({ i, name: s.name, scryfallId: s.id, quantity: s.quantity, foil: s.foil })),
         };
         const ok = await post(target.kind === "collection" ? "/api/import/batch" : "/api/wishlist/import", body);
@@ -596,8 +608,13 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     const savedCards = items.filter((s) => saved.has(s.key)).reduce((n, s) => n + s.quantity, 0);
     setStack((s) => s.filter((x) => !saved.has(x.key)));
     setSaving(null);
+    const folderName = target.kind === "collection" ? folders.find((f) => f.id === target.folderId)?.name : undefined;
     const where =
-      target.kind === "collection" ? "in der Sammlung" : target.kind === "wishlist" ? "auf der Wunschliste" : `im Deck „${decks.find((d) => d.id === target.deckId)?.name ?? ""}“`;
+      target.kind === "collection"
+        ? folderName
+          ? `im Ordner „${folderName}“`
+          : "in der Sammlung"
+        : target.kind === "wishlist" ? "auf der Wunschliste" : `im Deck „${decks.find((d) => d.id === target.deckId)?.name ?? ""}“`;
     setSaveMsg(
       failed
         ? `${savedCards} Karten ${where} gespeichert, ${failed} Einträge nicht – sie bleiben im Stapel, bitte erneut speichern.`
@@ -610,15 +627,24 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   const last = stack[0];
   const targetLabel =
     prefs.target.kind === "collection"
-      ? "Sammlung"
+      ? folders.find((f) => f.id === (prefs.target as { folderId?: string }).folderId)?.name ?? "Sammlung"
       : prefs.target.kind === "wishlist"
         ? "Wunschliste"
         : `Deck: ${decks.find((d) => d.id === (prefs.target as { deckId: string }).deckId)?.name ?? "?"}`;
-  const targetValue = prefs.target.kind === "deck" ? `deck:${prefs.target.deckId}` : prefs.target.kind;
+  const targetValue =
+    prefs.target.kind === "deck"
+      ? `deck:${prefs.target.deckId}`
+      : prefs.target.kind === "collection" && prefs.target.folderId
+        ? `folder:${prefs.target.folderId}`
+        : prefs.target.kind;
   const setTarget = (v: string) =>
     setPrefs((p) => ({
       ...p,
-      target: v.startsWith("deck:") ? { kind: "deck", deckId: v.slice(5) } : { kind: v as "collection" | "wishlist" },
+      target: v.startsWith("deck:")
+        ? { kind: "deck", deckId: v.slice(5) }
+        : v.startsWith("folder:")
+          ? { kind: "collection", folderId: v.slice(7) }
+          : { kind: v as "collection" | "wishlist" },
     }));
 
   const targetSelect = (
@@ -629,7 +655,12 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
         onChange={(e) => setTarget(e.target.value)}
         className="appearance-none rounded-full bg-black/50 backdrop-blur border border-white/15 pl-3 pr-7 h-9 text-sm text-white outline-none max-w-[13rem] truncate"
       >
-        <option value="collection">→ Sammlung</option>
+        <option value="collection">→ Sammlung{folders.length ? " (Unsortiert)" : ""}</option>
+        {folders.map((f) => (
+          <option key={f.id} value={`folder:${f.id}`}>
+            → Ordner: {f.name}
+          </option>
+        ))}
         <option value="wishlist">→ Wunschliste</option>
         {decks.map((d) => (
           <option key={d.id} value={`deck:${d.id}`}>

@@ -51,11 +51,14 @@ export function DeckDetailClient({
   initialCards,
   missing = [],
   valueHistory = [],
+  folders = [],
 }: {
   deck: Deck;
   initialCards: DeckCard[];
   missing?: DeckCard[];
   valueHistory?: { captured_on: string; total_value_eur: number }[];
+  /** eigene Ordner der Sammlung – Ziel für importierte Karten */
+  folders?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<DeckTab>("analysis");
@@ -75,6 +78,8 @@ export function DeckDetailClient({
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [replaceMode, setReplaceMode] = useState(false);
+  // Ordner, in den die Karten beim Import in der Sammlung landen (leer = Unsortiert)
+  const [importFolder, setImportFolder] = useState<string>("");
   const [ownership, setOwnership] = useState<FriendOwnership>({});
   const [loadingOwnership, setLoadingOwnership] = useState(false);
   const [suggestGroups, setSuggestGroups] = useState<
@@ -423,7 +428,7 @@ export function DeckDetailClient({
           res = await fetch(`/api/decks/${deck.id}/cards`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ entries: parsed.entries, replace: replaceMode }),
+            body: JSON.stringify({ entries: parsed.entries, replace: replaceMode, folderId: importFolder || null }),
           });
         } catch {
           // Unklar, ob der Server schon geschrieben hat – nicht blind wiederholen.
@@ -996,6 +1001,24 @@ export function DeckDetailClient({
                   />
                 </label>
               </div>
+              {folders.length > 0 && (
+                <label className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-zinc-400">Karten in der Sammlung ablegen in</span>
+                  <select
+                    value={importFolder}
+                    onChange={(e) => setImportFolder(e.target.value)}
+                    disabled={importing}
+                    className="rounded-lg bg-zinc-800 border border-white/10 px-2 py-1.5 outline-none"
+                  >
+                    <option value="">📥 Unsortiert</option>
+                    {folders.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        📁 {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer w-fit">
                 <input
                   type="checkbox"

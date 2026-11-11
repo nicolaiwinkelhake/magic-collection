@@ -7,16 +7,100 @@ import { CardGrid } from "@/components/CardGrid";
 import { ImportForm } from "@/components/ImportForm";
 import { formatEur } from "@/lib/format";
 import { totalValue as computeTotalValue } from "@/lib/valuation";
-import type { Card } from "@/lib/types";
+import type { Card, Folder } from "@/lib/types";
+import { FolderBar } from "@/components/FolderBar";
+import { ALL, UNSORTED, folderStats, inFolder, type FolderFilter } from "@/lib/folders";
+import { createFolder } from "@/lib/folderApi";
 
 export function CollectionClient({
   initialCards,
   loadError,
+  initialFolders = [],
 }: {
   initialCards: Card[];
   loadError?: string;
+  /** eigene Ordner (Migration 014) */
+  initialFolders?: Folder[];
 }) {
   const router = useRouter();
+
+  // Ordner: Auswahl wird im Browser gemerkt; verschwundene Ordner → "Alle"
+  const folders = initialFolders;
+  const [folder, setFolder] = useState<FolderFilter>(ALL);
+  const [folderBusy, setFolderBusy] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("collection-folder");
+      if (saved) setFolder(saved);
+    } catch {
+      // Speicher gesperrt
+    }
+  }, []);
+  useEffect(() => {
+    if (folder !== ALL && folder !== UNSORTED && !folders.some((f) => f.id === folder)) setFolder(ALL);
+  }, [folder, folders]);
+  function selectFolder(f: FolderFilter) {
+    setFolder(f);
+    try {
+      window.localStorage.setItem("collection-folder", f);
+    } catch {
+      // ignorieren
+    }
+  }
+  const stats = useMemo(() => folderStats(initialCards), [initialCards]);
+  const folderCards = useMemo(() => inFolder(initialCards, folder), [initialCards, folder]);
+  const activeFolder = folders.find((f) => f.id === folder);
+
+  async function handleCreateFolder() {
+    const name = window.prompt("Name des neuen Ordners (z. B. Trade-Binder):")?.trim();
+    if (!name) return;
+    setFolderBusy(true);
+    const r = await createFolder(name);
+    setFolderBusy(false);
+    if (r.error || !r.folder) {
+      alert(r.error ?? "Ordner konnte nicht angelegt werden");
+      return;
+    }
+    selectFolder(r.folder.id);
+    router.refresh();
+  }
+
+  async function handleRenameFolder(f: Folder) {
+    const name = window.prompt("Neuer Name:", f.name)?.trim();
+    if (!name || name === f.name) return;
+    setFolderBusy(true);
+    const res = await fetch("/api/folders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: f.id, name }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    setFolderBusy(false);
+    if (!res?.ok) alert(data?.error ?? "Umbenennen fehlgeschlagen");
+    router.refresh();
+  }
+
+  async function handleDeleteFolder(f: Folder) {
+    const n = stats.get(f.id)?.entries ?? 0;
+    const msg = n
+      ? `Ordner „${f.name}“ löschen? ${n === 1 ? "Der Eintrag darin wandert" : `Die ${n} Einträge darin wandern`} nach „Unsortiert“ – es geht keine Karte verloren.`
+      : `Leeren Ordner „${f.name}“ löschen?`;
+    if (!window.confirm(msg)) return;
+    setFolderBusy(true);
+    const res = await fetch("/api/folders", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: f.id }),
+    }).catch(() => null);
+    setFolderBusy(false);
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => null);
+      alert(data?.error ?? "Löschen fehlgeschlagen");
+      return;
+    }
+    selectFolder(UNSORTED);
+    router.refresh();
+  }
 
   const [backfilling, setBackfilling] = useState(false);
 
@@ -63,9 +147,9 @@ export function CollectionClient({
 
   const availableSets = useMemo(() => {
     const codes = new Set<string>();
-    for (const c of initialCards) if (c.set_code) codes.add(c.set_code);
+    for (const c of folderCards) if (c.set_code) codes.add(c.set_code);
     return [...codes].sort();
-  }, [initialCards]);
+  }, [folderCards]);
 
   // Deutsche Namen für Bestandskarten im Hintergrund nachfüllen (in Runden,
   // bis nichts mehr offen ist oder eine Runde nichts schafft).
@@ -96,7 +180,7 @@ export function CollectionClient({
 
   const filteredCards = useMemo(() => {
     const search = filters.search.trim().toLowerCase();
-    const result = initialCards.filter((card) => {
+    const result = folderCards.filter((card) => {
       if (
         search &&
         !card.name.toLowerCase().includes(search) &&
@@ -157,7 +241,7 @@ export function CollectionClient({
         sorted.sort((a, b) => a.name.localeCompare(b.name));
     }
     return sorted;
-  }, [initialCards, filters]);
+  }, [folderCards, filters]);
 
   const totalValue = useMemo(
     () => computeTotalValue(filteredCards),
@@ -167,7 +251,7 @@ export function CollectionClient({
   const totalCardCount = (cards: Card[]) =>
     cards.reduce((sum, c) => sum + (c.quantity ?? 1), 0);
   const filteredCount = useMemo(() => totalCardCount(filteredCards), [filteredCards]);
-  const overallCount = useMemo(() => totalCardCount(initialCards), [initialCards]);
+  const overallCount = useMemo(() => totalCardCount(folderCards), [folderCards]);
 
   const formattedTotal = formatEur(totalValue);
 
@@ -200,9 +284,12 @@ export function CollectionClient({
       <header className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/20 via-zinc-900/80 to-emerald-500/10 p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-sm font-medium text-zinc-400">Sammlung</h1>
+            <h1 className="text-sm font-medium text-zinc-400 truncate">
+              Sammlung
+              {folder !== ALL && <span className="text-zinc-300"> · {activeFolder?.name ?? "Unsortiert"}</span>}
+            </h1>
             <p className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums">{formattedTotal}</p>
-            {filteredCards.length !== initialCards.length && (
+            {filteredCards.length !== folderCards.length && (
               <p className="text-xs text-zinc-500 mt-0.5">Wert der gefilterten Karten</p>
             )}
           </div>
@@ -234,14 +321,29 @@ export function CollectionClient({
           <Stat label="Karten" value={filteredCount === overallCount ? `${overallCount}` : `${filteredCount}/${overallCount}`} />
           <Stat
             label="Einträge"
-            value={filteredCards.length === initialCards.length ? `${initialCards.length}` : `${filteredCards.length}/${initialCards.length}`}
+            value={filteredCards.length === folderCards.length ? `${folderCards.length}` : `${filteredCards.length}/${folderCards.length}`}
           />
           <Stat label="Sets" value={`${availableSets.length}`} />
         </dl>
         {refreshing && <p className="mt-3 text-xs text-indigo-300" aria-live="polite">Preise werden aktualisiert…</p>}
       </header>
 
-      <ImportForm />
+      <FolderBar
+        folders={folders}
+        stats={stats}
+        active={folder}
+        onSelect={selectFolder}
+        onCreate={() => void handleCreateFolder()}
+        onRename={(f) => void handleRenameFolder(f)}
+        onDelete={(f) => void handleDeleteFolder(f)}
+        busy={folderBusy}
+      />
+
+      <ImportForm
+        folders={folders}
+        defaultFolderId={folder !== ALL && folder !== UNSORTED ? folder : null}
+        onFoldersChanged={() => router.refresh()}
+      />
 
       {loadError && (
         <p className="text-red-400">Fehler beim Laden: {loadError}</p>
@@ -251,7 +353,7 @@ export function CollectionClient({
         <Filters state={filters} onChange={setFilters} sets={availableSets} />
       </div>
 
-      <CardGrid cards={filteredCards} groupBy={filters.group} />
+      <CardGrid cards={filteredCards} groupBy={filters.group} folders={folders} onFoldersChanged={() => router.refresh()} />
     </main>
   );
 }

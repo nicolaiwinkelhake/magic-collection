@@ -22,4 +22,12 @@ export type Card = {
   condition: string;
   language: string;
   created_at: string;
+  /** Ordner (null = Unsortiert) – Migration 014 */
+  folder_id?: string | null;
+};
+
+export type Folder = {
+  id: string;
+  name: string;
+  created_at: string;
 };

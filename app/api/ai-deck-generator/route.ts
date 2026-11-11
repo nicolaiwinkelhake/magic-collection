@@ -220,7 +220,18 @@ export async function POST(request: Request) {
     usedCountByName.set(key, (usedCountByName.get(key) ?? 0) + 1);
   }
 
-  const pool: PoolCard[] = collectionCards
+  // Je Kartenname zusammenfassen: Exemplare können auf mehrere Zeilen
+  // verteilt sein (Ordner, Foil, verschiedene Drucke) – sonst würden
+  // verbaute Karten mehrfach abgezogen bzw. die Karte doppelt angeboten.
+  const byName = new Map<string, (typeof collectionCards)[number]>();
+  for (const c of collectionCards) {
+    const key = c.name.toLowerCase();
+    const prev = byName.get(key);
+    if (prev) byName.set(key, { ...prev, quantity: prev.quantity + c.quantity });
+    else byName.set(key, { ...c });
+  }
+
+  const pool: PoolCard[] = Array.from(byName.values())
     .map((c) => {
       const key = c.name.toLowerCase();
       const used = usedCountByName.get(key) ?? 0;

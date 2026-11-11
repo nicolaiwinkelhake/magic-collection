@@ -8,14 +8,28 @@ import { cardValue } from "@/lib/valuation";
 import { EmptyState } from "@/components/ui/States";
 import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/CardView";
 import { ManaCost, RarityDot } from "@/components/ui/Mana";
-import type { Card } from "@/lib/types";
+import type { Card, Folder } from "@/lib/types";
+import { FolderPicker } from "@/components/ui/FolderPicker";
+import { moveCards, promptCreateFolder } from "@/lib/folderApi";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
 import { SelectionBar } from "@/components/ui/SelectionBar";
 import { prune, toggleAll } from "@/lib/selection";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 
-export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?: GroupKey }) {
+export function CardGrid({
+  cards,
+  groupBy = "none",
+  folders = [],
+  onFoldersChanged,
+}: {
+  cards: Card[];
+  groupBy?: GroupKey;
+  /** eigene Ordner (Migration 014) – zum Verschieben */
+  folders?: Folder[];
+  /** nach Anlegen eines Ordners beim Verschieben */
+  onFoldersChanged?: () => void;
+}) {
   const router = useRouter();
 
   // Optimistische lokale Kopie: Änderungen sofort anzeigen, Server folgt.
@@ -28,6 +42,10 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [printFor, setPrintFor] = useState<Card | null>(null);
+  // Verschieben: ausgewählte Karten bzw. eine Karte aus der Detailansicht
+  const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
 
@@ -81,6 +99,36 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
         : without.map((c) => (c.id === oldId ? card : c));
     });
     setEditing((e) => (e && (e.id === oldId || e.id === card.id) ? card : e));
+  }
+
+  // In einen Ordner verschieben (Server legt gleiche Karten zusammen).
+  async function moveTo(ids: string[], folderId: string | null) {
+    setMoveBusy(true);
+    setMoveError(null);
+    const r = await moveCards(ids, folderId);
+    setMoveBusy(false);
+    if (r.error) {
+      setMoveError(r.error);
+      return;
+    }
+    // Lokal sofort umhängen; Zusammenlegungen kommen mit dem Neuladen
+    setLocal((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, folder_id: folderId } : c)));
+    setEditing((e) => (e && ids.includes(e.id) ? { ...e, folder_id: folderId } : e));
+    setMoveIds(null);
+    setSelected(new Set());
+    setSelectMode(false);
+    router.refresh();
+  }
+
+  async function createAndMove(ids: string[]) {
+    const r = await promptCreateFolder();
+    if (!r) return;
+    if (r.error || !r.folder) {
+      setMoveError(r.error ?? "Ordner konnte nicht angelegt werden");
+      return;
+    }
+    onFoldersChanged?.();
+    await moveTo(ids, r.folder.id);
   }
 
   // Druck wechseln (nicht optimistisch: Server prüft und legt ggf. zusammen).
@@ -352,6 +400,13 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
           actionLabel="Entfernen"
           confirmText="{n} Einträge wirklich aus der Sammlung entfernen?"
           busy={busy}
+          secondary={{
+            label: "Verschieben",
+            onClick: () => {
+              setMoveError(null);
+              setMoveIds([...selected]);
+            },
+          }}
         />
       )}
 
@@ -366,7 +421,7 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
           subtitle={editing.name_de || undefined}
           label={`${editing.name} – Details`}
           closeDisabled={busy}
-          keyboardDisabled={!!preview || !!printFor}
+          keyboardDisabled={!!preview || !!printFor || !!moveIds}
         >
             <div className="px-4 pt-3 pb-4 sm:p-4 grid gap-4 sm:gap-5 sm:grid-cols-[minmax(0,260px)_1fr]">
               {/* Bild */}
@@ -512,6 +567,20 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
                       <option value="JA">Japanisch (JA)</option>
                     </select>
                   </div>
+
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-sm text-zinc-300">Ordner</span>
+                    <button
+                      onClick={() => {
+                        setMoveError(null);
+                        setMoveIds([editing.id]);
+                      }}
+                      disabled={busy}
+                      className="max-w-[60%] truncate rounded-lg bg-black/30 border border-white/10 px-3 py-1.5 text-sm disabled:opacity-50"
+                    >
+                      {folders.find((f) => f.id === editing.folder_id)?.name ?? "Unsortiert"} ▾
+                    </button>
+                  </div>
                 </div>
 
                 {/* Links */}
@@ -552,6 +621,21 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
               </div>
             </div>
         </SwipeSheet>
+      )}
+
+      {moveIds && (
+        <FolderPicker
+          folders={folders}
+          currentId={
+            moveIds.length === 1 ? (local.find((c) => c.id === moveIds[0])?.folder_id ?? null) : undefined
+          }
+          title={moveIds.length === 1 ? "In Ordner verschieben" : `${moveIds.length} Einträge verschieben`}
+          busy={moveBusy}
+          error={moveError}
+          onPick={(id) => void moveTo(moveIds, id)}
+          onCreate={() => void createAndMove(moveIds)}
+          onClose={() => setMoveIds(null)}
+        />
       )}
 
       {printFor && (

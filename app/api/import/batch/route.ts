@@ -15,7 +15,7 @@ function imageUrl(card: ScryfallCard): string | null {
   return card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? null;
 }
 
-// Erwartet { batchKey, allowDuplicates, items: [{ i, name, quantity, foil, scryfallId?, set?, collectorNumber? }] }.
+// Erwartet { batchKey, allowDuplicates, folderId?, items: [{ i, name, quantity, foil, scryfallId?, set?, collectorNumber? }] }.
 // Antwort: { results: [{ i, status, cardName? }], replayed }
 //   status: imported | updated | skipped | not_found
 // Schreiben erfolgt atomar + idempotent über import_cards_batch (Migration 005):
@@ -27,6 +27,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const batchKey: string = body?.batchKey ?? "";
   const allowDuplicates = Boolean(body?.allowDuplicates);
+  // Zielordner (Migration 014); fehlt er, landen die Karten in "Unsortiert"
+  const folderId: string | null =
+    typeof body?.folderId === "string" && /^[0-9a-f-]{36}$/i.test(body.folderId) ? body.folderId : null;
   const items: BatchItem[] = Array.isArray(body?.items) ? body.items : [];
 
   if (!/^[a-f0-9-]{16,128}$/i.test(batchKey)) {
@@ -99,6 +102,7 @@ export async function POST(request: Request) {
       p_batch_key: batchKey,
       p_rows: groups.map((g) => g.row),
       p_allow_duplicates: allowDuplicates,
+      p_folder_id: folderId,
     });
     if (error) {
       console.error("Import: Speichern fehlgeschlagen", error);
