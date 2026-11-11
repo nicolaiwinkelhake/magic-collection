@@ -7,6 +7,8 @@ import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
 import { ImportForm } from "@/components/ImportForm";
+import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
+import { toggle, toggleAll } from "@/lib/selection";
 
 type WishItem = {
   id: string;
@@ -24,6 +26,9 @@ export function WishlistClient({
 }) {
   const router = useRouter();
   const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
 
   const total = items.reduce((s, i) => s + (i.price_eur ?? 0), 0);
 
@@ -33,6 +38,23 @@ export function WishlistClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    router.refresh();
+  }
+
+  async function removeSelected() {
+    setRemoving(true);
+    const res = await fetch("/api/wishlist", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    }).catch(() => null);
+    setRemoving(false);
+    if (!res?.ok) {
+      alert("Entfernen fehlgeschlagen – bitte erneut versuchen.");
+      return;
+    }
+    setSelected(new Set());
+    setSelectMode(false);
     router.refresh();
   }
 
@@ -47,10 +69,25 @@ export function WishlistClient({
 
       <ImportForm target="wishlist" defaultOpen={items.length === 0} />
 
-      <p className="text-sm text-zinc-500">
-        {items.length} Karten · Gesamtwert{" "}
-        <span className="text-emerald-400 font-medium">{formatEur(total)}</span>
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-zinc-500">
+          {items.length} Karten · Gesamtwert{" "}
+          <span className="text-emerald-400 font-medium">{formatEur(total)}</span>
+        </p>
+        {items.length > 0 && (
+          <button
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+            className={`rounded-lg px-3 h-8 text-xs font-medium border transition ${
+              selectMode ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
+            }`}
+          >
+            {selectMode ? "Fertig" : "Auswählen"}
+          </button>
+        )}
+      </div>
 
       {items.length === 0 ? (
         <p className="text-zinc-500 text-center py-12">
@@ -66,9 +103,12 @@ export function WishlistClient({
                 className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 group"
               >
                 <button
-                  onClick={() => setViewIndex(items.indexOf(item))}
-                  aria-label={`${item.name} ansehen`}
-                  className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  onClick={() => (selectMode ? setSelected((sel) => toggle(sel, item.id)) : setViewIndex(items.indexOf(item)))}
+                  aria-label={selectMode ? `${item.name} ${selected.has(item.id) ? "abwählen" : "auswählen"}` : `${item.name} ansehen`}
+                  aria-pressed={selectMode ? selected.has(item.id) : undefined}
+                  className={`block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                    selectMode && selected.has(item.id) ? "ring-2 ring-inset ring-indigo-400" : ""
+                  }`}
                 >
                   {item.image_url ? (
                     <Image src={item.image_url} alt={item.name} width={244} height={340} className="w-full h-auto" />
@@ -78,13 +118,17 @@ export function WishlistClient({
                     </div>
                   )}
                 </button>
-                <button
-                  onClick={() => remove(item.id)}
-                  title="Entfernen"
-                  className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
-                >
-                  ✕
-                </button>
+                {selectMode ? (
+                  <SelectCheck selected={selected.has(item.id)} className="pointer-events-none absolute top-1.5 left-1.5" />
+                ) : (
+                  <button
+                    onClick={() => remove(item.id)}
+                    title="Entfernen"
+                    className="absolute top-1 right-1 bg-black/70 hover:bg-red-600 transition rounded-full w-6 h-6 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
                 {item.price_eur !== null && (
                   <div className="pointer-events-none absolute bottom-0 inset-x-0 bg-black/70 text-xs px-2 py-1">
                     {formatEur(item.price_eur)}
@@ -124,6 +168,24 @@ export function WishlistClient({
             </button>
           )}
         />
+      )}
+      {selectMode && (
+        <>
+          <div className="h-24" aria-hidden />
+          <SelectionBar
+            count={selected.size}
+            total={items.length}
+            onToggleAll={() => setSelected((sel) => toggleAll(sel, items.map((i) => i.id)))}
+            onCancel={() => {
+              setSelectMode(false);
+              setSelected(new Set());
+            }}
+            onConfirm={() => void removeSelected()}
+            actionLabel="Entfernen"
+            confirmText="{n} Karten von der Wunschliste entfernen?"
+            busy={removing}
+          />
+        </>
       )}
     </main>
   );

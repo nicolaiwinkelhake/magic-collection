@@ -11,6 +11,8 @@ import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card } from "@/lib/types";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
+import { SelectionBar } from "@/components/ui/SelectionBar";
+import { prune, toggleAll } from "@/lib/selection";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 
 export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?: GroupKey }) {
@@ -278,6 +280,12 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
   const ordered = groups.flatMap((g) => g.cards);
   const editIndex = editing ? ordered.findIndex((c) => c.id === editing.id) : -1;
 
+  // Auswahl auf sichtbare Karten beschränken (Filter geändert, gelöscht …)
+  const visibleKey = ordered.map((c) => c.id).join(",");
+  useEffect(() => {
+    setSelected((sel) => prune(sel, visibleKey ? visibleKey.split(",") : []));
+  }, [visibleKey]);
+
   if (!local.length) {
     return (
       <EmptyState
@@ -296,15 +304,6 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
           {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
         </div>
         <div className="flex items-center gap-2">
-          {selectMode && selected.size > 0 && (
-            <button
-              onClick={() => removeCards([...selected])}
-              disabled={busy}
-              className="bg-red-600 hover:bg-red-500 transition rounded-lg px-3 h-8 text-xs font-medium disabled:opacity-50"
-            >
-              {selected.size} löschen
-            </button>
-          )}
           <button
             onClick={() => {
               setSelectMode((v) => !v);
@@ -336,6 +335,24 @@ export function CardGrid({ cards, groupBy = "none" }: { cards: Card[]; groupBy?:
             </section>
           ))}
         </div>
+      )}
+
+      {/* Platz, damit die letzten Karten nicht unter der Auswahlleiste liegen */}
+      {selectMode && <div className="h-24" aria-hidden />}
+      {selectMode && (
+        <SelectionBar
+          count={selected.size}
+          total={ordered.length}
+          onToggleAll={() => setSelected((sel) => toggleAll(sel, ordered.map((c) => c.id)))}
+          onCancel={() => {
+            setSelectMode(false);
+            setSelected(new Set());
+          }}
+          onConfirm={() => void removeCards([...selected])}
+          actionLabel="Entfernen"
+          confirmText="{n} Einträge wirklich aus der Sammlung entfernen?"
+          busy={busy}
+        />
       )}
 
       {/* Kartendetail: großes Bild, Preise, Kartentext, Bestand bearbeiten */}

@@ -244,7 +244,7 @@ function imageUrlOf(card: ScryfallCard): string | null {
   return card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? null;
 }
 
-// Einzelne Deckkarte entfernen (der Commander kann nicht gelöscht werden).
+// Deckkarten entfernen (der Commander kann nicht gelöscht werden).
 export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
@@ -255,11 +255,15 @@ export async function DELETE(
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
 
-  const { cardId } = await request.json();
+  // Eine Deckkarte ({ cardId }) oder mehrere ({ cardIds: [...] }); der
+  // Commander ist immer ausgenommen. Die Karten bleiben in der Sammlung.
+  const body = await request.json().catch(() => ({}));
+  const ids: string[] = Array.isArray(body.cardIds) ? body.cardIds : body.cardId ? [body.cardId] : [];
+  if (!ids.length) return NextResponse.json({ error: "Keine Karten angegeben" }, { status: 400 });
   const { error } = await supabase
     .from("deck_cards")
     .delete()
-    .eq("id", cardId)
+    .in("id", ids)
     .eq("deck_id", params.id)
     .eq("user_id", user.id)
     .eq("is_commander", false);
