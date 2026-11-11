@@ -17,7 +17,7 @@ type IncomingEntry = {
 // Karten zu einem Deck hinzufügen (bzw. Deckliste ersetzen).
 // Body: { entries: [{ name, quantity, foil, scryfallId?, set?, collectorNumber? }] }
 //    oder { nameEntries: [{ name, quantity }] } / { names: string[] }
-//       + replace?: boolean, addToCollection?: boolean
+//       + replace?: boolean, addToCollection?: boolean, folderId?: string
 // Ablauf: ERST alle Karten auflösen (Scryfall-ID → Set+Nummer → Name →
 // Fuzzy), DANN schreiben. Ist Scryfall nicht erreichbar, antwortet die Route
 // mit 503, bevor irgendetwas geändert wurde – auch beim Ersetzen bleibt die
@@ -50,6 +50,9 @@ export async function POST(
   // false: Karten nur ins Deck legen (z. B. eine bereits besessene Karte aus
   // den Vorschlägen übernehmen) – sonst würde die Sammlung doppelt zählen.
   const addToCollection = body.addToCollection !== false;
+  // Zielordner für die Sammlung (Migration 014); ohne Angabe "Unsortiert"
+  const folderId: string | null =
+    typeof body.folderId === "string" && /^[0-9a-f-]{36}$/i.test(body.folderId) ? body.folderId : null;
 
   const raw: IncomingEntry[] = body.entries?.length
     ? body.entries
@@ -116,20 +119,29 @@ export async function POST(
       }
 
       if (addToCollection) {
+        // Exemplare können auf mehrere Ordner verteilt sein: die alte Menge
+        // je Karte nur EINMAL abziehen – zuerst aus "Unsortiert", dann aus
+        // den Ordnern (sonst würde sie von jeder Zeile abgezogen).
         const { data: collectionRowsForDeck } = await supabase
           .from("cards")
-          .select("id, scryfall_id, quantity")
+          .select("id, scryfall_id, quantity, folder_id, created_at")
           .eq("user_id", user.id)
           .eq("foil", false)
           .in("scryfall_id", Array.from(oldQtyByScryfallId.keys()));
 
-        for (const row of collectionRowsForDeck ?? []) {
-          const oldQty = oldQtyByScryfallId.get(row.scryfall_id) ?? 0;
-          const newQty = row.quantity - oldQty;
-          if (newQty <= 0) {
+        const remaining = new Map(oldQtyByScryfallId);
+        const ordered = [...(collectionRowsForDeck ?? [])].sort(
+          (a, b) => Number(a.folder_id != null) - Number(b.folder_id != null) || String(a.created_at).localeCompare(String(b.created_at)),
+        );
+        for (const row of ordered) {
+          const left = remaining.get(row.scryfall_id) ?? 0;
+          if (left <= 0) continue;
+          const take = Math.min(left, row.quantity);
+          remaining.set(row.scryfall_id, left - take);
+          if (take >= row.quantity) {
             await supabase.from("cards").delete().eq("id", row.id);
           } else {
-            await supabase.from("cards").update({ quantity: newQty }).eq("id", row.id);
+            await supabase.from("cards").update({ quantity: row.quantity - take }).eq("id", row.id);
           }
         }
       }
@@ -195,11 +207,14 @@ export async function POST(
   if (addToCollection) {
     // Bestehende Menge in der Sammlung wird addiert statt überschrieben.
     const ids = Array.from(new Set(Array.from(groups.values()).map((g) => g.card.id)));
-    const { data: existingRows } = await supabase
+    // Nur die Zeilen im Zielordner zählen (dort wird addiert)
+    let existingQuery = supabase
       .from("cards")
       .select("scryfall_id,foil,quantity")
       .eq("user_id", user.id)
       .in("scryfall_id", ids);
+    existingQuery = folderId ? existingQuery.eq("folder_id", folderId) : existingQuery.is("folder_id", null);
+    const { data: existingRows } = await existingQuery;
     const existingQty = new Map<string, number>(
       (existingRows ?? []).map((r) => [`${r.scryfall_id}_${r.foil}`, r.quantity as number])
     );
@@ -223,11 +238,12 @@ export async function POST(
         price_eur: eur,
         price_eur_foil: eurFoil,
         price_updated_at: new Date().toISOString(),
+        folder_id: folderId,
       };
     });
     const { error: upsertError } = await supabase
       .from("cards")
-      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" });
+      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil,folder_id" });
     if (upsertError) console.error("Deck-Import: Sammlung nicht aktualisiert", upsertError);
   }
 

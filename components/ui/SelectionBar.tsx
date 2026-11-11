@@ -14,6 +14,7 @@ export function SelectionBar({
   confirmText,
   busy = false,
   overlay = false,
+  secondary,
 }: {
   count: number;
   total: number;
@@ -27,6 +28,8 @@ export function SelectionBar({
   busy?: boolean;
   /** über einem Vollbild-Fenster (z. B. Scanner) statt über der Tab-Leiste */
   overlay?: boolean;
+  /** zusätzliche Aktion ohne Rückfrage, z. B. "Verschieben" */
+  secondary?: { label: string; onClick: () => void };
 }) {
   const allSelected = total > 0 && count === total;
   return (
@@ -51,6 +54,15 @@ export function SelectionBar({
             {allSelected ? "Keine auswählen" : `Alle ${total} auswählen`}
           </button>
         </div>
+        {secondary && (
+          <button
+            onClick={secondary.onClick}
+            disabled={!count || busy}
+            className="shrink-0 rounded-xl bg-white/10 hover:bg-white/15 px-3 h-10 text-sm font-medium disabled:opacity-40"
+          >
+            {secondary.label}
+          </button>
+        )}
         <button
           onClick={() => {
             if (count && confirm(withCount(confirmText, count))) onConfirm();

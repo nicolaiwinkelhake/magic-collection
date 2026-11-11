@@ -186,11 +186,13 @@ export function entriesToCsv(
     price_eur_foil: number | null;
     condition?: string;
     language?: string;
+    /** Ordnername (leer = Unsortiert) */
+    folder?: string | null;
   }>
 ): string {
   const esc = (v: string) =>
     /[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  const head = ["Name", "Count", "Foil", "Set", "Condition", "Language", "Price_EUR"].join(",");
+  const head = ["Name", "Count", "Foil", "Set", "Condition", "Language", "Price_EUR", "Folder"].join(",");
   const lines = cards.map((c) =>
     [
       esc(c.name),
@@ -200,6 +202,7 @@ export function entriesToCsv(
       esc(c.condition ?? "NM"),
       esc(c.language ?? "EN"),
       String((c.foil ? c.price_eur_foil : c.price_eur) ?? ""),
+      esc(c.folder ?? ""),
     ].join(",")
   );
   return [head, ...lines].join("\n");

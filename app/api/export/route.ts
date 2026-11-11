@@ -13,16 +13,20 @@ export async function GET() {
   }
 
   // Seitenweise laden: sonst enthielt der Export max. 1000 Einträge.
-  const cards = await selectAll<Parameters<typeof entriesToCsv>[0][number]>(() =>
+  type FolderRef = { name: string } | { name: string }[] | null;
+  type Row = Omit<Parameters<typeof entriesToCsv>[0][number], "folder"> & { folders: FolderRef };
+  const rows = await selectAll<Row>(() =>
     supabase
       .from("cards")
-      .select("name, quantity, foil, set_code, price_eur, price_eur_foil, condition, language")
+      .select("name, quantity, foil, set_code, price_eur, price_eur_foil, condition, language, folders(name)")
       .eq("user_id", user.id)
       .order("name", { ascending: true })
       .order("id")
   );
 
-  const csv = entriesToCsv(cards);
+  // Ordnername als eigene Spalte, damit die Sortierung erhalten bleibt
+  const folderName = (f: FolderRef) => (Array.isArray(f) ? f[0]?.name : f?.name) ?? "";
+  const csv = entriesToCsv(rows.map(({ folders, ...c }) => ({ ...c, folder: folderName(folders) })));
 
   return new Response(csv, {
     headers: {

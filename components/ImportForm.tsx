@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fileToEntries, textToEntries } from "@/lib/importSource";
+import type { Folder } from "@/lib/types";
+import { createFolder } from "@/lib/folderApi";
 import {
   buildJob,
   itemStatus,
@@ -78,14 +80,19 @@ function saveJob(storageKey: string, job: ImportJob | null) {
 
 // Ein Paket senden, bei Netzwerk-/Serverfehlern mit Pause wiederholen.
 // Wiederholen ist gefahrlos: der Server bucht denselben batchKey nie doppelt.
-async function sendBatch(endpoint: string, batch: ImportBatch, allowDuplicates: boolean): Promise<ImportBatch> {
+async function sendBatch(
+  endpoint: string,
+  batch: ImportBatch,
+  allowDuplicates: boolean,
+  folderId: string | null,
+): Promise<ImportBatch> {
   let lastError = "Unbekannter Fehler";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchKey: batch.key, allowDuplicates, items: batch.items }),
+        body: JSON.stringify({ batchKey: batch.key, allowDuplicates, folderId, items: batch.items }),
       });
       const data = await res.json().catch(() => ({}));
       // Ohne Ergebnisliste (z. B. Umleitung auf eine HTML-Seite) gilt das
@@ -106,7 +113,21 @@ async function sendBatch(endpoint: string, batch: ImportBatch, allowDuplicates: 
   return { ...batch, status: "error", error: lastError };
 }
 
-export function ImportForm({ target = "collection", defaultOpen = false }: { target?: ImportTarget; defaultOpen?: boolean }) {
+export function ImportForm({
+  target = "collection",
+  defaultOpen = false,
+  folders = [],
+  defaultFolderId = null,
+  onFoldersChanged,
+}: {
+  target?: ImportTarget;
+  defaultOpen?: boolean;
+  /** eigene Ordner – nur beim Sammlungs-Import */
+  folders?: Folder[];
+  /** vorbelegter Zielordner (z. B. der gerade geöffnete) */
+  defaultFolderId?: string | null;
+  onFoldersChanged?: () => void;
+}) {
   const cfg = TARGETS[target];
   const label = (st: ItemStatus) => cfg.labels[st] ?? STATUS_LABEL[st];
   const router = useRouter();
@@ -114,6 +135,9 @@ export function ImportForm({ target = "collection", defaultOpen = false }: { tar
   const [text, setText] = useState("");
   const [open, setOpen] = useState(defaultOpen);
   const [activeBatch, setActiveBatch] = useState<number | null>(null);
+  // Zielordner (Sammlung); folgt dem gerade geöffneten Ordner
+  const [targetFolder, setTargetFolder] = useState<string | null>(defaultFolderId);
+  useEffect(() => setTargetFolder(defaultFolderId), [defaultFolderId]);
   const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [job, setJobState] = useState<ImportJob | null>(null);
@@ -154,7 +178,7 @@ export function ImportForm({ target = "collection", defaultOpen = false }: { tar
         const batch = current.batches[idx];
         if (batch.status === "done") continue;
         setActiveBatch(idx);
-        const updated = await sendBatch(cfg.endpoint, batch, current.allowDuplicates);
+        const updated = await sendBatch(cfg.endpoint, batch, current.allowDuplicates, current.folderId ?? null);
         const latest = jobRef.current!;
         setJob({ ...latest, batches: latest.batches.map((b, j) => (j === idx ? updated : b)) });
       }
@@ -171,7 +195,9 @@ export function ImportForm({ target = "collection", defaultOpen = false }: { tar
       setNotice("Keine Karten erkannt. Bitte Format prüfen (ein Kartenname pro Zeile bzw. CSV mit Spalte „Name“).");
       return;
     }
-    const newJob = await buildJob(entries, { source, mode, allowDuplicates: cfg.duplicates && allowDuplicates });
+    const built = await buildJob(entries, { source, mode, allowDuplicates: cfg.duplicates && allowDuplicates });
+    const folderId = target === "collection" ? targetFolder : null;
+    const newJob = { ...built, folderId, folderName: folders.find((f) => f.id === folderId)?.name ?? null };
     setJob(newJob);
     await runJob();
   }
@@ -252,6 +278,37 @@ export function ImportForm({ target = "collection", defaultOpen = false }: { tar
 
       {open && (
         <div className="mt-3 space-y-3">
+          {target === "collection" && (
+            <label className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-zinc-400">Importieren in</span>
+              <select
+                value={targetFolder ?? ""}
+                disabled={running}
+                onChange={async (e) => {
+                  if (e.target.value === "__new") {
+                    const name = window.prompt("Name des neuen Ordners:")?.trim();
+                    if (!name) return;
+                    const r = await createFolder(name);
+                    if (r.folder) {
+                      setTargetFolder(r.folder.id);
+                      onFoldersChanged?.();
+                    } else setNotice(r.error ?? "Ordner konnte nicht angelegt werden");
+                    return;
+                  }
+                  setTargetFolder(e.target.value || null);
+                }}
+                className="rounded-lg bg-zinc-800 border border-white/10 px-2 py-1.5 outline-none"
+              >
+                <option value="">📥 Unsortiert</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    📁 {f.name}
+                  </option>
+                ))}
+                <option value="__new">+ Neuer Ordner …</option>
+              </select>
+            </label>
+          )}
           <p className="text-sm text-zinc-400">
             Ein Kartenname pro Zeile. Menge per „2x Name“, Foil per „Name *F*“.
             Gleiche Karten werden zusammengezählt.
@@ -316,7 +373,7 @@ export function ImportForm({ target = "collection", defaultOpen = false }: { tar
             <section className="border-t border-zinc-800 pt-3 space-y-3" aria-live="polite">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="font-medium">
-                  Import „{job.source}“{" "}
+                  Import „{job.source}“{target === "collection" && ` → ${job.folderName ?? "Unsortiert"}`}{" "}
                   <span className="text-xs text-zinc-500">
                     {new Date(job.createdAt).toLocaleString("de-DE")}
                   </span>

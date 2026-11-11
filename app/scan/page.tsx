@@ -15,5 +15,8 @@ export default async function ScanPage() {
     .select("id, name")
     .order("created_at", { ascending: false });
 
-  return <ScanClient decks={decks ?? []} />;
+  // Eigene Ordner als Ziel in der Sammlung (Migration 014)
+  const { data: folders } = await supabase.from("folders").select("id, name").order("name");
+
+  return <ScanClient decks={decks ?? []} folders={folders ?? []} />;
 }

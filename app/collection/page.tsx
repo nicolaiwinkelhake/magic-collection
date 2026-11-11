@@ -23,10 +23,15 @@ export default async function CollectionPage() {
     error = { message: e instanceof Error ? e.message : "Unbekannter Fehler" };
   }
 
+  // Eigene Ordner (Migration 014). Fehlt die Tabelle noch, bleibt die Liste
+  // leer und die Sammlung funktioniert wie bisher.
+  const { data: folders } = await supabase.from("folders").select("id, name, created_at").order("name");
+
   return (
     <CollectionClient
       initialCards={cards ?? []}
       loadError={error?.message}
+      initialFolders={folders ?? []}
     />
   );
 }

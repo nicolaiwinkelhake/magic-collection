@@ -50,12 +50,16 @@ export default async function DeckDetailPage({
     .eq("deck_id", params.id)
     .order("captured_on", { ascending: true });
 
+  // Eigene Ordner: Deck-Importe legen die Karten auch in die Sammlung
+  const { data: folders } = await supabase.from("folders").select("id, name").order("name");
+
   return (
     <DeckDetailClient
       deck={deck}
       initialCards={deckCards ?? []}
       missing={missing}
       valueHistory={valueHistory ?? []}
+      folders={folders ?? []}
     />
   );
 }
