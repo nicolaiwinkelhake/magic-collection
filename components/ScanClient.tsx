@@ -8,8 +8,12 @@ import { getInfoWorker, getNameWorker, terminateAll, warmUp } from "@/lib/ocrEng
 import { detectCard } from "@/lib/cardDetect";
 import { pickBest, type CardHash } from "@/lib/imageHash";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
-import { loadPrints } from "@/components/ui/PrintPicker";import { formatEur } from "@/lib/format";
+import { loadPrints } from "@/components/ui/PrintPicker";
+import { directByName, directPrint } from "@/lib/scryfallDirect";
+import { formatEur } from "@/lib/format";
 import { PrintPicker } from "@/components/ui/PrintPicker";
+import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
+import { toggle, toggleAll } from "@/lib/selection";
 import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type OcrLine } from "@/lib/ocr";
 import { coverGuide, fromVisible, visibleRegion, type Rect } from "@/lib/scanGeometry";
 import { contrast, initialWatch, markScanned, toGray, watchFrame, WATCH, type WatchState } from "@/lib/frameWatch";
@@ -37,7 +41,9 @@ import {
 // (Sammlernummer, Set-Kürzel – auf Karten ab 2015).
 const NAME_AREA = { x: 0.04, y: 0.02, w: 0.8, h: 0.09 };
 const INFO_AREA = { x: 0.02, y: 0.91, w: 0.53, h: 0.08 };
-const MIN_OCR_HEIGHT = 140;
+const MIN_OCR_HEIGHT = 140; // Foto/obere Bildhälfte (mehrere Zeilen)
+const NAME_OCR_HEIGHT = 56; // Namensbalken: eine Zeile
+const INFO_OCR_HEIGHT = 72; // Infozeile: zwei kleine Zeilen
 const THUMB_W = 32;
 const THUMB_H = 45;
 const DETECT_W = 120; // Breite des Suchbilds für die Kartenkanten
@@ -62,9 +68,11 @@ function subArea(card: Rect, area: Rect, srcW: number, srcH: number) {
   };
 }
 
-// Bildausschnitt vergrößert und kontrastverstärkt für die Texterkennung.
-function regionToCanvas(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number) {
-  const scale = Math.max(1, MIN_OCR_HEIGHT / sh);
+// Bildausschnitt auf eine feste Höhe gebracht und kontrastverstärkt für die
+// Texterkennung. Nicht größer als nötig: Tesseract liest am besten bei
+// ~25–35 px Schrifthöhe, und jedes Pixel mehr kostet Zeit (auf dem Handy viel).
+function regionToCanvas(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, targetH = MIN_OCR_HEIGHT) {
+  const scale = targetH / sh;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(sw * scale);
   canvas.height = Math.round(sh * scale);
@@ -144,18 +152,23 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   const [manualName, setManualName] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [stack, setStack] = useState<ScanItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   // Aktuelle Einstellungen für die laufende Automatik (ohne Neustart der Schleife)
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [printFor, setPrintFor] = useState<string | null>(null); // Stapel-Schlüssel
+  // Mehrfachauswahl im Scan-Stapel
+  const [stackSelect, setStackSelect] = useState(false);
+  const [stackSelected, setStackSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState<{ done: number; total: number } | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   // Stapel und Einstellungen laden / speichern
   useEffect(() => {
     setStack(loadStack());
+    setLoaded(true);
     const p = load(PREFS_KEY, DEFAULT_PREFS);
     // Gelöschtes Deck als Ziel → zurück auf Sammlung
     if (p.target.kind === "deck" && !decks.some((d) => d.id === (p.target as { deckId: string }).deckId)) {
@@ -163,8 +176,21 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     }
     setPrefs(p);
   }, [decks]);
-  useEffect(() => save(STACK_KEY, stack), [stack]);
-  useEffect(() => save(PREFS_KEY, prefs), [prefs]);
+  // Erst speichern, wenn geladen wurde – sonst überschreibt der leere
+  // Anfangszustand den gespeicherten Stapel (z. B. bei doppeltem Rendern).
+  useEffect(() => {
+    if (loaded) save(STACK_KEY, stack);
+  }, [stack, loaded]);
+  useEffect(() => {
+    if (loaded) save(PREFS_KEY, prefs);
+  }, [prefs, loaded]);
+
+  // Texterkennung schon beim Öffnen der Seite im Hintergrund laden – dann ist
+  // sie bereit, wenn die Kamera startet.
+  useEffect(() => {
+    const t = setTimeout(() => void warmUp().catch(() => {}), 800);
+    return () => clearTimeout(t);
+  }, []);
 
   // Aufräumen: Kamera aus, Texterkennung beenden.
   useEffect(() => {
@@ -250,8 +276,8 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   async function readCard(source: CanvasImageSource, card: Rect, w: number, h: number) {
     const n = subArea(card, NAME_AREA, w, h);
     const a = subArea(card, INFO_AREA, w, h);
-    const nameCanvas = regionToCanvas(source, n.sx, n.sy, n.sw, n.sh);
-    const infoCanvas = regionToCanvas(source, a.sx, a.sy, a.sw, a.sh);
+    const nameCanvas = regionToCanvas(source, n.sx, n.sy, n.sw, n.sh, NAME_OCR_HEIGHT);
+    const infoCanvas = regionToCanvas(source, a.sx, a.sy, a.sw, a.sh, INFO_OCR_HEIGHT);
     const [nameWorker, infoWorker] = await Promise.all([getNameWorker(), getInfoWorker()]);
     const [nameLines, infoLines] = await Promise.all([ocrLines(nameCanvas, nameWorker), ocrLines(infoCanvas, infoWorker)]);
     const info = parseCardInfo(infoLines.map((l) => l.text).join(" "));
@@ -266,7 +292,22 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     }
     if (info?.lang) params.set("lang", info.lang);
     const cacheKey = params.toString();
-    if (!suggest && resolveCache.has(cacheKey)) return resolveCache.get(cacheKey)!;
+    if (resolveCache.get(cacheKey)) return resolveCache.get(cacheKey)!;
+    // Schneller Weg: direkt bei Scryfall (eine Anfrage, kein Server-Umweg).
+    // Der Server (mit Varianten, deutschen Namen, Vorschlägen) nur, wenn das
+    // nichts findet.
+    const direct =
+      info?.set && info.number
+        ? await directPrint(info.set, info.number, info.lang, name ? [name] : [])
+        : name
+          ? await directByName(name)
+          : null;
+    if (direct) {
+      resolveCache.set(cacheKey, direct);
+      if (suggest) setSuggestions([]);
+      return direct;
+    }
+    if (!suggest && resolveCache.has(cacheKey)) return null; // schon erfolglos versucht
     if (!suggest) params.set("suggest", "0");
     const res = await fetch(`/api/scryfall/resolve?${params}`).catch(() => null);
     const data = await res?.json().catch(() => null);
@@ -429,9 +470,9 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
           }
         }
       }
-      if (!stopped) setTimeout(tick, 300);
+      if (!stopped) setTimeout(tick, 150);
     }
-    const t = setTimeout(tick, 500);
+    const t = setTimeout(tick, 300);
     return () => {
       stopped = true;
       clearTimeout(t);
@@ -467,7 +508,12 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
         const { names, info } = await readCard(full, card, w, h);
         result = await resolveCandidates(names, info, true);
       } else {
-        const lines = await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5), await getNameWorker());
+        // Mehrere Zeilen: kurz auf automatische Seitenaufteilung umstellen
+        const worker = await getNameWorker();
+        await worker.setParameters({ tessedit_pageseg_mode: "3" as never });
+        const lines = await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5), worker).finally(() =>
+          worker.setParameters({ tessedit_pageseg_mode: "7" as never }),
+        );
         result = await resolveCandidates(nameCandidates(lines, 4), null, true);
       }
       if (result.match) accept(result.match);
@@ -601,6 +647,43 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
       onQty={(k, q) => setStack((s) => setQuantity(s, k, q))}
       onFoil={(k, f) => setStack((s) => updateItem(s, k, { foil: f }))}
       onPrints={(item) => setPrintFor(item.key)}
+      selectMode={stackSelect}
+      selected={stackSelected}
+      onToggle={(k) => setStackSelected((sel) => toggle(sel, k))}
+    />
+  );
+
+  const selectButton = stack.length > 0 && (
+    <button
+      onClick={() => {
+        setStackSelect((v) => !v);
+        setStackSelected(new Set());
+      }}
+      className={`rounded-lg px-3 h-8 text-xs font-medium border transition ${
+        stackSelect ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
+      }`}
+    >
+      {stackSelect ? "Fertig" : "Auswählen"}
+    </button>
+  );
+
+  const stackSelectionBar = stackSelect && (
+    <SelectionBar
+      count={stackSelected.size}
+      total={stack.length}
+      onToggleAll={() => setStackSelected((sel) => toggleAll(sel, stack.map((x) => x.key)))}
+      onCancel={() => {
+        setStackSelect(false);
+        setStackSelected(new Set());
+      }}
+      onConfirm={() => {
+        setStack((s) => s.filter((x) => !stackSelected.has(x.key)));
+        setStackSelected(new Set());
+        setStackSelect(false);
+      }}
+      actionLabel="Entfernen"
+      confirmText="{n} Einträge aus dem Scan-Stapel entfernen?"
+      overlay={cameraOn}
     />
   );
 
@@ -673,11 +756,14 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
 
       {stack.length > 0 && (
         <section className="space-y-3">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="font-medium">
               Scan-Stapel <span className="text-sm text-zinc-500">{totals.cards} Karten</span>
             </h2>
-            <span className="text-sm font-semibold text-emerald-400 tabular-nums">{formatEur(totals.value)}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-emerald-400 tabular-nums">{formatEur(totals.value)}</span>
+              {!cameraOn && selectButton}
+            </div>
           </div>
           {stackSheet}
           {saveBar}
@@ -840,11 +926,14 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="mx-auto h-1 w-10 rounded-full bg-zinc-700" aria-hidden />
-                <div className="flex items-baseline justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <h2 className="font-semibold">
                     Scan-Stapel <span className="text-sm text-zinc-500">{totals.cards} Karten</span>
                   </h2>
-                  <span className="text-sm font-semibold text-emerald-400 tabular-nums">{formatEur(totals.value)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-emerald-400 tabular-nums">{formatEur(totals.value)}</span>
+                    {selectButton}
+                  </div>
                 </div>
                 <ManualSearch
                   value={manualName}
@@ -865,6 +954,9 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
           )}
         </div>
       )}
+
+      {stackSelectionBar}
+      {stackSelect && <div className="h-24" aria-hidden />}
 
       {/* Druck auswählen */}
       {printFor && stack.find((x) => x.key === printFor) && (
@@ -958,16 +1050,31 @@ function StackList({
   onQty,
   onFoil,
   onPrints,
+  selectMode = false,
+  selected,
+  onToggle,
 }: {
   stack: ScanItem[];
   onQty: (key: string, q: number) => void;
   onFoil: (key: string, foil: boolean) => void;
   onPrints: (item: ScanItem) => void;
+  selectMode?: boolean;
+  selected?: Set<string>;
+  onToggle?: (key: string) => void;
 }) {
   return (
     <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
       {stack.map((s) => (
-        <li key={s.key} className="flex items-center gap-3 px-3 py-2">
+        <li
+          key={s.key}
+          // Im Auswahlmodus wählt ein Tipp nur aus – Knöpfe der Zeile ruhen
+          className={`flex items-center gap-3 px-3 py-2 ${selectMode ? "cursor-pointer [&_button]:pointer-events-none" : ""} ${
+            selectMode && selected?.has(s.key) ? "bg-indigo-500/15" : ""
+          }`}
+          onClick={selectMode ? () => onToggle?.(s.key) : undefined}
+          aria-selected={selectMode ? selected?.has(s.key) : undefined}
+        >
+          {selectMode && <SelectCheck selected={!!selected?.has(s.key)} className="shrink-0" />}
           <button onClick={() => onPrints(s)} className="relative shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800" aria-label={`Druck von ${s.name} ändern`}>
             {s.imageUrl && <Image src={s.imageUrl} alt="" width={40} height={56} className="w-full h-full object-cover" />}
             {s.foil && <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/30 via-transparent to-cyan-300/30" aria-hidden />}

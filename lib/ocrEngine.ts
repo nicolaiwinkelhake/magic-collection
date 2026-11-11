@@ -24,7 +24,8 @@ async function create(langs: string[], params: Record<string, string>): Promise<
 }
 
 export function getNameWorker(): Promise<Worker> {
-  nameWorker ??= create(["eng", "deu"], {}).catch((e) => {
+  // Seitenmodus 7 = eine einzelne Textzeile (spart die Layout-Analyse)
+  nameWorker ??= create(["eng", "deu"], { tessedit_pageseg_mode: "7" }).catch((e) => {
     nameWorker = null; // beim nächsten Versuch neu laden
     throw e;
   });
@@ -34,6 +35,7 @@ export function getNameWorker(): Promise<Worker> {
 export function getInfoWorker(): Promise<Worker> {
   infoWorker ??= create(["eng"], {
     tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/•*-. ",
+    tessedit_pageseg_mode: "6", // ein Textblock (zwei kurze Zeilen)
   }).catch((e) => {
     infoWorker = null;
     throw e;

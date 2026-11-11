@@ -30,6 +30,8 @@ import type { Deck, DeckCard } from "@/lib/deckTypes";
 import { ColorIdentity, ManaCost } from "@/components/ui/Mana";
 import { groupByType } from "@/lib/deckTypeGroups";
 import { CardViewer, viewerButton, type ViewerCard } from "@/components/ui/CardViewer";
+import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
+import { toggle, toggleAll } from "@/lib/selection";
 
 const artCrop = (url: string) => url.replace("/normal/", "/art_crop/").replace("/large/", "/art_crop/");
 
@@ -59,6 +61,10 @@ export function DeckDetailClient({
   const [tab, setTab] = useState<DeckTab>("analysis");
   // Kartendetail zum Durchwischen: Deckliste bzw. Vorschläge einer Kategorie
   const [viewKey, setViewKey] = useState<string | null>(null);
+  // Mehrfachauswahl in der Kartenliste (Schlüssel = erste Karte eines Stapels)
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
   const [suggestView, setSuggestView] = useState<{ category: string; index: number } | null>(null);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [cardView, setCardView] = useCardView(true);
@@ -218,6 +224,35 @@ export function DeckDetailClient({
       alert(`Fehler beim Entfernen: ${data.error ?? res.status}`);
       return;
     }
+    router.refresh();
+  }
+
+  // Auswahl beenden, wenn der Reiter wechselt
+  useEffect(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+  }, [tab]);
+
+  // Ausgewählte Karten (jeweils alle Kopien eines Stapels) aus dem Deck nehmen.
+  async function removeSelected() {
+    const ids = viewerStacks
+      .filter((st) => selected.has(st[0].id) && !st[0].is_commander)
+      .flatMap((st) => st.map((c) => c.id));
+    if (!ids.length) return;
+    setRemoving(true);
+    const res = await fetch(`/api/decks/${deck.id}/cards`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardIds: ids }),
+    }).catch(() => null);
+    setRemoving(false);
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => ({}));
+      alert(`Fehler beim Entfernen: ${data?.error ?? res?.status ?? "Verbindung"}`);
+      return;
+    }
+    setSelected(new Set());
+    setSelectMode(false);
     router.refresh();
   }
 
@@ -1018,7 +1053,20 @@ export function DeckDetailClient({
                 <span className="text-xs font-normal text-zinc-500">(prüfe Freunde...)</span>
               )}
             </h2>
-            <CardViewToggle mode={cardView} onChange={setCardView} allowList />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setSelectMode((v) => !v);
+                  setSelected(new Set());
+                }}
+                className={`rounded-lg px-3 h-8 text-xs font-medium border transition ${
+                  selectMode ? "bg-indigo-500/20 border-indigo-400/60 text-white" : "bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
+                }`}
+              >
+                {selectMode ? "Fertig" : "Auswählen"}
+              </button>
+              <CardViewToggle mode={cardView} onChange={setCardView} allowList />
+            </div>
           </div>
           <div className="space-y-5">
             {typeGroups.map((g) => (
@@ -1036,10 +1084,16 @@ export function DeckDetailClient({
                       return (
                         <li key={card.id} className="flex items-center gap-3 px-3 py-2">
                           <button
-                            onClick={() => setViewKey(card.id)}
-                            aria-label={`${card.name} ansehen`}
+                            onClick={() =>
+                              selectMode
+                                ? !card.is_commander && setSelected((sel) => toggle(sel, card.id))
+                                : setViewKey(card.id)
+                            }
+                            aria-label={selectMode ? `${card.name} ${selected.has(card.id) ? "abwählen" : "auswählen"}` : `${card.name} ansehen`}
+                            aria-pressed={selectMode ? selected.has(card.id) : undefined}
                             className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                           >
+                          {selectMode && (card.is_commander ? <span className="w-6 shrink-0" /> : <SelectCheck selected={selected.has(card.id)} className="shrink-0" />)}
                           <span className="shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800">
                             {card.image_url && (
                               <Image src={card.image_url} alt="" width={40} height={56} className="w-full h-full object-cover" />
@@ -1066,7 +1120,7 @@ export function DeckDetailClient({
                           <span className="shrink-0 text-sm tabular-nums text-emerald-400">
                             {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
                           </span>
-                          {!card.is_commander && (
+                          {!card.is_commander && !selectMode && (
                             <button
                               onClick={() => removeDeckCard(card.id, card.name)}
                               title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
@@ -1089,9 +1143,16 @@ export function DeckDetailClient({
                       return (
                         <div key={card.id} className="relative">
                           <button
-                            onClick={() => setViewKey(card.id)}
-                            aria-label={`${card.name} ansehen`}
-                            className="relative block w-full rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40 transition hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                            onClick={() =>
+                              selectMode
+                                ? !card.is_commander && setSelected((sel) => toggle(sel, card.id))
+                                : setViewKey(card.id)
+                            }
+                            aria-label={selectMode ? `${card.name} ${selected.has(card.id) ? "abwählen" : "auswählen"}` : `${card.name} ansehen`}
+                            aria-pressed={selectMode ? selected.has(card.id) : undefined}
+                            className={`relative block w-full rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40 transition hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+                              selectMode && selected.has(card.id) ? "ring-2 ring-indigo-400" : ""
+                            } ${selectMode && card.is_commander ? "opacity-50" : ""}`}
                           >
                             {card.image_url ? (
                               <Image
@@ -1108,7 +1169,10 @@ export function DeckDetailClient({
                             )}
                             <QuantityBadge count={count} />
                           </button>
-                          {!card.is_commander && (
+                          {selectMode && !card.is_commander && (
+                            <SelectCheck selected={selected.has(card.id)} className="pointer-events-none absolute top-1.5 left-1.5 z-10" />
+                          )}
+                          {!card.is_commander && !selectMode && (
                             <button
                               onClick={() => removeDeckCard(card.id, card.name)}
                               title={count > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
@@ -1196,6 +1260,27 @@ export function DeckDetailClient({
           )}
         </>
       )}
+      {selectMode && tab === "cards" && (
+        <>
+          <div className="h-24" aria-hidden />
+          <SelectionBar
+            count={selected.size}
+            total={viewerStacks.filter((st) => !st[0].is_commander).length}
+            onToggleAll={() =>
+              setSelected((sel) => toggleAll(sel, viewerStacks.filter((st) => !st[0].is_commander).map((st) => st[0].id)))
+            }
+            onCancel={() => {
+              setSelectMode(false);
+              setSelected(new Set());
+            }}
+            onConfirm={() => void removeSelected()}
+            actionLabel="Aus Deck"
+            confirmText="{n} Karten (jeweils alle Kopien) aus dem Deck entfernen? Sie bleiben in deiner Sammlung."
+            busy={removing}
+          />
+        </>
+      )}
+
       {viewIndex >= 0 && (
         <CardViewer
           cards={viewerCards}
