@@ -9,11 +9,21 @@ export const HASH_H = 88;
 
 const cache = new Map<string, CardHash | null>();
 
+// Zeichenflächen je Größe wiederverwenden: der Scanner ruft das mehrmals pro
+// Sekunde auf – ohne Wiederverwendung entstehen ständig neue Canvas-Objekte
+// (spürbar auf schwachen Handys). Alles synchron, daher gefahrlos.
+const pool = new Map<string, CanvasRenderingContext2D>();
+
 export function grayOf(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, w: number, h: number) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  const key = `${w}x${h}`;
+  let ctx = pool.get(key);
+  if (!ctx) {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    ctx = c.getContext("2d", { willReadFrequently: true })!;
+    pool.set(key, ctx);
+  }
   ctx.drawImage(source, sx, sy, sw, sh, 0, 0, w, h);
   return toGray(ctx.getImageData(0, 0, w, h).data);
 }

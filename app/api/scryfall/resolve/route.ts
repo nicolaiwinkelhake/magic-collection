@@ -37,15 +37,18 @@ export async function GET(request: Request) {
   const lang = (params.get("lang") ?? "").toUpperCase();
   if (!name && !(set && number)) return NextResponse.json({ error: "Kein Name angegeben" }, { status: 400 });
 
-  // 1) Druck über Set + Nummer.
-  const byNumber = set && number ? await getJson<ScryfallCard & { set_name?: string }>(`${SCRYFALL}/cards/${set}/${number}`) : null;
+  // 1) Druck über Set + Nummer – gleichzeitig mit der Namenssuche (spart Zeit).
+  const byNumberP = set && number ? getJson<ScryfallCard & { set_name?: string }>(`${SCRYFALL}/cards/${set}/${number}`) : Promise.resolve(null);
+  const firstByNameP = name && lang !== "DE" ? fetchCardByName(name).catch(() => null) : Promise.resolve(null);
+  const [byNumber, firstByName] = await Promise.all([byNumberP, firstByNameP]);
 
   // 2) Karte über den Namen (unscharf, mit gekürzten Varianten). Ist die
   //    Karte laut Infozeile deutsch, zuerst den deutschen Namen versuchen.
-  let byName: ScryfallCard | null = null;
-  if (name && lang === "DE") byName = await findByGermanName(name, supabase);
+  let byName: ScryfallCard | null = firstByName?.card ?? null;
+  if (name && !byName && lang === "DE") byName = await findByGermanName(name, supabase);
   if (name && !byName) {
-    for (const variant of resolveVariants(name)) {
+    // Den vollen Namen hat die parallele Abfrage oben schon probiert
+    for (const variant of resolveVariants(name).slice(lang !== "DE" ? 1 : 0)) {
       const r = await fetchCardByName(variant).catch(() => null);
       if (r?.card) {
         byName = r.card;

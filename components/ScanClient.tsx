@@ -8,7 +8,9 @@ import { getInfoWorker, getNameWorker, terminateAll, warmUp } from "@/lib/ocrEng
 import { detectCard } from "@/lib/cardDetect";
 import { pickBest, type CardHash } from "@/lib/imageHash";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
-import { loadPrints } from "@/components/ui/PrintPicker";import { formatEur } from "@/lib/format";
+import { loadPrints } from "@/components/ui/PrintPicker";
+import { directByName, directPrint } from "@/lib/scryfallDirect";
+import { formatEur } from "@/lib/format";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type OcrLine } from "@/lib/ocr";
 import { coverGuide, fromVisible, visibleRegion, type Rect } from "@/lib/scanGeometry";
@@ -37,7 +39,9 @@ import {
 // (Sammlernummer, Set-Kürzel – auf Karten ab 2015).
 const NAME_AREA = { x: 0.04, y: 0.02, w: 0.8, h: 0.09 };
 const INFO_AREA = { x: 0.02, y: 0.91, w: 0.53, h: 0.08 };
-const MIN_OCR_HEIGHT = 140;
+const MIN_OCR_HEIGHT = 140; // Foto/obere Bildhälfte (mehrere Zeilen)
+const NAME_OCR_HEIGHT = 56; // Namensbalken: eine Zeile
+const INFO_OCR_HEIGHT = 72; // Infozeile: zwei kleine Zeilen
 const THUMB_W = 32;
 const THUMB_H = 45;
 const DETECT_W = 120; // Breite des Suchbilds für die Kartenkanten
@@ -62,9 +66,11 @@ function subArea(card: Rect, area: Rect, srcW: number, srcH: number) {
   };
 }
 
-// Bildausschnitt vergrößert und kontrastverstärkt für die Texterkennung.
-function regionToCanvas(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number) {
-  const scale = Math.max(1, MIN_OCR_HEIGHT / sh);
+// Bildausschnitt auf eine feste Höhe gebracht und kontrastverstärkt für die
+// Texterkennung. Nicht größer als nötig: Tesseract liest am besten bei
+// ~25–35 px Schrifthöhe, und jedes Pixel mehr kostet Zeit (auf dem Handy viel).
+function regionToCanvas(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, targetH = MIN_OCR_HEIGHT) {
+  const scale = targetH / sh;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(sw * scale);
   canvas.height = Math.round(sh * scale);
@@ -166,6 +172,13 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   useEffect(() => save(STACK_KEY, stack), [stack]);
   useEffect(() => save(PREFS_KEY, prefs), [prefs]);
 
+  // Texterkennung schon beim Öffnen der Seite im Hintergrund laden – dann ist
+  // sie bereit, wenn die Kamera startet.
+  useEffect(() => {
+    const t = setTimeout(() => void warmUp().catch(() => {}), 800);
+    return () => clearTimeout(t);
+  }, []);
+
   // Aufräumen: Kamera aus, Texterkennung beenden.
   useEffect(() => {
     return () => {
@@ -250,8 +263,8 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
   async function readCard(source: CanvasImageSource, card: Rect, w: number, h: number) {
     const n = subArea(card, NAME_AREA, w, h);
     const a = subArea(card, INFO_AREA, w, h);
-    const nameCanvas = regionToCanvas(source, n.sx, n.sy, n.sw, n.sh);
-    const infoCanvas = regionToCanvas(source, a.sx, a.sy, a.sw, a.sh);
+    const nameCanvas = regionToCanvas(source, n.sx, n.sy, n.sw, n.sh, NAME_OCR_HEIGHT);
+    const infoCanvas = regionToCanvas(source, a.sx, a.sy, a.sw, a.sh, INFO_OCR_HEIGHT);
     const [nameWorker, infoWorker] = await Promise.all([getNameWorker(), getInfoWorker()]);
     const [nameLines, infoLines] = await Promise.all([ocrLines(nameCanvas, nameWorker), ocrLines(infoCanvas, infoWorker)]);
     const info = parseCardInfo(infoLines.map((l) => l.text).join(" "));
@@ -266,7 +279,22 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
     }
     if (info?.lang) params.set("lang", info.lang);
     const cacheKey = params.toString();
-    if (!suggest && resolveCache.has(cacheKey)) return resolveCache.get(cacheKey)!;
+    if (resolveCache.get(cacheKey)) return resolveCache.get(cacheKey)!;
+    // Schneller Weg: direkt bei Scryfall (eine Anfrage, kein Server-Umweg).
+    // Der Server (mit Varianten, deutschen Namen, Vorschlägen) nur, wenn das
+    // nichts findet.
+    const direct =
+      info?.set && info.number
+        ? await directPrint(info.set, info.number, info.lang, name ? [name] : [])
+        : name
+          ? await directByName(name)
+          : null;
+    if (direct) {
+      resolveCache.set(cacheKey, direct);
+      if (suggest) setSuggestions([]);
+      return direct;
+    }
+    if (!suggest && resolveCache.has(cacheKey)) return null; // schon erfolglos versucht
     if (!suggest) params.set("suggest", "0");
     const res = await fetch(`/api/scryfall/resolve?${params}`).catch(() => null);
     const data = await res?.json().catch(() => null);
@@ -429,9 +457,9 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
           }
         }
       }
-      if (!stopped) setTimeout(tick, 300);
+      if (!stopped) setTimeout(tick, 150);
     }
-    const t = setTimeout(tick, 500);
+    const t = setTimeout(tick, 300);
     return () => {
       stopped = true;
       clearTimeout(t);
@@ -467,7 +495,12 @@ export function ScanClient({ decks }: { decks: { id: string; name: string }[] })
         const { names, info } = await readCard(full, card, w, h);
         result = await resolveCandidates(names, info, true);
       } else {
-        const lines = await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5), await getNameWorker());
+        // Mehrere Zeilen: kurz auf automatische Seitenaufteilung umstellen
+        const worker = await getNameWorker();
+        await worker.setParameters({ tessedit_pageseg_mode: "3" as never });
+        const lines = await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5), worker).finally(() =>
+          worker.setParameters({ tessedit_pageseg_mode: "7" as never }),
+        );
         result = await resolveCandidates(nameCandidates(lines, 4), null, true);
       }
       if (result.match) accept(result.match);
