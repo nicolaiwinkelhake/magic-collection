@@ -10,10 +10,13 @@ import { DEFAULT_FILTERS, filterAndSortCards, setCodes } from "@/lib/cardFilters
 import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { TradeComposer } from "@/components/TradeComposer";
+import { addToBasket, basketCount, basketValue, type Basket } from "@/lib/tradeBasket";
 
 // Geteilte Sammlungen von Freunden – gleiche Darstellung wie die eigene
 // Sammlung (Wert-Kopf, Filter, Sortieren/Gruppieren, Liste/Raster/Details,
-// wischbares Kartendetail), aber nur zum Ansehen.
+// wischbares Kartendetail), aber nur zum Ansehen. Karten lassen sich direkt
+// für einen Trade anfragen (Kartendetail oder Mehrfachauswahl).
 
 type Owner = { owner_id: string; owner_email: string };
 
@@ -27,6 +30,21 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  // Trade-Korb je Freund (bleibt beim Wechseln zwischen Freunden erhalten)
+  const [baskets, setBaskets] = useState<Record<string, Basket>>({});
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const basket = baskets[selected] ?? [];
+  const setBasket = (b: Basket) => setBaskets((all) => ({ ...all, [selected]: b }));
+  function addCards(list: Card[]) {
+    setBasket(addToBasket(basket, list));
+    setToast(list.length === 1 ? `„${list[0].name}“ zum Trade hinzugefügt` : `${list.length} Karten zum Trade hinzugefügt`);
+  }
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   async function load(ownerId: string) {
     setSelected(ownerId);
@@ -143,10 +161,59 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
               <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0b0b10]/95">
                 <Filters state={filters} onChange={setFilters} sets={sets} />
               </div>
-              <CardGrid key={selected} cards={filtered} groupBy={filters.group} readOnly />
+              <CardGrid
+                key={selected}
+                cards={filtered}
+                groupBy={filters.group}
+                readOnly
+                selectAction={{ label: "Zum Trade", onRun: addCards }}
+                detailActions={(card) => {
+                  const inBasket = basket.find((b) => b.card.id === card.id)?.qty ?? 0;
+                  const full = inBasket >= card.quantity;
+                  return (
+                    <button onClick={() => addCards([card])} disabled={full} className="btn-primary h-10 w-full">
+                      {inBasket ? (full ? `Im Trade (${inBasket}×) ✓` : `Im Trade (${inBasket}×) · noch eine`) : "🔁 Für Trade anfragen"}
+                    </button>
+                  );
+                }}
+              />
             </>
           )}
         </>
+      )}
+      {/* Trade-Leiste: was schon für den Trade gewählt ist */}
+      {owner && basket.length > 0 && !composerOpen && (
+        <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-40 mx-auto max-w-md animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]">
+          <button
+            onClick={() => setComposerOpen(true)}
+            className="press w-full flex items-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-600 px-4 py-3 text-left shadow-glow ring-1 ring-inset ring-white/20"
+          >
+            <span className="text-xl" aria-hidden>
+              🔁
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold truncate">Trade mit {displayName(owner.owner_email)}</span>
+              <span className="block text-xs text-white/80 tabular-nums">
+                {basketCount(basket)} {basketCount(basket) === 1 ? "Karte" : "Karten"} · {formatEur(basketValue(basket))}
+              </span>
+            </span>
+            <span className="text-sm font-semibold">Weiter ›</span>
+          </button>
+        </div>
+      )}
+      {toast && (
+        <div className="fixed inset-x-0 bottom-[calc(10rem+env(safe-area-inset-bottom))] lg:bottom-24 z-[80] flex justify-center px-4 pointer-events-none" role="status">
+          <span className="rounded-full bg-zinc-800 border border-white/10 px-4 py-2 text-sm shadow-lg animate-fade-up">{toast}</span>
+        </div>
+      )}
+      {composerOpen && owner && (
+        <TradeComposer
+          partner={{ id: owner.owner_id, name: displayName(owner.owner_email) }}
+          receive={basket}
+          onReceiveChange={setBasket}
+          onClose={() => setComposerOpen(false)}
+          onSent={() => setBasket([])}
+        />
       )}
     </main>
   );
