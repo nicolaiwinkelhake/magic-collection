@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type FriendshipRow = {
   id: string;
@@ -88,18 +89,12 @@ export function FriendsClient({
   }
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">👥 Freunde</h1>
-        <div className="flex gap-3 text-sm text-zinc-400">
-          <Link href="/shared" className="hover:text-indigo-400">Geteilt</Link>
-          <Link href="/trades" className="hover:text-indigo-400">Trades</Link>
-        </div>
-      </header>
+    <main className="page max-w-2xl">
+      <PageHeader title="Freunde" subtitle="Freundschaften, Freigaben und Anfragen" />
 
       <form
         onSubmit={sendRequest}
-        className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex gap-3"
+        className="surface p-4 flex gap-3"
       >
         <input
           type="email"
@@ -107,12 +102,12 @@ export function FriendsClient({
           placeholder="E-Mail des Freundes"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+          className="input w-auto flex-1 min-w-0"
         />
         <button
           type="submit"
           disabled={loading}
-          className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+          className="btn-primary"
         >
           Anfrage senden
         </button>
@@ -125,7 +120,7 @@ export function FriendsClient({
           {incoming.map((f) => (
             <div
               key={f.id}
-              className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-md px-4 py-2"
+              className="surface rounded-xl flex items-center justify-between px-4 py-2"
             >
               <span>{f.other_user_email}</span>
               <div className="flex gap-2">
@@ -153,7 +148,7 @@ export function FriendsClient({
           {outgoing.map((f) => (
             <div
               key={f.id}
-              className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-md px-4 py-2 text-zinc-400"
+              className="surface rounded-xl flex items-center justify-between px-4 py-2 text-zinc-400"
             >
               <span>{f.other_user_email}</span>
               <span className="text-xs">Ausstehend</span>
@@ -174,7 +169,7 @@ export function FriendsClient({
             return (
               <div
                 key={f.id}
-                className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-md px-4 py-3"
+                className="surface rounded-xl flex items-center justify-between px-4 py-3"
               >
                 <span>{f.other_user_email}</span>
                 <button

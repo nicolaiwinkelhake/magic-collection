@@ -2,22 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------------
+   Grundlagen: tiefer, kühler Hintergrund mit sanftem Farbschimmer.
+   ------------------------------------------------------------------ */
+:root {
+  --bg: #0b0b10;
+  color-scheme: dark;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
-  background-color: #0f0f12;
-  color: #f2f2f2;
+  background-color: var(--bg);
+  color: #f3f3f7;
   position: relative;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body::before {
   content: "";
   position: fixed;
-  inset: -10%;
+  inset: -20%;
   z-index: -2;
   pointer-events: none;
   background:
-    radial-gradient(circle at 20% 85%, rgba(29, 158, 117, 0.18), transparent 45%),
-    radial-gradient(circle at 80% 10%, rgba(127, 119, 221, 0.22), transparent 45%);
-  filter: blur(70px);
+    radial-gradient(40% 35% at 15% 10%, rgba(119, 100, 251, 0.28), transparent 70%),
+    radial-gradient(35% 30% at 90% 20%, rgba(236, 72, 153, 0.14), transparent 70%),
+    radial-gradient(45% 40% at 70% 95%, rgba(16, 185, 129, 0.14), transparent 70%);
+  filter: blur(40px);
 }
 
 body::after {
@@ -26,15 +44,124 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
-  background-size: 26px 26px;
-  opacity: 0.04;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.6) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.035;
+  mask-image: linear-gradient(to bottom, black, transparent 70%);
 }
 
-/* Platz für die Tab-Leiste unten (nur Handy/Tablet, nur angemeldet). */
+/* Platz für die schwebende Tab-Leiste unten (nur Handy/Tablet, nur angemeldet). */
 @media (max-width: 1023px) {
   body.has-tabbar {
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Eingabefelder auf dem Handy mit 16px – sonst zoomt iOS beim Antippen. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+@layer base {
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+
+  /* Spürbares Feedback beim Antippen (wie native Apps) */
+  button,
+  a[role="button"],
+  .press {
+    transition-property: transform, background-color, border-color, color, opacity, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  button:not(:disabled):active,
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(146, 132, 255, 0.8);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgba(119, 100, 251, 0.45);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #73738a;
+  }
+}
+
+@layer components {
+  /* Seiten-Rahmen: einheitliche Ränder + sanftes Einblenden */
+  .page {
+    @apply mx-auto w-full max-w-6xl px-4 pt-4 pb-8 sm:pt-8 space-y-5 animate-fade-up;
+  }
+
+  /* Flächen */
+  .surface {
+    @apply rounded-2xl border border-white/[0.08] bg-white/[0.04] shadow-card;
+  }
+  .surface-strong {
+    @apply rounded-2xl border border-white/10 bg-zinc-900/80 backdrop-blur-xl shadow-card;
+  }
+
+  /* Knöpfe */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 h-11 text-sm font-semibold whitespace-nowrap select-none disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn text-white bg-gradient-to-b from-indigo-400 to-indigo-600 shadow-glow ring-1 ring-inset ring-white/15 hover:from-indigo-300 hover:to-indigo-500;
+  }
+  .btn-secondary {
+    @apply btn text-zinc-100 bg-white/[0.06] border border-white/10 hover:bg-white/10;
+  }
+  .btn-ghost {
+    @apply btn text-zinc-300 hover:text-white hover:bg-white/5;
+  }
+  .btn-danger {
+    @apply btn text-red-300 bg-red-500/10 border border-red-500/25 hover:bg-red-500/15;
+  }
+  .icon-btn {
+    @apply inline-grid place-items-center w-10 h-10 rounded-full bg-white/[0.06] border border-white/10 text-zinc-200 hover:bg-white/10 disabled:opacity-50;
+  }
+
+  /* Eingaben */
+  .input {
+    @apply w-full min-h-[2.75rem] py-2.5 rounded-xl bg-white/[0.05] border border-white/10 px-3.5 text-sm text-white outline-none transition focus:border-indigo-400/70 focus:bg-white/[0.07] focus:ring-4 focus:ring-indigo-500/15;
+  }
+
+  /* Chips / Filter */
+  .chip {
+    @apply inline-flex items-center gap-1.5 shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3.5 h-9 text-sm text-zinc-300 hover:border-white/20;
+  }
+  .chip-active {
+    @apply border-indigo-400/60 bg-indigo-500/20 text-white;
+  }
+
+  /* Reiter als Segment-Steuerung (wischbar) */
+  .segmented {
+    @apply flex gap-1 overflow-x-auto no-scrollbar rounded-2xl border border-white/[0.08] bg-white/[0.04] p-1;
+  }
+  .segment {
+    @apply shrink-0 rounded-xl px-3.5 h-9 text-sm font-medium text-zinc-400 hover:text-zinc-200 whitespace-nowrap;
+  }
+  .segment-active {
+    @apply bg-white/[0.12] text-white shadow-sm shadow-black/40;
+  }
+
+  /* Farbverlauf-Text für Hervorhebungen */
+  .text-gradient {
+    @apply bg-gradient-to-r from-white via-indigo-200 to-fuchsia-200 bg-clip-text text-transparent;
   }
 }
 
@@ -44,8 +171,10 @@ body::after {
 }
 
 /* Horizontale Chip-Leisten ohne sichtbaren Scrollbalken. */
-.no-scrollbar { scrollbar-width: none; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
+@layer utilities {
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
 
 /* Kartendetail: Einschieben beim Wischen zur nächsten/vorherigen Karte. */
 @keyframes swipe-from-right {
@@ -61,4 +190,13 @@ body::after {
 @keyframes indeterminate {
   from { transform: translateX(-100%); }
   to { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
 }

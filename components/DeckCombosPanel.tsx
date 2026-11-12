@@ -54,7 +54,7 @@ export function DeckCombosPanel({ deckId }: { deckId: string }) {
         <button
           onClick={load}
           disabled={loading}
-          className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          className="btn-primary h-9 px-3"
         >
           {loading ? "Lade…" : data ? "Neu laden" : "Laden"}
         </button>

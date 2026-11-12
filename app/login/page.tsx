@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { AuthShell } from "@/components/ui/AuthShell";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,12 +36,12 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
+    <AuthShell>
       <form
         onSubmit={handleLogin}
-        className="w-full max-w-sm bg-zinc-900 rounded-xl p-8 space-y-4 border border-zinc-800"
+        className="surface-strong p-6 space-y-4"
       >
-        <h1 className="text-2xl font-semibold mb-2">Anmelden</h1>
+        <h1 className="text-xl font-semibold">Anmelden</h1>
 
         <div className="space-y-1">
           <label className="text-sm text-zinc-400">E-Mail</label>
@@ -49,7 +50,7 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
 
@@ -65,7 +66,7 @@ export default function LoginPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
 
@@ -74,7 +75,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 transition rounded-md py-2 font-medium disabled:opacity-50"
+          className="btn-primary w-full"
         >
           {loading ? "Anmelden..." : "Anmelden"}
         </button>
@@ -86,6 +87,6 @@ export default function LoginPage() {
           </Link>
         </p>
       </form>
-    </main>
+    </AuthShell>
   );
 }

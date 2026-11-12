@@ -14,6 +14,7 @@ import { FolderBar } from "@/components/FolderBar";
 import { FolderPicker } from "@/components/ui/FolderPicker";
 import { ALL, UNSORTED, folderStats, inFolder, wishlistMeasure, withFolder, type FolderFilter } from "@/lib/folders";
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type WishItem = {
   id: string;
@@ -136,16 +137,11 @@ export function WishlistClient({
   }
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold truncate">
-          ⭐ Wunschliste
-          {folder !== ALL && <span className="text-zinc-400 font-normal"> · {activeFolder?.name ?? "Ohne Ordner"}</span>}
-        </h1>
-        <Link href="/collection" className="text-indigo-400 hover:underline text-sm">
-          Zur Sammlung
-        </Link>
-      </header>
+    <main className="page max-w-4xl">
+      <PageHeader
+        title="Wunschliste"
+        subtitle={folder !== ALL ? `📁 ${activeFolder?.name ?? "Ohne Ordner"}` : "Karten, die du noch suchst"}
+      />
 
       {(folders.length > 0 || allItems.length > 0) && (
         <FolderBar
@@ -199,7 +195,7 @@ export function WishlistClient({
             return (
               <div
                 key={item.id}
-                className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 group"
+                className="surface relative overflow-hidden group"
               >
                 <button
                   onClick={() => (selectMode ? setSelected((sel) => toggle(sel, item.id)) : setViewIndex(items.indexOf(item)))}

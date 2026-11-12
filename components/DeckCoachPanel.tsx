@@ -196,7 +196,7 @@ export function DeckCoachPanel({
             <button
               onClick={ask}
               disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+              className="btn-primary h-9 px-3"
             >
               {loading ? "Coach denkt nach…" : "Vorschläge holen"}
             </button>

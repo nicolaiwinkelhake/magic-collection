@@ -248,7 +248,7 @@ export function CollectionClient({
   }
 
   return (
-    <main className="max-w-7xl mx-auto px-4 py-5 sm:py-8 space-y-4">
+    <main className="page max-w-7xl space-y-4">
       {backfilling && (
         <div className="flex items-center gap-2 bg-indigo-900/40 border border-indigo-700 rounded-lg px-4 py-2 text-sm text-indigo-300">
           <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
@@ -264,14 +264,16 @@ export function CollectionClient({
         </p>
       )}
       {/* Kopfbereich: Gesamtwert groß, Kennzahlen darunter */}
-      <header className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/20 via-zinc-900/80 to-emerald-500/10 p-5">
+      <header className="relative isolate overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/25 via-zinc-900/80 to-fuchsia-500/10 p-5 shadow-card">
+        <span className="pointer-events-none absolute -z-10 -right-16 -top-20 h-56 w-56 rounded-full bg-indigo-500/25 blur-3xl" aria-hidden />
+        <span className="pointer-events-none absolute -z-10 -left-10 -bottom-24 h-48 w-48 rounded-full bg-emerald-500/15 blur-3xl" aria-hidden />
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-sm font-medium text-zinc-400 truncate">
+            <h1 className="text-xs font-semibold uppercase tracking-[0.12em] text-indigo-200/80 truncate">
               Sammlung
               {folder !== ALL && <span className="text-zinc-300"> · {activeFolder?.name ?? "Ohne Ordner"}</span>}
             </h1>
-            <p className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums">{formattedTotal}</p>
+            <p className="mt-1 text-[2.4rem] leading-none sm:text-5xl font-bold tracking-tight tabular-nums text-gradient">{formattedTotal}</p>
             {filteredCards.length !== folderCards.length && (
               <p className="text-xs text-zinc-500 mt-0.5">Wert der gefilterten Karten</p>
             )}
@@ -332,7 +334,7 @@ export function CollectionClient({
         <p className="text-red-400">Fehler beim Laden: {loadError}</p>
       )}
 
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0f0f12]/85 backdrop-blur-xl">
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0b0b10]/85 backdrop-blur-xl">
         <Filters state={filters} onChange={setFilters} sets={availableSets} />
       </div>
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { AuthShell } from "@/components/ui/AuthShell";
 
 // Ziel des Links aus der "Passwort vergessen"-Mail. Die Sitzung wurde in
 // /auth/callback angelegt; ohne Sitzung leitet die Middleware zum Login.
@@ -40,12 +41,12 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
+    <AuthShell>
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm bg-zinc-900 rounded-xl p-8 space-y-4 border border-zinc-800"
+        className="surface-strong p-6 space-y-4"
       >
-        <h1 className="text-2xl font-semibold mb-2">Neues Passwort</h1>
+        <h1 className="text-xl font-semibold">Neues Passwort</h1>
         <div className="space-y-1">
           <label htmlFor="pw" className="text-sm text-zinc-400">
             Neues Passwort (mind. 8 Zeichen)
@@ -57,7 +58,7 @@ export default function ResetPasswordPage() {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
         <div className="space-y-1">
@@ -71,18 +72,18 @@ export default function ResetPasswordPage() {
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 transition rounded-md py-2 font-medium disabled:opacity-50"
+          className="btn-primary w-full"
         >
           {loading ? "Speichere..." : "Passwort speichern"}
         </button>
       </form>
-    </main>
+    </AuthShell>
   );
 }

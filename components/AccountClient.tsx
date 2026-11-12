@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export function AccountClient({ email }: { email: string }) {
   const router = useRouter();
@@ -65,15 +66,10 @@ export function AccountClient({ email }: { email: string }) {
   }
 
   return (
-    <main className="max-w-md mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">⚙️ Account</h1>
-        <Link href="/collection" className="text-indigo-400 hover:underline text-sm">
-          Zur Sammlung
-        </Link>
-      </header>
+    <main className="page max-w-md">
+      <PageHeader title="Konto" />
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+      <div className="surface p-4">
         <p className="text-sm text-zinc-400">Angemeldet als</p>
         <p className="font-medium">{email}</p>
       </div>
@@ -81,7 +77,7 @@ export function AccountClient({ email }: { email: string }) {
       {/* Passwort ändern */}
       <form
         onSubmit={changePassword}
-        className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3"
+        className="surface p-4 space-y-3"
       >
         <h2 className="font-medium">Passwort ändern</h2>
         <input
@@ -89,14 +85,14 @@ export function AccountClient({ email }: { email: string }) {
           placeholder="Neues Passwort"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+          className="input"
         />
         <input
           type="password"
           placeholder="Neues Passwort bestätigen"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+          className="input"
         />
         {pwMsg && (
           <p
@@ -110,7 +106,7 @@ export function AccountClient({ email }: { email: string }) {
         <button
           type="submit"
           disabled={pwBusy}
-          className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+          className="btn-primary"
         >
           {pwBusy ? "Speichere..." : "Passwort ändern"}
         </button>
@@ -119,7 +115,7 @@ export function AccountClient({ email }: { email: string }) {
       {/* E-Mail ändern */}
       <form
         onSubmit={changeEmail}
-        className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3"
+        className="surface p-4 space-y-3"
       >
         <h2 className="font-medium">E-Mail-Adresse ändern</h2>
         <input
@@ -127,13 +123,13 @@ export function AccountClient({ email }: { email: string }) {
           placeholder="Neue E-Mail-Adresse"
           value={newEmail}
           onChange={(e) => setNewEmail(e.target.value)}
-          className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+          className="input"
         />
         {emailMsg && <p className="text-sm text-zinc-300">{emailMsg}</p>}
         <button
           type="submit"
           disabled={emailBusy}
-          className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+          className="btn-primary"
         >
           {emailBusy ? "Sende..." : "E-Mail ändern"}
         </button>

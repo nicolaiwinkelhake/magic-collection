@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { CardViewer } from "@/components/ui/CardViewer";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type CardRow = {
   scryfall_id: string;
@@ -37,13 +38,8 @@ export function SetsClient({ rows }: { rows: Row[] }) {
   );
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">🗂️ Set-Fortschritt</h1>
-        <Link href="/collection" className="text-indigo-400 hover:underline text-sm">
-          Zur Sammlung
-        </Link>
-      </header>
+    <main className="page max-w-4xl">
+      <PageHeader title="Sets" subtitle="Wie viele Karten je Set du schon besitzt" />
 
       <p className="text-sm text-zinc-400">
         Zeigt pro Set, wie viele verschiedene Karten du besitzt. Klicke auf ein Set um die Karten zu sehen.
@@ -53,7 +49,7 @@ export function SetsClient({ rows }: { rows: Row[] }) {
         placeholder="Set suchen…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+        className="input"
       />
 
       {filtered.length === 0 ? (
@@ -64,7 +60,7 @@ export function SetsClient({ rows }: { rows: Row[] }) {
             const pct = r.total > 0 ? Math.round((r.owned / r.total) * 100) : 0;
             const isOpen = expanded === r.code;
             return (
-              <div key={r.code} className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+              <div key={r.code} className="surface overflow-hidden">
                 <button
                   onClick={() => setExpanded(isOpen ? null : r.code)}
                   className="w-full p-3 text-left hover:bg-zinc-800 transition"

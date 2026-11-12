@@ -27,6 +27,7 @@ import {
   type ScanItem,
   type ScanMatch,
 } from "@/lib/scanStack";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 // Scanner im Stil von Sammel-Apps:
 // - Vollbild-Kamera, Rahmen, Taschenlampe
@@ -741,25 +742,33 @@ export function ScanClient({
   );
 
   return (
-    <main className="max-w-lg mx-auto px-4 py-5 space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Karten scannen</h1>
-        <p className="text-sm text-zinc-400">
-          Karte ins Bild legen und kurz ruhig halten – sie wird automatisch gefunden und erkannt (Name, Set, Nummer,
-          bei Bedarf der Druck per Bildvergleich) und landet auf dem Stapel. Danach einfach die nächste Karte hinlegen.
-          Deutsche und englische Karten.
-        </p>
-      </header>
+    <main className="page max-w-lg">
+      <PageHeader
+        title="Scannen"
+        subtitle="Karte ins Bild legen und kurz ruhig halten – Name, Set, Nummer und Druck werden automatisch erkannt. Deutsche und englische Karten."
+      />
 
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={startCamera} className="rounded-xl bg-indigo-500 hover:bg-indigo-400 px-3 py-4 font-semibold">
-          📷 Scanner starten
-        </button>
-        <label className="rounded-xl bg-white/5 border border-white/10 hover:border-white/20 px-3 py-4 text-center font-medium cursor-pointer">
-          Foto auswählen
-          <input ref={fileRef} type="file" accept="image/*" onChange={scanFromFile} className="hidden" disabled={scanning} />
-        </label>
-      </div>
+      <button
+        onClick={startCamera}
+        className="group relative w-full overflow-hidden rounded-3xl p-5 text-left bg-gradient-to-br from-indigo-500 via-indigo-600 to-fuchsia-600 shadow-glow ring-1 ring-inset ring-white/20"
+      >
+        <span className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-white/15 blur-2xl" aria-hidden />
+        <span className="relative flex items-center gap-4">
+          <span className="grid place-items-center w-14 h-14 rounded-2xl bg-white/15 ring-1 ring-inset ring-white/25">
+            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2M8 9h8v6H8z" />
+            </svg>
+          </span>
+          <span>
+            <span className="block text-lg font-semibold">Scanner starten</span>
+            <span className="block text-sm text-white/75">Kamera öffnen und Karten nacheinander erfassen</span>
+          </span>
+        </span>
+      </button>
+      <label className="btn-secondary w-full cursor-pointer">
+        Foto aus der Mediathek wählen
+        <input ref={fileRef} type="file" accept="image/*" onChange={scanFromFile} className="hidden" disabled={scanning} />
+      </label>
       {cameraError && <p className="text-sm text-amber-400">{cameraError}</p>}
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -953,7 +962,7 @@ export function ScanClient({
           {sheetOpen && (
             <div className="absolute inset-0 z-10 flex items-end bg-black/60" onClick={() => setSheetOpen(false)}>
               <div
-                className="w-full max-h-[85dvh] overflow-y-auto rounded-t-2xl bg-zinc-900 border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3 animate-[sheet_200ms_ease-out]"
+                className="w-full max-h-[85dvh] overflow-y-auto rounded-t-[2rem] bg-zinc-900 border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3 animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="mx-auto h-1 w-10 rounded-full bg-zinc-700" aria-hidden />
@@ -1094,7 +1103,7 @@ function StackList({
   onToggle?: (key: string) => void;
 }) {
   return (
-    <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
+    <ul className="surface divide-y divide-white/5 overflow-hidden">
       {stack.map((s) => (
         <li
           key={s.key}

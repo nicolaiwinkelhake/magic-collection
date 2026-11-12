@@ -170,7 +170,7 @@ export function CardGrid({
 
   const renderCards = (items: Card[]) =>
     view === "list" ? (
-        <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
+        <ul className="surface divide-y divide-white/5 overflow-hidden">
           {items.map((card) => {
             const isSelected = selected.has(card.id);
             const unit = cardValue({ ...card, quantity: 1 });

@@ -6,8 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 // Gemeinsame Navigation für alle Seiten.
-// Handy/Tablet: schlanke Kopfzeile + Tab-Leiste unten (Sammlung, Decks,
-// Scannen als hervorgehobener Mittelknopf, Entdecken, Mehr). "Mehr" öffnet
+// Handy/Tablet: Kopfzeile wie bei iOS – der Seitentitel erscheint klein,
+// sobald man scrollt – und eine schwebende Tab-Leiste im Glas-Look unten
+// (Sammlung, Decks, Scannen als Mittelknopf, Entdecken, Mehr). "Mehr" öffnet
 // ein Blatt von unten mit allen weiteren Bereichen.
 // Desktop: Hauptlinks oben, der Rest unter "Mehr".
 
@@ -22,8 +23,8 @@ const MAIN: NavLink[] = [
 ];
 
 const MORE: NavLink[] = [
-  { href: "/ai-deck-generator", label: "AI Deck Generator", icon: "sparkles" },
   { href: "/wishlist", label: "Wunschliste", icon: "star" },
+  { href: "/ai-deck-generator", label: "AI Deck Generator", icon: "sparkles" },
   { href: "/sets", label: "Sets", icon: "box" },
   { href: "/trades", label: "Trades", icon: "swap" },
   { href: "/loans", label: "Verliehen", icon: "hand" },
@@ -48,6 +49,15 @@ export function AppNav({ email }: { email: string | null }) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  // Nach dem Scrollen: Glas-Hintergrund + kleiner Titel in der Kopfzeile
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 36);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [pathname]);
 
   // Menüs bei Seitenwechsel schließen.
   useEffect(() => {
@@ -83,19 +93,21 @@ export function AppNav({ email }: { email: string | null }) {
   }
 
   const desktopLink = (href: string) =>
-    `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+    `flex items-center gap-2 rounded-xl px-3 h-9 text-sm font-medium transition ${
       isActive(href) ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
     }`;
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#0f0f12]/90 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
+      <header
+        className={`sticky top-0 z-40 pt-[env(safe-area-inset-top)] transition-colors duration-300 ${
+          scrolled ? "bg-[#0b0b10]/75 backdrop-blur-2xl border-b border-white/[0.06]" : "border-b border-transparent lg:bg-[#0b0b10]/60 lg:backdrop-blur-2xl"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-2">
-          <Link href="/collection" className="flex items-center gap-2 font-semibold whitespace-nowrap mr-3">
-            <span className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-emerald-500 text-sm shadow-lg shadow-indigo-900/40">
-              🪄
-            </span>
-            <span className="hidden lg:inline">Magic Collection</span>
+          <Link href="/collection" className="flex items-center gap-2.5 font-semibold whitespace-nowrap mr-3" aria-label="Magic Collection">
+            <Logo />
+            <span className="hidden lg:inline tracking-tight">Magic Collection</span>
           </Link>
 
           {/* Desktop */}
@@ -115,7 +127,7 @@ export function AppNav({ email }: { email: string | null }) {
               <button
                 onClick={() => setMoreOpen((v) => !v)}
                 aria-expanded={moreOpen}
-                className={`flex items-center gap-1 rounded-lg px-3 py-2 text-sm transition ${
+                className={`flex items-center gap-1 rounded-xl px-3 h-9 text-sm font-medium transition ${
                   MORE.some((l) => isActive(l.href)) ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"
                 }`}
               >
@@ -125,7 +137,7 @@ export function AppNav({ email }: { email: string | null }) {
               {moreOpen && (
                 <>
                   <div className="fixed inset-0 z-0" onClick={() => setMoreOpen(false)} aria-hidden />
-                  <div className="absolute left-0 z-10 mt-2 w-60 rounded-xl border border-white/10 bg-zinc-900/95 backdrop-blur-xl p-1.5 shadow-2xl">
+                  <div className="absolute left-0 z-10 mt-2 w-64 rounded-2xl border border-white/10 bg-zinc-900/90 backdrop-blur-2xl p-1.5 shadow-2xl shadow-black/60 animate-fade-up">
                     {MORE.map((l) => (
                       <Link key={l.href} href={l.href} className={desktopLink(l.href)}>
                         <Icon name={l.icon} className="w-4 h-4" />
@@ -151,20 +163,27 @@ export function AppNav({ email }: { email: string | null }) {
             </button>
           </div>
 
-          {/* Handy/Tablet: aktueller Bereich als Titel */}
-          <span className="flex-1 lg:hidden truncate font-semibold">{current?.label ?? ""}</span>
+          {/* Handy/Tablet: Titel blendet beim Scrollen ein (großer Titel steht auf der Seite) */}
+          <span
+            className={`flex-1 lg:hidden truncate text-center font-semibold transition-all duration-300 ${
+              scrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+            }`}
+            aria-hidden={!scrolled}
+          >
+            {current?.label ?? ""}
+          </span>
           <Link href="/account" className="lg:hidden" aria-label="Konto">
             <Avatar email={email} />
           </Link>
         </div>
       </header>
 
-      {/* Tab-Leiste unten (Handy/Tablet) */}
+      {/* Schwebende Tab-Leiste unten (Handy/Tablet) */}
       <nav
         aria-label="Hauptmenü"
-        className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-white/5 bg-[#0f0f12]/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+        className="lg:hidden fixed inset-x-3 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] z-40 mx-auto max-w-md"
       >
-        <div className="grid grid-cols-5 h-16 max-w-xl mx-auto">
+        <div className="grid grid-cols-5 items-center h-[4.25rem] px-1.5 rounded-[1.75rem] border border-white/10 bg-zinc-900/75 backdrop-blur-2xl shadow-2xl shadow-black/70 ring-1 ring-inset ring-white/[0.04]">
           {TABS.slice(0, 2).map((t) => (
             <TabLink key={t.href} link={t} active={isActive(t.href)} />
           ))}
@@ -172,27 +191,32 @@ export function AppNav({ email }: { email: string | null }) {
           <Link
             href="/scan"
             aria-current={isActive("/scan") ? "page" : undefined}
-            className="flex flex-col items-center justify-center"
+            className="flex items-center justify-center"
             aria-label="Scannen"
           >
             <span
-              className={`-mt-6 grid place-items-center w-14 h-14 rounded-full shadow-lg shadow-indigo-950/60 ring-4 ring-[#0f0f12] transition ${
-                isActive("/scan") ? "bg-indigo-400" : "bg-indigo-500 active:bg-indigo-400"
+              className={`grid place-items-center w-[3.25rem] h-[3.25rem] rounded-[1.15rem] bg-gradient-to-br from-indigo-400 via-indigo-500 to-fuchsia-500 shadow-glow ring-1 ring-inset ring-white/25 transition active:scale-95 ${
+                isActive("/scan") ? "ring-2 ring-white/60" : ""
               }`}
             >
               <Icon name="scan" className="w-6 h-6 text-white" />
             </span>
-            <span className={`text-[10px] mt-0.5 ${isActive("/scan") ? "text-white" : "text-zinc-500"}`}>Scannen</span>
           </Link>
           <TabLink link={TABS[3]} active={isActive(TABS[3].href)} />
           <button
             onClick={() => setSheetOpen(true)}
             aria-expanded={sheetOpen}
             aria-controls="more-sheet"
-            className={`flex flex-col items-center justify-center gap-1 ${sheetActive ? "text-white" : "text-zinc-500"}`}
+            className="flex flex-col items-center justify-center"
           >
-            <Icon name="menu" className="w-6 h-6" />
-            <span className="text-[10px]">Mehr</span>
+            <span
+              className={`flex flex-col items-center gap-0.5 rounded-2xl px-3 py-1.5 transition ${
+                sheetActive ? "bg-white/10 text-white" : "text-zinc-500"
+              }`}
+            >
+              <Icon name="grid" className="w-[22px] h-[22px]" />
+              <span className="text-[10px] font-medium">Mehr</span>
+            </span>
           </button>
         </div>
       </nav>
@@ -200,36 +224,47 @@ export function AppNav({ email }: { email: string | null }) {
       {/* "Mehr"-Blatt von unten */}
       {sheetOpen && (
         <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Weitere Bereiche">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setSheetOpen(false)} aria-hidden />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSheetOpen(false)} aria-hidden />
           <div
             id="more-sheet"
-            className="absolute bottom-0 inset-x-0 rounded-t-2xl border-t border-white/10 bg-zinc-900 px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85dvh] overflow-y-auto animate-[sheet_200ms_ease-out]"
+            className="absolute bottom-0 inset-x-0 rounded-t-[2rem] border-t border-white/10 bg-zinc-900/95 backdrop-blur-2xl px-4 pt-2.5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[85dvh] overflow-y-auto animate-[sheet_260ms_cubic-bezier(.2,.8,.2,1)]"
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-700" aria-hidden />
-            <div className="grid grid-cols-3 gap-2">
+            <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-white/15" aria-hidden />
+            <Link
+              href="/account"
+              className="mb-4 flex items-center gap-3 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/10 border border-white/10 px-4 py-3"
+              title={email}
+            >
+              <Avatar email={email} large />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs text-zinc-400">Angemeldet als</span>
+                <span className="block truncate font-medium">{email}</span>
+              </span>
+              <Icon name="chevron" className="w-5 h-5 -rotate-90 text-zinc-500" />
+            </Link>
+            <div className="grid grid-cols-3 gap-2.5">
               {SHEET.map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
                   aria-current={isActive(l.href) ? "page" : undefined}
-                  className={`flex flex-col items-center gap-2 rounded-xl px-2 py-4 text-center text-xs transition ${
-                    isActive(l.href) ? "bg-indigo-500/20 text-white" : "bg-white/5 text-zinc-300 active:bg-white/10"
+                  className={`press flex flex-col items-center gap-2 rounded-2xl px-2 py-4 text-center text-xs font-medium transition ${
+                    isActive(l.href)
+                      ? "bg-indigo-500/20 text-white ring-1 ring-inset ring-indigo-400/40"
+                      : "bg-white/[0.05] text-zinc-300 active:bg-white/10"
                   }`}
                 >
-                  <Icon name={l.icon} className="w-6 h-6" />
+                  <span className="grid place-items-center w-10 h-10 rounded-xl bg-white/[0.06]">
+                    <Icon name={l.icon} className="w-[22px] h-[22px]" />
+                  </span>
                   {l.label}
                 </Link>
               ))}
             </div>
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-3 text-sm">
-              <Link href="/account" className="flex items-center gap-2 min-w-0 text-zinc-300" title={email}>
-                <Avatar email={email} />
-                <span className="truncate">{email}</span>
-              </Link>
-              <button onClick={logout} className="text-red-400 shrink-0 py-1">
-                Abmelden
-              </button>
-            </div>
+            <button onClick={logout} className="btn-ghost w-full mt-4 text-red-400 hover:text-red-300">
+              <Icon name="logout" className="w-5 h-5" />
+              Abmelden
+            </button>
           </div>
         </div>
       )}
@@ -242,21 +277,36 @@ function TabLink({ link, active }: { link: NavLink; active: boolean }) {
     <Link
       href={link.href}
       aria-current={active ? "page" : undefined}
-      className={`relative flex flex-col items-center justify-center gap-1 transition ${
-        active ? "text-white" : "text-zinc-500 active:text-zinc-300"
-      }`}
+      className="flex flex-col items-center justify-center"
     >
-      {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-400" aria-hidden />}
-      <Icon name={link.icon} className="w-6 h-6" />
-      <span className="text-[10px]">{link.label}</span>
+      <span
+        className={`flex flex-col items-center gap-0.5 rounded-2xl px-3 py-1.5 transition ${
+          active ? "bg-white/10 text-white" : "text-zinc-500 active:text-zinc-300"
+        }`}
+      >
+        <Icon name={link.icon} className="w-[22px] h-[22px]" />
+        <span className="text-[10px] font-medium">{link.label}</span>
+      </span>
     </Link>
   );
 }
 
-function Avatar({ email }: { email: string }) {
+function Logo() {
+  return (
+    <span className="relative grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 via-indigo-500 to-fuchsia-500 shadow-glow ring-1 ring-inset ring-white/25">
+      <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 2.5l2.4 6.1 6.1 2.4-6.1 2.4L12 19.5l-2.4-6.1L3.5 11l6.1-2.4z" />
+      </svg>
+    </span>
+  );
+}
+
+function Avatar({ email, large = false }: { email: string; large?: boolean }) {
   return (
     <span
-      className="grid place-items-center w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-zinc-600 to-zinc-800 text-xs font-semibold uppercase text-white ring-1 ring-white/10"
+      className={`grid place-items-center shrink-0 rounded-full bg-gradient-to-br from-indigo-400 to-fuchsia-500 font-semibold uppercase text-white ring-2 ring-white/10 ${
+        large ? "w-11 h-11 text-base" : "w-8 h-8 text-xs"
+      }`}
       aria-hidden
     >
       {email[0]}
@@ -281,10 +331,12 @@ type IconName =
   | "link"
   | "user"
   | "menu"
+  | "grid"
+  | "logout"
   | "chevron";
 
 const PATHS: Record<IconName, string> = {
-  collection: "M4 6h16M4 12h16M4 18h10",
+  collection: "M8 3h10a2 2 0 012 2v12M6 7h10a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2z",
   decks: "M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2zM9 2h8a2 2 0 012 2",
   crown: "M3 18h18M4 8l4 4 4-7 4 7 4-4-1.5 10h-13z",
   discover: "M12 21a9 9 0 100-18 9 9 0 000 18zM15.5 8.5l-2 5-5 2 2-5z",
@@ -299,6 +351,8 @@ const PATHS: Record<IconName, string> = {
   link: "M10 14a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7M14 10a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7l1.7-1.7",
   user: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
   menu: "M4 6h16M4 12h16M4 18h16",
+  grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+  logout: "M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3M10 17l5-5-5-5M15 12H4",
   chevron: "M6 9l6 6 6-6",
 };
 

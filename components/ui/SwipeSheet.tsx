@@ -128,7 +128,7 @@ export function SwipeSheet({
       )}
       <div
         ref={sheetRef}
-        className="relative bg-zinc-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92dvh] overflow-y-auto overflow-x-hidden shadow-2xl pb-[env(safe-area-inset-bottom)] animate-[sheet_200ms_ease-out] sm:animate-none"
+        className="relative bg-zinc-900 border border-white/10 rounded-t-[2rem] sm:rounded-3xl w-full sm:max-w-2xl max-h-[92dvh] overflow-y-auto overflow-x-hidden shadow-2xl pb-[env(safe-area-inset-bottom)] animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] sm:animate-none"
         onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -138,7 +138,8 @@ export function SwipeSheet({
           setDragX(0);
         }}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 py-3 bg-zinc-900/95 backdrop-blur border-b border-white/5">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 pt-4 pb-3 bg-zinc-900/90 backdrop-blur-2xl border-b border-white/[0.06]">
+          <span className="sm:hidden absolute left-1/2 top-1.5 -translate-x-1/2 h-1.5 w-10 rounded-full bg-white/15" aria-hidden />
           <button
             onClick={() => step(-1)}
             disabled={prev == null}

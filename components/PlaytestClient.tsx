@@ -28,13 +28,13 @@ export function PlaytestClient({ cards }: { cards: PlaytestCard[] }) {
   const nonCommander = cards.filter((c) => !c.is_commander).length;
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+    <div className="surface p-4">
       <div className="flex items-center justify-between">
         <h2 className="font-medium">🎲 Playtester (Goldfishing)</h2>
         {!game ? (
           <button
             onClick={start}
-            className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
+            className="btn-primary h-9 px-3"
           >
             Testhand ziehen
           </button>

@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
 import { formatEur, formatDate } from "@/lib/format";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type TotalPoint = { captured_on: string; total_value_eur: number };
 type CardPoint = { captured_on: string; price_eur: number | null; price_eur_foil: number | null };
@@ -54,16 +55,11 @@ export function StatsClient({
   const latestTotal = totalHistory.at(-1)?.total_value_eur ?? null;
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-8 space-y-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">📈 Wertverlauf</h1>
-        <Link href="/collection" className="text-indigo-400 hover:underline text-sm">
-          Zur Sammlung
-        </Link>
-      </header>
+    <main className="page max-w-4xl">
+      <PageHeader title="Wertverlauf" subtitle="So entwickelt sich der Wert deiner Sammlung" />
 
       {/* Gesamtwert */}
-      <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+      <section className="surface p-4 space-y-3">
         <div className="flex items-baseline justify-between">
           <h2 className="font-medium">Gesamtwert der Sammlung</h2>
           {latestTotal !== null && (
@@ -103,7 +99,7 @@ export function StatsClient({
       </section>
 
       {/* Einzelkarte */}
-      <section className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+      <section className="surface p-4 space-y-3">
         <h2 className="font-medium">Einzelne Karte</h2>
         {cards.length === 0 ? (
           <p className="text-sm text-zinc-500">
@@ -114,7 +110,7 @@ export function StatsClient({
             <select
               value={selected}
               onChange={(e) => loadCard(e.target.value)}
-              className="w-full sm:w-80 rounded-md bg-zinc-800 px-3 py-2 outline-none"
+              className="input sm:w-80"
             >
               <option value="">Karte wählen…</option>
               {cards.map((c) => (

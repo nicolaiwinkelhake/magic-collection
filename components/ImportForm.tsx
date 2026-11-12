@@ -317,13 +317,13 @@ export function ImportForm({
             rows={6}
             placeholder={"Lightning Bolt\n2x Black Lotus\nBrainstorm *F*"}
             disabled={running}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+            className="input font-mono text-sm"
           />
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={handleTextImport}
               disabled={running || !text.trim()}
-              className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+              className="btn-primary"
             >
               {running ? "Importiere..." : "Importieren"}
             </button>
@@ -404,7 +404,7 @@ export function ImportForm({
                   {summary.error.items > 0 && (
                     <button
                       onClick={retryFailed}
-                      className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-3 py-1.5 text-sm font-medium"
+                      className="btn-primary h-9 px-3"
                     >
                       Fehlgeschlagene erneut versuchen
                     </button>
@@ -412,7 +412,7 @@ export function ImportForm({
                   {hasOpen && summary.error.items === 0 && (
                     <button
                       onClick={() => void runJob()}
-                      className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-3 py-1.5 text-sm font-medium"
+                      className="btn-primary h-9 px-3"
                     >
                       Unterbrochenen Import fortsetzen
                     </button>

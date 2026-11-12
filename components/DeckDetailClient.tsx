@@ -477,7 +477,7 @@ export function DeckDetailClient({
             className="object-cover object-[center_25%]"
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f12] via-[#0f0f12]/70 to-black/20" aria-hidden />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b10] via-[#0b0b10]/70 to-black/20" aria-hidden />
         <div className="relative flex items-center justify-between p-3">
           <Link
             href="/decks"
@@ -533,13 +533,13 @@ export function DeckDetailClient({
       </header>
 
       {editOpen && (
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4 space-y-3">
+        <div className="surface p-4 space-y-3">
           <div className="space-y-1">
             <label className="text-sm text-zinc-400">Deckname</label>
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+              className="input"
             />
           </div>
           <div className="space-y-1">
@@ -550,7 +550,7 @@ export function DeckDetailClient({
               value={newCommander}
               onChange={(e) => setNewCommander(e.target.value)}
               placeholder={deck.commander_name}
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+              className="input"
             />
           </div>
           <div className="space-y-1">
@@ -562,7 +562,7 @@ export function DeckDetailClient({
               onChange={(e) => setNewPartner(e.target.value)}
               placeholder={deck.partner_name ?? "z. B. Tymna the Weaver"}
               disabled={removePartner}
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none disabled:opacity-50"
+              className="input disabled:opacity-50"
             />
             {deck.partner_name && (
               <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -589,7 +589,7 @@ export function DeckDetailClient({
               <button
                 onClick={saveDeckEdit}
                 disabled={savingEdit}
-                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
+                className="btn-primary"
               >
                 {savingEdit ? "Speichere..." : "Speichern"}
               </button>
@@ -600,18 +600,16 @@ export function DeckDetailClient({
 
       {/* Reiter */}
       <nav
-        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0f0f12]/85 backdrop-blur-xl"
+        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0b0b10]/85 backdrop-blur-xl"
         aria-label="Deck-Bereiche"
       >
-        <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl bg-white/5 border border-white/10 p-1">
+        <div className="segmented">
           {DECK_TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               aria-current={tab === t.key ? "page" : undefined}
-              className={`flex-1 shrink-0 whitespace-nowrap rounded-lg px-3 h-9 text-sm font-medium transition ${
-                tab === t.key ? "bg-white/15 text-white shadow" : "text-zinc-400 hover:text-zinc-200"
-              }`}
+              className={`segment flex-1 ${tab === t.key ? "segment-active" : ""}`}
             >
               {t.label}
             </button>
@@ -622,7 +620,7 @@ export function DeckDetailClient({
       {tab === "analysis" && (
         <>
         {/* Analyse */}
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4 space-y-4">
+        <div className="surface p-4 space-y-4">
           <h2 className="font-medium text-lg">📊 Deck-Analyse</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm">
             <Stat label="Karten" value={stats.totalCards} />
@@ -655,17 +653,17 @@ export function DeckDetailClient({
           </div>
         </div>
 
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+        <div className="surface p-4">
           <ManaBasePanel cards={initialCards} />
         </div>
         {/* Commander-Bracket / Power-Level */}
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+        <div className="surface p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-medium">Power-Level (Commander-Bracket)</h2>
             {!bracketLoaded && (
               <button
                 onClick={loadBracket}
-                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
+                className="btn-primary h-9 px-3"
               >
                 Bracket berechnen
               </button>
@@ -726,23 +724,23 @@ export function DeckDetailClient({
 
       {tab === "improve" && (
         <>
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+        <div className="surface p-4">
           <DeckCoachPanel
             deckId={deck.id}
             deckCards={initialCards.map((c) => ({ id: c.id, name: c.name, is_commander: c.is_commander }))}
           />
         </div>
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+        <div className="surface p-4">
           <DeckCombosPanel deckId={deck.id} />
         </div>
         {/* Scryfall-basierte Kartenvorschläge */}
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+        <div className="surface p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-medium">Kartenvorschläge</h2>
             {!suggestLoaded && (
               <button
                 onClick={loadSuggestions}
-                className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
+                className="btn-primary h-9 px-3"
               >
                 Vorschläge laden
               </button>
@@ -862,7 +860,7 @@ export function DeckDetailClient({
           const categoryOrder = ["Land", "Kreatur", "Instant", "Hexerei", "Verzauberung", "Artefakt", "Planeswalker", "Sonstiges"];
 
           return (
-            <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4 space-y-3">
+            <div className="surface p-4 space-y-3">
               <h2 className="font-medium">Baubarkeit aus deiner Sammlung</h2>
               {total === 0 ? (
                 <p className="text-sm text-zinc-500">Noch keine Karten im Deck.</p>
@@ -944,13 +942,14 @@ export function DeckDetailClient({
           {exportMsg && <span className="self-center text-emerald-300">{exportMsg}</span>}
         </div>
         {/* Import */}
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
-          <button
-            onClick={() => setImportOpen(!importOpen)}
-            className="text-indigo-400 font-medium"
-          >
-            {importOpen ? "Import schließen ▲" : "Karten zum Deck hinzufügen ▼"}
-          </button>
+        <div className="surface p-4">
+          <button onClick={() => setImportOpen(!importOpen)} aria-expanded={importOpen} className="w-full flex items-center gap-3 text-left font-medium">
+          <span className="grid place-items-center w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 shadow-glow text-lg leading-none" aria-hidden>
+            {importOpen ? "−" : "+"}
+          </span>
+          <span className="flex-1">Karten zum Deck hinzufügen</span>
+          <span className={`text-zinc-500 transition ${importOpen ? "rotate-180" : ""}`} aria-hidden>▾</span>
+        </button>
           {importOpen && (
             <div className="mt-3 space-y-3">
               <div className="flex flex-wrap gap-2">
@@ -959,7 +958,7 @@ export function DeckDetailClient({
                   onChange={(e) => setImportUrl(e.target.value)}
                   placeholder="Link zu Moxfield, Archidekt, TappedOut …"
                   aria-label="Deck-Link"
-                  className="flex-1 min-w-[220px] rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                  className="input w-auto flex-1 min-w-0 min-w-[220px] text-sm"
                 />
                 <button
                   onClick={loadFromUrl}
@@ -974,13 +973,13 @@ export function DeckDetailClient({
                 onChange={(e) => setImportText(e.target.value)}
                 rows={6}
                 placeholder={"Sol Ring\n1x Arcane Signet\nSwords to Plowshares"}
-                className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                className="input font-mono text-sm"
               />
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleImport}
                   disabled={importing || !importText.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+                  className="btn-primary"
                 >
                   {importing ? "Importiere..." : "Hinzufügen"}
                 </button>
@@ -1054,7 +1053,7 @@ export function DeckDetailClient({
         </div>
 
         {/* Rollen-Kategorien */}
-        <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+        <div className="surface p-4">
           <h2 className="font-medium mb-3">Karten nach Rolle</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {categories.map((group) => (
@@ -1099,7 +1098,7 @@ export function DeckDetailClient({
                   <span className="text-xs font-normal text-zinc-500 tabular-nums">{g.count}</span>
                 </h3>
                 {cardView === "list" ? (
-                  <ul className="rounded-xl border border-white/10 bg-zinc-900/60 divide-y divide-white/5 overflow-hidden">
+                  <ul className="surface divide-y divide-white/5 overflow-hidden">
                     {g.stacks.map((group) => {
                       const card = group[0];
                       const count = group.length;
@@ -1253,7 +1252,7 @@ export function DeckDetailClient({
         <>
         {/* Deckwert-Verlauf */}
         {valueHistory.length >= 2 && (
-          <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-4">
+          <div className="surface p-4">
             <h2 className="font-medium mb-3">Deckwert-Verlauf</h2>
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">

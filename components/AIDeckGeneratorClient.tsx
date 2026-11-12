@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type GeneratedCard = {
   name: string;
@@ -306,22 +307,15 @@ export function AIDeckGeneratorClient() {
     : [];
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      <Link href="/collection" className="inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-white transition">
-        ← Zurück zur Sammlung
-      </Link>
-
-      <header>
-        <h1 className="text-2xl font-semibold">🤖 AI Deck Generator</h1>
-        <p className="text-zinc-400 mt-1">
-          Wähle dein Ziel-Bracket - Claude sucht den besten Commander aus deiner Sammlung und baut daraus
-          das stärkste Deck, das sich aus deinen freien Karten (nicht in anderen Decks verbaut)
-          zusammenstellen lässt. Einen Commander vorgeben ist optional.
-        </p>
-      </header>
+    <main className="page max-w-5xl">
+      <PageHeader
+        eyebrow="Mit Claude"
+        title="AI Deck Generator"
+        subtitle="Wähle dein Ziel-Bracket – Claude sucht den besten Commander aus deiner Sammlung und baut daraus das stärkste Deck aus deinen freien Karten (nicht in anderen Decks verbaut). Einen Commander vorgeben ist optional."
+      />
 
       {savedList.length > 0 && (
-        <details className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <details className="surface p-4">
           <summary className="cursor-pointer font-medium">Frühere Vorschläge ({savedList.length})</summary>
           <ul className="mt-3 space-y-1 text-sm">
             {savedList.map((g) => (
@@ -348,7 +342,7 @@ export function AIDeckGeneratorClient() {
         </details>
       )}
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
+      <div className="surface p-4 space-y-4">
         <div>
           <p className="text-sm font-medium text-indigo-300 mb-2">Ziel-Bracket</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -373,7 +367,7 @@ export function AIDeckGeneratorClient() {
           <button
             onClick={() => handleGenerate()}
             disabled={loading}
-            className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+            className="btn-primary"
           >
             {loading ? `Generiere... (${elapsedSeconds}s)` : "🔮 Schlag mir mein nächstes Deck vor"}
           </button>
@@ -402,7 +396,7 @@ export function AIDeckGeneratorClient() {
       </div>
 
       {!result && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+        <div className="surface p-4 space-y-3">
           <button
             onClick={() => setShowCommanderPicker((v) => !v)}
             className="text-sm font-medium text-indigo-300 hover:text-indigo-200 transition"
@@ -415,7 +409,7 @@ export function AIDeckGeneratorClient() {
                 value={commanderName}
                 onChange={(e) => setCommanderName(e.target.value)}
                 placeholder="z. B. Atraxa, Praetors' Voice"
-                className="w-full max-w-md rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+                className="input max-w-md"
               />
               {loadingCommanders && (
                 <p className="text-sm text-zinc-500">Suche legendäre Kreaturen/Planeswalker in deiner Sammlung…</p>
@@ -461,7 +455,7 @@ export function AIDeckGeneratorClient() {
               gespeichert unter „Frühere Vorschläge“.
             </p>
           )}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 flex gap-4 items-start">
+          <div className="surface p-4 flex gap-4 items-start">
             {result.commander.imageUrl && (
               <Image
                 src={result.commander.imageUrl}
@@ -490,7 +484,7 @@ export function AIDeckGeneratorClient() {
             </div>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-2">
+          <div className="surface p-4 space-y-2">
             <p className="text-sm font-medium text-indigo-300">
               Bracket-Einschätzung (Ziel: Bracket {result.targetBracket})
             </p>
@@ -517,7 +511,7 @@ export function AIDeckGeneratorClient() {
           )}
 
           {result.alternativeCommanders.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+            <div className="surface p-4 space-y-3">
               <p className="text-sm font-medium text-indigo-300">Alternative Commander</p>
               <div className="grid gap-3 sm:grid-cols-3">
                 {result.alternativeCommanders.map((a) => (
@@ -551,7 +545,7 @@ export function AIDeckGeneratorClient() {
                 {group.cards.map((c) => (
                   <div
                     key={c.name}
-                    className="bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1.5 text-xs text-zinc-300"
+                    className="surface rounded-xl px-2 py-1.5 text-xs text-zinc-300"
                   >
                     {c.quantity > 1 ? `${c.quantity}x ` : ""}
                     {c.name}

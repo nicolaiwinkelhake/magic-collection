@@ -55,7 +55,7 @@ export function DeckCharts({ cards }: { cards: DeckCard[] }) {
 
   return (
     <div className="grid sm:grid-cols-2 gap-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+      <div className="surface p-4">
         <div className="font-medium text-sm mb-3">Mana-Kurve</div>
         <div className="h-44">
           <ResponsiveContainer width="100%" height="100%">
@@ -72,7 +72,7 @@ export function DeckCharts({ cards }: { cards: DeckCard[] }) {
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+      <div className="surface p-4">
         <div className="font-medium text-sm mb-3">Farbverteilung</div>
         <div className="h-44">
           <ResponsiveContainer width="100%" height="100%">

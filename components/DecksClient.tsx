@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Deck } from "@/lib/deckTypes";
 import { ColorIdentity } from "@/components/ui/Mana";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 // Scryfall liefert zu jedem Bild auch einen reinen Artwork-Ausschnitt.
 const artCrop = (url: string) => url.replace("/normal/", "/art_crop/").replace("/large/", "/art_crop/");
@@ -42,26 +43,22 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
   }
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-5 sm:py-8 space-y-5">
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Decks</h1>
-          <p className="text-sm text-zinc-500">{initialDecks.length} Commander-Decks</p>
-        </div>
-        <button
-          onClick={() => setFormOpen((v) => !v)}
-          aria-expanded={formOpen}
-          className="flex items-center gap-2 rounded-full bg-indigo-500 hover:bg-indigo-400 transition px-4 h-10 text-sm font-medium shadow-lg shadow-indigo-950/50"
-        >
-          <span className="text-lg leading-none" aria-hidden>{formOpen ? "×" : "+"}</span>
-          Neues Deck
-        </button>
-      </header>
+    <main className="page">
+      <PageHeader
+        title="Decks"
+        subtitle={`${initialDecks.length} Commander-Decks`}
+        actions={
+          <button onClick={() => setFormOpen((v) => !v)} aria-expanded={formOpen} className="btn-primary rounded-full h-10">
+            <span className="text-lg leading-none" aria-hidden>{formOpen ? "×" : "+"}</span>
+            Neues Deck
+          </button>
+        }
+      />
 
       {formOpen && (
         <form
           onSubmit={handleCreate}
-          className="rounded-2xl border border-white/10 bg-zinc-900/80 p-4 space-y-3"
+          className="surface p-4 space-y-3"
         >
           <h2 className="font-medium">Neues Deck anlegen</h2>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -91,7 +88,7 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
             <button
               type="submit"
               disabled={loading}
-              className="h-11 bg-indigo-500 hover:bg-indigo-400 transition rounded-xl px-4 font-medium disabled:opacity-50"
+              className="btn-primary"
             >
               {loading ? "Erstelle..." : "Deck anlegen"}
             </button>
@@ -110,7 +107,7 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
             <Link
               key={deck.id}
               href={`/decks/${deck.id}`}
-              className="group relative block h-36 sm:h-44 rounded-2xl overflow-hidden border border-white/10 bg-zinc-900 transition hover:border-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="surface group relative block h-36 sm:h-44 overflow-hidden transition hover:border-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               {deck.commander_image_url && (
                 <Image
