@@ -10,7 +10,7 @@ type Owned = { owned: number };
 type Card = Owned & { id?: string; name: string; image?: string | null; eur?: number | null; gameChanger?: boolean; edhrecRank?: number | null };
 
 const TABS = [
-  { key: "buildable", label: "Baubare Commander" },
+  { key: "buildable", label: "Baubar" },
   { key: "rankings", label: "Ranglisten" },
   { key: "typal", label: "Typal" },
   { key: "sets", label: "Neue Sets" },

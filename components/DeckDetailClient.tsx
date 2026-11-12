@@ -37,7 +37,7 @@ const artCrop = (url: string) => url.replace("/normal/", "/art_crop/").replace("
 
 const DECK_TABS = [
   { key: "analysis", label: "Analyse" },
-  { key: "improve", label: "Verbessern" },
+  { key: "improve", label: "Tuning" },
   { key: "cards", label: "Karten" },
   { key: "test", label: "Testen" },
   { key: "history", label: "Verlauf" },

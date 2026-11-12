@@ -57,10 +57,10 @@ body::after {
   }
 }
 
-/* Eingabefelder auf dem Handy mit 16px – sonst zoomt iOS beim Antippen. */
+/* Texteingaben auf dem Handy mit 16px – sonst zoomt iOS beim Antippen.
+   (Auswahllisten bleiben kompakt; sie öffnen ohnehin die System-Auswahl.) */
 @media (max-width: 640px) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  select,
   textarea {
     font-size: 16px !important;
   }
@@ -148,12 +148,12 @@ body::after {
     @apply border-indigo-400/60 bg-indigo-500/20 text-white;
   }
 
-  /* Reiter als Segment-Steuerung (wischbar) */
+  /* Reiter als Segment-Steuerung – passen immer in die Breite */
   .segmented {
-    @apply flex gap-1 overflow-x-auto no-scrollbar rounded-2xl border border-white/[0.08] bg-white/[0.04] p-1;
+    @apply flex gap-1 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-1;
   }
   .segment {
-    @apply shrink-0 rounded-xl px-3.5 h-9 text-sm font-medium text-zinc-400 hover:text-zinc-200 whitespace-nowrap;
+    @apply flex-1 min-w-0 truncate rounded-xl px-1 h-9 text-xs min-[400px]:text-[13px] sm:text-sm font-medium text-zinc-400 hover:text-zinc-200 whitespace-nowrap;
   }
   .segment-active {
     @apply bg-white/[0.12] text-white shadow-sm shadow-black/40;
