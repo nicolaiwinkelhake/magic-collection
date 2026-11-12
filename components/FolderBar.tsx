@@ -133,8 +133,8 @@ export function FolderBar({
 
       {open && (
         <div className="sm:hidden fixed inset-0 z-[70] flex items-end" role="dialog" aria-modal="true" aria-label="Ordner wählen">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} aria-hidden />
-          <div className="relative w-full max-h-[85dvh] flex flex-col rounded-t-[2rem] border-t border-white/10 bg-zinc-900/95 backdrop-blur-2xl pb-[calc(1rem+env(safe-area-inset-bottom))] animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setOpen(false)} aria-hidden />
+          <div className="relative w-full max-h-[85dvh] flex flex-col rounded-t-[2rem] border-t border-white/10 bg-zinc-900 pb-[calc(1rem+env(safe-area-inset-bottom))] animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]">
             <div className="px-4 pt-2.5 pb-2">
               <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/15" aria-hidden />
               <div className="flex items-center justify-between gap-3">

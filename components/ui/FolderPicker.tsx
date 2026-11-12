@@ -73,7 +73,7 @@ export function FolderPicker({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/75"
       onClick={() => !busy && onClose()}
       role="dialog"
       aria-modal="true"

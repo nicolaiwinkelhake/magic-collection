@@ -42,7 +42,7 @@ export function SelectionBar({
       role="toolbar"
       aria-label="Auswahl"
     >
-      <div className="mx-auto max-w-xl flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/95 backdrop-blur-xl px-3 py-2.5 shadow-2xl shadow-black/60">
+      <div className="mx-auto max-w-xl flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900 px-3 py-2.5 shadow-2xl shadow-black/60">
         <button onClick={onCancel} aria-label="Auswahl beenden" className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10">
           ✕
         </button>

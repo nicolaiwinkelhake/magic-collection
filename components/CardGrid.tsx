@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { formatEur, formatDate } from "@/lib/format";
@@ -175,7 +175,7 @@ export function CardGrid({
             const isSelected = selected.has(card.id);
             const unit = cardValue({ ...card, quantity: 1 });
             return (
-              <li key={card.id}>
+              <li key={card.id} className="[content-visibility:auto] [contain-intrinsic-size:auto_72px]">
                 <button
                   onClick={() => (selectMode ? toggleSelected(card.id) : openCard(card))}
                   aria-label={
@@ -245,11 +245,11 @@ export function CardGrid({
                   : `${card.name} bearbeiten`
               }
               aria-pressed={selectMode ? isSelected : undefined}
-              className={`group relative text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-[10px] ${
+              className={`group relative text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded-[10px] [content-visibility:auto] [contain-intrinsic-size:auto_220px] ${
                 isSelected ? "ring-2 ring-indigo-400" : ""
               }`}
             >
-              <span className="relative block rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40 transition group-hover:-translate-y-0.5 group-hover:shadow-lg group-hover:shadow-black/60">
+              <span className="relative block rounded-[4.75%/3.5%] overflow-hidden bg-zinc-900 shadow-md shadow-black/40">
                 {card.image_url ? (
                   <Image
                     src={card.image_url}
@@ -299,10 +299,13 @@ export function CardGrid({
       </div>
       );
 
-  const groups = groupCards(local, groupBy);
+  // Gruppen und Raster nur neu bauen, wenn sich Karten/Ansicht/Auswahl
+  // ändern – nicht beim Blättern im Kartendetail (sonst wird bei jedem
+  // Wischen das ganze Raster mit tausenden Karten neu gerendert).
+  const groups = useMemo(() => groupCards(local, groupBy), [local, groupBy]);
 
   // Durch die Sammlung blättern: Reihenfolge wie angezeigt (inkl. Gruppen).
-  const ordered = groups.flatMap((g) => g.cards);
+  const ordered = useMemo(() => groups.flatMap((g) => g.cards), [groups]);
   const editIndex = editing ? ordered.findIndex((c) => c.id === editing.id) : -1;
   const folderNames = (c: Card) =>
     folders
@@ -311,10 +314,30 @@ export function CardGrid({
       .join(", ");
 
   // Auswahl auf sichtbare Karten beschränken (Filter geändert, gelöscht …)
-  const visibleKey = ordered.map((c) => c.id).join(",");
+  const visibleKey = useMemo(() => ordered.map((c) => c.id).join(","), [ordered]);
   useEffect(() => {
     setSelected((sel) => prune(sel, visibleKey ? visibleKey.split(",") : []));
   }, [visibleKey]);
+
+  const gridContent = useMemo(() => (
+      groups.length === 1 && groupBy === "none" ? (
+        renderCards(groups[0].cards)
+      ) : (
+        <div className="space-y-6">
+          {groups.map((g) => (
+            <section key={g.key} aria-label={g.label}>
+              <h3 className="flex items-baseline justify-between gap-3 mb-2 px-0.5">
+                <span className="text-sm font-semibold text-zinc-200">
+                  {g.label} <span className="ml-1 text-xs font-normal text-zinc-500 tabular-nums">{g.count}</span>
+                </span>
+                <span className="text-xs tabular-nums text-emerald-400">{formatEur(g.value)}</span>
+              </h3>
+              {renderCards(g.cards)}
+            </section>
+          ))}
+        </div>
+      )
+  ), [groups, groupBy, view, selectMode, selected]);
 
   if (!local.length) {
     return (
@@ -349,23 +372,7 @@ export function CardGrid({
         </div>
       </div>
 
-      {groups.length === 1 && groupBy === "none" ? (
-        renderCards(groups[0].cards)
-      ) : (
-        <div className="space-y-6">
-          {groups.map((g) => (
-            <section key={g.key} aria-label={g.label}>
-              <h3 className="flex items-baseline justify-between gap-3 mb-2 px-0.5">
-                <span className="text-sm font-semibold text-zinc-200">
-                  {g.label} <span className="ml-1 text-xs font-normal text-zinc-500 tabular-nums">{g.count}</span>
-                </span>
-                <span className="text-xs tabular-nums text-emerald-400">{formatEur(g.value)}</span>
-              </h3>
-              {renderCards(g.cards)}
-            </section>
-          ))}
-        </div>
-      )}
+      {gridContent}
 
       {/* Platz, damit die letzten Karten nicht unter der Auswahlleiste liegen */}
       {selectMode && <div className="h-24" aria-hidden />}

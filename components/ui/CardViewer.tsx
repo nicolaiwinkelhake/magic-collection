@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { startTransition, useEffect, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { ManaCost, RarityDot } from "@/components/ui/Mana";
@@ -86,7 +86,16 @@ export function CardViewer({
   /** z. B. solange ein Dialog darüber offen ist */
   keyboardDisabled?: boolean;
 }) {
-  const card = cards[index];
+  // Eigene Position: Blättern zeigt die nächste Karte sofort; die Seite
+  // dahinter (Deck, Wunschliste …) wird erst danach mit niedriger Priorität
+  // nachgezogen – so ruckelt das Wischen nicht.
+  const [current, setCurrent] = useState(index);
+  useEffect(() => setCurrent(index), [index]);
+  const goTo = (i: number) => {
+    setCurrent(i);
+    startTransition(() => onIndexChange(i));
+  };
+  const card = cards[current] ?? cards[index];
   const [fullscreen, setFullscreen] = useState(false);
   const [details, setDetails] = useState<Details | null>(null);
 
@@ -122,9 +131,9 @@ export function CardViewer({
   return (
     <>
       <SwipeSheet
-        index={index}
+        index={cards[current] ? current : index}
         count={cards.length}
-        onIndexChange={onIndexChange}
+        onIndexChange={goTo}
         onClose={onClose}
         title={c.name}
         subtitle={c.name_de || undefined}
