@@ -15,6 +15,7 @@ export function SelectionBar({
   busy = false,
   overlay = false,
   secondary,
+  tone = "danger",
 }: {
   count: number;
   total: number;
@@ -23,8 +24,10 @@ export function SelectionBar({
   onConfirm: () => void;
   /** z. B. "Entfernen" */
   actionLabel: string;
-  /** Rückfrage; {n} wird durch die Anzahl ersetzt */
-  confirmText: string;
+  /** Rückfrage; {n} wird durch die Anzahl ersetzt (leer = ohne Rückfrage) */
+  confirmText?: string;
+  /** danger = rot mit Rückfrage (Entfernen), primary = Markenfarbe */
+  tone?: "danger" | "primary";
   busy?: boolean;
   /** über einem Vollbild-Fenster (z. B. Scanner) statt über der Tab-Leiste */
   overlay?: boolean;
@@ -65,10 +68,12 @@ export function SelectionBar({
         )}
         <button
           onClick={() => {
-            if (count && confirm(withCount(confirmText, count))) onConfirm();
+            if (count && (!confirmText || confirm(withCount(confirmText, count)))) onConfirm();
           }}
           disabled={!count || busy}
-          className="shrink-0 rounded-xl bg-red-600 hover:bg-red-500 px-4 h-10 text-sm font-semibold disabled:opacity-40"
+          className={`shrink-0 rounded-xl px-4 h-10 text-sm font-semibold disabled:opacity-40 ${
+            tone === "primary" ? "bg-gradient-to-b from-indigo-400 to-indigo-600 shadow-glow" : "bg-red-600 hover:bg-red-500"
+          }`}
         >
           {busy ? "…" : `${actionLabel}${count ? ` (${count})` : ""}`}
         </button>

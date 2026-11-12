@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { formatEur, formatDate } from "@/lib/format";
@@ -22,9 +22,18 @@ export function CardGrid({
   groupBy = "none",
   folders = [],
   onFoldersChanged,
+  readOnly = false,
+  detailActions,
+  selectAction,
 }: {
   cards: Card[];
   groupBy?: GroupKey;
+  /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
+  readOnly?: boolean;
+  /** zusätzliche Knöpfe im Kartendetail (z. B. "Für Trade anfragen") */
+  detailActions?: (card: Card) => ReactNode;
+  /** Mehrfachauswahl mit eigener Aktion statt Entfernen (z. B. Trade) */
+  selectAction?: { label: string; onRun: (cards: Card[]) => void };
   /** eigene Ordner (Migration 014) – zum Verschieben */
   folders?: Folder[];
   /** nach Anlegen eines Ordners beim Verschieben */
@@ -357,6 +366,7 @@ export function CardGrid({
           {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
         </div>
         <div className="flex items-center gap-2">
+          {(!readOnly || selectAction) && (
           <button
             onClick={() => {
               setSelectMode((v) => !v);
@@ -368,6 +378,7 @@ export function CardGrid({
           >
             {selectMode ? "Fertig" : "Auswählen"}
           </button>
+          )}
           <CardViewToggle mode={view} onChange={setView} allowList />
         </div>
       </div>
@@ -385,14 +396,23 @@ export function CardGrid({
             setSelectMode(false);
             setSelected(new Set());
           }}
-          onConfirm={() => void removeCards([...selected])}
-          actionLabel="Entfernen"
-          confirmText="{n} Einträge wirklich aus der Sammlung entfernen?"
+          {...(selectAction
+            ? {
+                onConfirm: () => {
+                  selectAction.onRun(ordered.filter((c) => selected.has(c.id)));
+                  setSelectMode(false);
+                  setSelected(new Set());
+                },
+                actionLabel: selectAction.label,
+                tone: "primary" as const,
+              }
+            : {
+                onConfirm: () => void removeCards([...selected]),
+                actionLabel: "Entfernen",
+                confirmText: "{n} Einträge wirklich aus der Sammlung entfernen?",
+                secondary: { label: "Ordner", onClick: () => setFolderIds([...selected]) },
+              })}
           busy={busy}
-          secondary={{
-            label: "Ordner",
-            onClick: () => setFolderIds([...selected]),
-          }}
         />
       )}
 
@@ -443,6 +463,7 @@ export function CardGrid({
                     {editing.collector_number && <span>#{editing.collector_number}</span>}
                     {editing.rarity && <span className="capitalize">· {editing.rarity}</span>}
                   </p>
+                  {!readOnly && (
                   <button
                     onClick={() => {
                       setPrintError(null);
@@ -453,6 +474,7 @@ export function CardGrid({
                   >
                     Druck / Edition ändern
                   </button>
+                  )}
                   {editing.oracle_text && (
                     <p className="text-sm text-zinc-300 whitespace-pre-line rounded-xl bg-white/5 px-3 py-2 leading-relaxed">
                       {editing.oracle_text}
@@ -466,13 +488,29 @@ export function CardGrid({
                   <PriceTile label="Foil" value={editing.price_eur_foil} active={editing.foil} />
                   <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-2 py-2">
                     <p className="text-sm font-semibold tabular-nums text-emerald-400">{formatEur(cardValue(editing))}</p>
-                    <p className="text-[11px] text-zinc-400">Dein Bestand</p>
+                    <p className="text-[11px] text-zinc-400">{readOnly ? "Bestandswert" : "Dein Bestand"}</p>
                   </div>
                 </div>
                 {editing.condition !== "NM" && (
                   <p className="text-[11px] text-amber-400 -mt-2">Bestandswert zustandsbereinigt ({editing.condition}).</p>
                 )}
 
+                {readOnly ? (
+                  <dl className="rounded-xl bg-white/5 divide-y divide-white/5 text-sm">
+                    {[
+                      ["Anzahl", `${editing.quantity}×`],
+                      ["Foil", editing.foil ? "Ja" : "Nein"],
+                      ["Zustand", editing.condition],
+                      ["Sprache", editing.language],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between px-3 py-2.5">
+                        <dt className="text-zinc-400">{k}</dt>
+                        <dd className="font-medium">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <>
                 {/* Bestand */}
                 <div className="rounded-xl bg-white/5 divide-y divide-white/5">
                   <div className="flex items-center justify-between px-3 py-2.5">
@@ -566,6 +604,11 @@ export function CardGrid({
                   </div>
                 </div>
 
+                  </>
+                )}
+
+                {detailActions && <div className="flex flex-wrap gap-2">{detailActions(editing)}</div>}
+
                 {/* Links */}
                 <div className="flex flex-wrap gap-2 text-sm">
                   <a
@@ -594,6 +637,7 @@ export function CardGrid({
                   <p className="text-[11px] text-zinc-600">Preisstand: {formatDate(editing.price_updated_at)}</p>
                 )}
 
+                {!readOnly && (
                 <button
                   disabled={busy}
                   onClick={() => removeCards([editing.id])}
@@ -601,6 +645,7 @@ export function CardGrid({
                 >
                   Aus Sammlung entfernen
                 </button>
+                )}
               </div>
             </div>
         </SwipeSheet>
