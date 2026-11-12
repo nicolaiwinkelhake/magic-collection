@@ -22,9 +22,12 @@ export function CardGrid({
   groupBy = "none",
   folders = [],
   onFoldersChanged,
+  readOnly = false,
 }: {
   cards: Card[];
   groupBy?: GroupKey;
+  /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
+  readOnly?: boolean;
   /** eigene Ordner (Migration 014) – zum Verschieben */
   folders?: Folder[];
   /** nach Anlegen eines Ordners beim Verschieben */
@@ -357,6 +360,7 @@ export function CardGrid({
           {errorMsg && <p className="text-sm text-red-400">{errorMsg}</p>}
         </div>
         <div className="flex items-center gap-2">
+          {!readOnly && (
           <button
             onClick={() => {
               setSelectMode((v) => !v);
@@ -368,6 +372,7 @@ export function CardGrid({
           >
             {selectMode ? "Fertig" : "Auswählen"}
           </button>
+          )}
           <CardViewToggle mode={view} onChange={setView} allowList />
         </div>
       </div>
@@ -443,6 +448,7 @@ export function CardGrid({
                     {editing.collector_number && <span>#{editing.collector_number}</span>}
                     {editing.rarity && <span className="capitalize">· {editing.rarity}</span>}
                   </p>
+                  {!readOnly && (
                   <button
                     onClick={() => {
                       setPrintError(null);
@@ -453,6 +459,7 @@ export function CardGrid({
                   >
                     Druck / Edition ändern
                   </button>
+                  )}
                   {editing.oracle_text && (
                     <p className="text-sm text-zinc-300 whitespace-pre-line rounded-xl bg-white/5 px-3 py-2 leading-relaxed">
                       {editing.oracle_text}
@@ -473,6 +480,22 @@ export function CardGrid({
                   <p className="text-[11px] text-amber-400 -mt-2">Bestandswert zustandsbereinigt ({editing.condition}).</p>
                 )}
 
+                {readOnly ? (
+                  <dl className="rounded-xl bg-white/5 divide-y divide-white/5 text-sm">
+                    {[
+                      ["Anzahl", `${editing.quantity}×`],
+                      ["Foil", editing.foil ? "Ja" : "Nein"],
+                      ["Zustand", editing.condition],
+                      ["Sprache", editing.language],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between px-3 py-2.5">
+                        <dt className="text-zinc-400">{k}</dt>
+                        <dd className="font-medium">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <>
                 {/* Bestand */}
                 <div className="rounded-xl bg-white/5 divide-y divide-white/5">
                   <div className="flex items-center justify-between px-3 py-2.5">
@@ -566,6 +589,9 @@ export function CardGrid({
                   </div>
                 </div>
 
+                  </>
+                )}
+
                 {/* Links */}
                 <div className="flex flex-wrap gap-2 text-sm">
                   <a
@@ -594,6 +620,7 @@ export function CardGrid({
                   <p className="text-[11px] text-zinc-600">Preisstand: {formatDate(editing.price_updated_at)}</p>
                 )}
 
+                {!readOnly && (
                 <button
                   disabled={busy}
                   onClick={() => removeCards([editing.id])}
@@ -601,6 +628,7 @@ export function CardGrid({
                 >
                   Aus Sammlung entfernen
                 </button>
+                )}
               </div>
             </div>
         </SwipeSheet>

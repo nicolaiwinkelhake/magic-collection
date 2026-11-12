@@ -11,6 +11,7 @@ import type { Card, Folder } from "@/lib/types";
 import { FolderBar } from "@/components/FolderBar";
 import { ALL, UNSORTED, collectionMeasure, folderStats, inFolder, type FolderFilter } from "@/lib/folders";
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
+import { DEFAULT_FILTERS, filterAndSortCards, setCodes } from "@/lib/cardFilters";
 
 export function CollectionClient({
   initialCards,
@@ -99,15 +100,7 @@ export function CollectionClient({
       .finally(() => setBackfilling(false));
   }, []);
 
-  const [filters, setFilters] = useState<FilterState>({
-    search: "",
-    colors: [],
-    rarity: "",
-    type: "",
-    set: "",
-    sort: "color",
-    group: "none",
-  });
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   // Gruppierung im Browser merken.
   useEffect(() => {
@@ -128,11 +121,7 @@ export function CollectionClient({
     }
   }, [filters.group]);
 
-  const availableSets = useMemo(() => {
-    const codes = new Set<string>();
-    for (const c of folderCards) if (c.set_code) codes.add(c.set_code);
-    return [...codes].sort();
-  }, [folderCards]);
+  const availableSets = useMemo(() => setCodes(folderCards), [folderCards]);
 
   // Deutsche Namen für Bestandskarten im Hintergrund nachfüllen (in Runden,
   // bis nichts mehr offen ist oder eine Runde nichts schafft).
@@ -161,70 +150,7 @@ export function CollectionClient({
     };
   }, []);
 
-  const filteredCards = useMemo(() => {
-    const search = filters.search.trim().toLowerCase();
-    const result = folderCards.filter((card) => {
-      if (
-        search &&
-        !card.name.toLowerCase().includes(search) &&
-        !card.name_de?.toLowerCase().includes(search)
-      ) {
-        return false;
-      }
-      if (filters.rarity && card.rarity !== filters.rarity) return false;
-      if (filters.set && card.set_code !== filters.set) return false;
-      if (
-        filters.type &&
-        !card.type_line?.toLowerCase().includes(filters.type.toLowerCase())
-      ) {
-        return false;
-      }
-      if (filters.colors.length) {
-        const cardColors = card.colors ?? [];
-        const matchesAll = filters.colors.every((c) =>
-          cardColors.includes(c)
-        );
-        if (!matchesAll) return false;
-      }
-      return true;
-    });
-
-    const priceOf = (c: Card) =>
-      (c.foil ? c.price_eur_foil : c.price_eur) ?? 0;
-
-    // WUBRG-Reihenfolge: Weiß, Blau, Schwarz, Rot, Grün, Mehrfarbig, Farblos
-    const COLOR_ORDER: Record<string, number> = { W: 0, U: 1, B: 2, R: 3, G: 4 };
-    function colorRank(colors: string[] | null): number {
-      const c = colors ?? [];
-      if (c.length === 0) return 6; // farblos
-      if (c.length > 1) return 5;  // mehrfarbig
-      return COLOR_ORDER[c[0]] ?? 6;
-    }
-
-    const sorted = [...result];
-    switch (filters.sort) {
-      case "color":
-        sorted.sort((a, b) =>
-          colorRank(a.colors) - colorRank(b.colors) || a.name.localeCompare(b.name)
-        );
-        break;
-      case "cmc":
-        sorted.sort((a, b) => (a.cmc ?? 0) - (b.cmc ?? 0));
-        break;
-      case "price":
-        sorted.sort((a, b) => priceOf(b) - priceOf(a));
-        break;
-      case "set":
-        sorted.sort((a, b) =>
-          (a.set_code ?? "").localeCompare(b.set_code ?? "") ||
-          a.name.localeCompare(b.name)
-        );
-        break;
-      default:
-        sorted.sort((a, b) => a.name.localeCompare(b.name));
-    }
-    return sorted;
-  }, [folderCards, filters]);
+  const filteredCards = useMemo(() => filterAndSortCards(folderCards, filters), [folderCards, filters]);
 
   const totalValue = useMemo(
     () => computeTotalValue(filteredCards),
