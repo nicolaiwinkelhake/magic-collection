@@ -9,8 +9,8 @@ import { formatEur } from "@/lib/format";
 import { totalValue as computeTotalValue } from "@/lib/valuation";
 import type { Card, Folder } from "@/lib/types";
 import { FolderBar } from "@/components/FolderBar";
-import { ALL, UNSORTED, folderStats, inFolder, type FolderFilter } from "@/lib/folders";
-import { createFolder } from "@/lib/folderApi";
+import { ALL, UNSORTED, collectionMeasure, folderStats, inFolder, type FolderFilter } from "@/lib/folders";
+import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
 
 export function CollectionClient({
   initialCards,
@@ -47,16 +47,15 @@ export function CollectionClient({
       // ignorieren
     }
   }
-  const stats = useMemo(() => folderStats(initialCards), [initialCards]);
+  const stats = useMemo(() => folderStats(initialCards, collectionMeasure), [initialCards]);
   const folderCards = useMemo(() => inFolder(initialCards, folder), [initialCards, folder]);
   const activeFolder = folders.find((f) => f.id === folder);
 
   async function handleCreateFolder() {
-    const name = window.prompt("Name des neuen Ordners (z. B. Trade-Binder):")?.trim();
-    if (!name) return;
     setFolderBusy(true);
-    const r = await createFolder(name);
+    const r = await promptCreateFolder();
     setFolderBusy(false);
+    if (!r) return;
     if (r.error || !r.folder) {
       alert(r.error ?? "Ordner konnte nicht angelegt werden");
       return;
@@ -66,39 +65,23 @@ export function CollectionClient({
   }
 
   async function handleRenameFolder(f: Folder) {
-    const name = window.prompt("Neuer Name:", f.name)?.trim();
-    if (!name || name === f.name) return;
     setFolderBusy(true);
-    const res = await fetch("/api/folders", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: f.id, name }),
-    }).catch(() => null);
-    const data = await res?.json().catch(() => null);
+    const err = await renameFolder(f);
     setFolderBusy(false);
-    if (!res?.ok) alert(data?.error ?? "Umbenennen fehlgeschlagen");
+    if (err) alert(err);
     router.refresh();
   }
 
   async function handleDeleteFolder(f: Folder) {
-    const n = stats.get(f.id)?.entries ?? 0;
-    const msg = n
-      ? `Ordner „${f.name}“ löschen? ${n === 1 ? "Der Eintrag darin wandert" : `Die ${n} Einträge darin wandern`} nach „Unsortiert“ – es geht keine Karte verloren.`
-      : `Leeren Ordner „${f.name}“ löschen?`;
-    if (!window.confirm(msg)) return;
     setFolderBusy(true);
-    const res = await fetch("/api/folders", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: f.id }),
-    }).catch(() => null);
+    const r = await deleteFolder(f, stats.get(f.id)?.entries ?? 0);
     setFolderBusy(false);
-    if (!res?.ok) {
-      const data = await res?.json().catch(() => null);
-      alert(data?.error ?? "Löschen fehlgeschlagen");
+    if (r === "cancelled") return;
+    if (r) {
+      alert(r);
       return;
     }
-    selectFolder(UNSORTED);
+    selectFolder(ALL);
     router.refresh();
   }
 
@@ -286,7 +269,7 @@ export function CollectionClient({
           <div>
             <h1 className="text-sm font-medium text-zinc-400 truncate">
               Sammlung
-              {folder !== ALL && <span className="text-zinc-300"> · {activeFolder?.name ?? "Unsortiert"}</span>}
+              {folder !== ALL && <span className="text-zinc-300"> · {activeFolder?.name ?? "Ohne Ordner"}</span>}
             </h1>
             <p className="mt-1 text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums">{formattedTotal}</p>
             {filteredCards.length !== folderCards.length && (

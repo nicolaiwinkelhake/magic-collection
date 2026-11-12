@@ -45,7 +45,6 @@ export async function addCommanderToCollection(supabase: SupabaseClient, userId:
     .eq("user_id", userId)
     .eq("scryfall_id", c.card.id)
     .eq("foil", false)
-    .is("folder_id", null) // neue Karten landen in "Unsortiert"
     .maybeSingle();
 
   await supabase.from("cards").upsert(
@@ -67,8 +66,7 @@ export async function addCommanderToCollection(supabase: SupabaseClient, userId:
       price_eur: eur,
       price_eur_foil: eurFoil,
       price_updated_at: new Date().toISOString(),
-      folder_id: null,
     },
-    { onConflict: "user_id,scryfall_id,foil,folder_id" }
+    { onConflict: "user_id,scryfall_id,foil" }
   );
 }

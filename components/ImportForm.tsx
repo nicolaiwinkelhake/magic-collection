@@ -196,7 +196,7 @@ export function ImportForm({
       return;
     }
     const built = await buildJob(entries, { source, mode, allowDuplicates: cfg.duplicates && allowDuplicates });
-    const folderId = target === "collection" ? targetFolder : null;
+    const folderId = targetFolder;
     const newJob = { ...built, folderId, folderName: folders.find((f) => f.id === folderId)?.name ?? null };
     setJob(newJob);
     await runJob();
@@ -278,37 +278,35 @@ export function ImportForm({
 
       {open && (
         <div className="mt-3 space-y-3">
-          {target === "collection" && (
-            <label className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-zinc-400">Importieren in</span>
-              <select
-                value={targetFolder ?? ""}
-                disabled={running}
-                onChange={async (e) => {
-                  if (e.target.value === "__new") {
-                    const name = window.prompt("Name des neuen Ordners:")?.trim();
-                    if (!name) return;
-                    const r = await createFolder(name);
-                    if (r.folder) {
-                      setTargetFolder(r.folder.id);
-                      onFoldersChanged?.();
-                    } else setNotice(r.error ?? "Ordner konnte nicht angelegt werden");
-                    return;
-                  }
-                  setTargetFolder(e.target.value || null);
-                }}
-                className="rounded-lg bg-zinc-800 border border-white/10 px-2 py-1.5 outline-none"
-              >
-                <option value="">📥 Unsortiert</option>
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    📁 {f.name}
-                  </option>
-                ))}
-                <option value="__new">+ Neuer Ordner …</option>
-              </select>
-            </label>
-          )}
+          <label className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-zinc-400">In Ordner</span>
+            <select
+              value={targetFolder ?? ""}
+              disabled={running}
+              onChange={async (e) => {
+                if (e.target.value === "__new") {
+                  const name = window.prompt("Name des neuen Ordners:")?.trim();
+                  if (!name) return;
+                  const r = await createFolder(name);
+                  if (r.folder) {
+                    setTargetFolder(r.folder.id);
+                    onFoldersChanged?.();
+                  } else setNotice(r.error ?? "Ordner konnte nicht angelegt werden");
+                  return;
+                }
+                setTargetFolder(e.target.value || null);
+              }}
+              className="rounded-lg bg-zinc-800 border border-white/10 px-2 py-1.5 outline-none"
+            >
+              <option value="">Kein Ordner</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  📁 {f.name}
+                </option>
+              ))}
+              <option value="__new">+ Neuer Ordner …</option>
+            </select>
+          </label>
           <p className="text-sm text-zinc-400">
             Ein Kartenname pro Zeile. Menge per „2x Name“, Foil per „Name *F*“.
             Gleiche Karten werden zusammengezählt.
@@ -373,7 +371,7 @@ export function ImportForm({
             <section className="border-t border-zinc-800 pt-3 space-y-3" aria-live="polite">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="font-medium">
-                  Import „{job.source}“{target === "collection" && ` → ${job.folderName ?? "Unsortiert"}`}{" "}
+                  Import „{job.source}“{job.folderName && ` → 📁 ${job.folderName}`}{" "}
                   <span className="text-xs text-zinc-500">
                     {new Date(job.createdAt).toLocaleString("de-DE")}
                   </span>

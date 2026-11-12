@@ -75,16 +75,14 @@ export async function PATCH(request: Request) {
   }
 
   // Gibt es (Druck + Foil) schon als eigene Zeile? Dann zusammenlegen.
-  // Nur im selben Ordner zusammenlegen (Exemplare dürfen auf Ordner verteilt sein)
-  let existingQuery = supabase
+  const { data: existing } = await supabase
     .from("cards")
     .select("id, quantity")
     .eq("user_id", user.id)
     .eq("scryfall_id", targetId)
     .eq("foil", targetFoil)
-    .neq("id", id);
-  existingQuery = row.folder_id ? existingQuery.eq("folder_id", row.folder_id) : existingQuery.is("folder_id", null);
-  const { data: existing } = await existingQuery.maybeSingle();
+    .neq("id", id)
+    .maybeSingle();
   const plan = planMove(
     { id, scryfall_id: row.scryfall_id, foil: row.foil, quantity: (updates.quantity as number) ?? row.quantity },
     { scryfall_id: targetId, foil: targetFoil },
@@ -100,6 +98,14 @@ export async function PATCH(request: Request) {
       .eq("id", plan.targetId)
       .eq("user_id", user.id);
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    // Ordner-Zuordnungen auf die Zielzeile übertragen (Migration 015)
+    const { data: entries } = await supabase.from("folder_entries").select("folder_id").eq("card_id", id);
+    if (entries?.length) {
+      await supabase.from("folder_entries").upsert(
+        entries.map((e) => ({ user_id: user.id, folder_id: e.folder_id, card_id: plan.targetId })),
+        { onConflict: "folder_id,card_id", ignoreDuplicates: true },
+      );
+    }
     const { error: delErr } = await supabase.from("cards").delete().eq("id", id).eq("user_id", user.id);
     if (delErr) {
       await supabase.from("cards").update({ quantity: existing!.quantity }).eq("id", plan.targetId).eq("user_id", user.id);

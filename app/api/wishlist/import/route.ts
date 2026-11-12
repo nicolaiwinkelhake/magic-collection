@@ -16,7 +16,7 @@ function imageUrl(card: ScryfallCard): string | null {
   return card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? null;
 }
 
-// Erwartet { items: [{ i, name, scryfallId?, set?, collectorNumber? }] }.
+// Erwartet { folderId?, items: [{ i, name, scryfallId?, set?, collectorNumber? }] }.
 // Antwort: { results: [{ i, status: imported | skipped | not_found, cardName? }] }
 export async function POST(request: Request) {
   const { supabase, user } = await requireUser();
@@ -24,6 +24,9 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null);
   const items: BatchItem[] = Array.isArray(body?.items) ? body.items : [];
+  // Optional: die Karten zusätzlich diesem Ordner zuordnen (Migration 015)
+  const folderId: string | null =
+    typeof body?.folderId === "string" && /^[0-9a-f-]{36}$/i.test(body.folderId) ? body.folderId : null;
   if (!items.length || items.length > MAX_ITEMS) {
     return Response.json({ error: `Paket muss 1–${MAX_ITEMS} Positionen enthalten` }, { status: 400 });
   }
@@ -72,6 +75,29 @@ export async function POST(request: Request) {
     if (error) {
       console.error("Wunschliste-Import: Speichern fehlgeschlagen", error);
       return Response.json({ error: `Speichern fehlgeschlagen: ${error.message}` }, { status: 500 });
+    }
+  }
+
+  // Zielordner: neue UND schon vorhandene Wunschkarten zuordnen
+  if (folderId && ids.length) {
+    const { data: wished, error: readErr } = await supabase
+      .from("wishlist")
+      .select("id")
+      .eq("user_id", user.id)
+      .in("scryfall_id", ids);
+    const { error: folderErr } = readErr
+      ? { error: readErr }
+      : await supabase.rpc("folder_add", {
+          p_folder_id: folderId,
+          p_card_ids: [],
+          p_wishlist_ids: (wished ?? []).map((w) => w.id),
+        });
+    if (folderErr) {
+      const missing = /Ordner nicht gefunden/.test(folderErr.message);
+      return Response.json(
+        { error: missing ? "Ordner nicht gefunden" : `Ordner-Zuordnung fehlgeschlagen: ${folderErr.message}` },
+        { status: missing ? 404 : 500 },
+      );
     }
   }
 

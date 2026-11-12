@@ -73,6 +73,7 @@ export function CardViewer({
   onClose,
   actions,
   info,
+  keyboardDisabled = false,
 }: {
   cards: ViewerCard[];
   index: number;
@@ -82,6 +83,8 @@ export function CardViewer({
   actions?: (card: ViewerCard) => ReactNode;
   /** Zusatzinfos der Seite, z. B. "Max hat sie" */
   info?: (card: ViewerCard) => ReactNode;
+  /** z. B. solange ein Dialog darüber offen ist */
+  keyboardDisabled?: boolean;
 }) {
   const card = cards[index];
   const [fullscreen, setFullscreen] = useState(false);
@@ -126,7 +129,7 @@ export function CardViewer({
         title={c.name}
         subtitle={c.name_de || undefined}
         label={`${c.name} – Details`}
-        keyboardDisabled={fullscreen}
+        keyboardDisabled={fullscreen || keyboardDisabled}
       >
         <div className="px-4 pt-3 pb-4 sm:p-4 grid gap-4 sm:gap-5 sm:grid-cols-[minmax(0,260px)_1fr]">
           <div className="mx-auto w-[78%] max-w-[300px] sm:w-full sm:max-w-none">

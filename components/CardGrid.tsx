@@ -10,7 +10,7 @@ import { CardViewToggle, QuantityBadge, useCardView } from "@/components/ui/Card
 import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card, Folder } from "@/lib/types";
 import { FolderPicker } from "@/components/ui/FolderPicker";
-import { moveCards, promptCreateFolder } from "@/lib/folderApi";
+import { withFolder } from "@/lib/folders";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
 import { SelectionBar } from "@/components/ui/SelectionBar";
@@ -42,10 +42,8 @@ export function CardGrid({
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [printFor, setPrintFor] = useState<Card | null>(null);
-  // Verschieben: ausgewählte Karten bzw. eine Karte aus der Detailansicht
-  const [moveIds, setMoveIds] = useState<string[] | null>(null);
-  const [moveBusy, setMoveBusy] = useState(false);
-  const [moveError, setMoveError] = useState<string | null>(null);
+  // Ordner zuordnen: ausgewählte Karten bzw. eine Karte aus der Detailansicht
+  const [folderIds, setFolderIds] = useState<string[] | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
 
@@ -101,34 +99,13 @@ export function CardGrid({
     setEditing((e) => (e && (e.id === oldId || e.id === card.id) ? card : e));
   }
 
-  // In einen Ordner verschieben (Server legt gleiche Karten zusammen).
-  async function moveTo(ids: string[], folderId: string | null) {
-    setMoveBusy(true);
-    setMoveError(null);
-    const r = await moveCards(ids, folderId);
-    setMoveBusy(false);
-    if (r.error) {
-      setMoveError(r.error);
-      return;
-    }
-    // Lokal sofort umhängen; Zusammenlegungen kommen mit dem Neuladen
-    setLocal((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, folder_id: folderId } : c)));
-    setEditing((e) => (e && ids.includes(e.id) ? { ...e, folder_id: folderId } : e));
-    setMoveIds(null);
-    setSelected(new Set());
-    setSelectMode(false);
-    router.refresh();
-  }
-
-  async function createAndMove(ids: string[]) {
-    const r = await promptCreateFolder();
-    if (!r) return;
-    if (r.error || !r.folder) {
-      setMoveError(r.error ?? "Ordner konnte nicht angelegt werden");
-      return;
-    }
+  // Ordner-Zuordnung wurde gespeichert: lokal übernehmen, Kennzahlen der
+  // Ordnerleiste kommen mit dem Neuladen.
+  function folderChanged(folderId: string, ids: string[], add: boolean) {
+    const set = new Set(ids);
+    setLocal((prev) => withFolder(prev, set, folderId, add));
+    setEditing((e) => (e && set.has(e.id) ? withFolder([e], set, folderId, add)[0] : e));
     onFoldersChanged?.();
-    await moveTo(ids, r.folder.id);
   }
 
   // Druck wechseln (nicht optimistisch: Server prüft und legt ggf. zusammen).
@@ -327,6 +304,11 @@ export function CardGrid({
   // Durch die Sammlung blättern: Reihenfolge wie angezeigt (inkl. Gruppen).
   const ordered = groups.flatMap((g) => g.cards);
   const editIndex = editing ? ordered.findIndex((c) => c.id === editing.id) : -1;
+  const folderNames = (c: Card) =>
+    folders
+      .filter((f) => c.folder_ids?.includes(f.id))
+      .map((f) => f.name)
+      .join(", ");
 
   // Auswahl auf sichtbare Karten beschränken (Filter geändert, gelöscht …)
   const visibleKey = ordered.map((c) => c.id).join(",");
@@ -401,11 +383,8 @@ export function CardGrid({
           confirmText="{n} Einträge wirklich aus der Sammlung entfernen?"
           busy={busy}
           secondary={{
-            label: "Verschieben",
-            onClick: () => {
-              setMoveError(null);
-              setMoveIds([...selected]);
-            },
+            label: "Ordner",
+            onClick: () => setFolderIds([...selected]),
           }}
         />
       )}
@@ -421,7 +400,7 @@ export function CardGrid({
           subtitle={editing.name_de || undefined}
           label={`${editing.name} – Details`}
           closeDisabled={busy}
-          keyboardDisabled={!!preview || !!printFor || !!moveIds}
+          keyboardDisabled={!!preview || !!printFor || !!folderIds}
         >
             <div className="px-4 pt-3 pb-4 sm:p-4 grid gap-4 sm:gap-5 sm:grid-cols-[minmax(0,260px)_1fr]">
               {/* Bild */}
@@ -571,14 +550,11 @@ export function CardGrid({
                   <div className="flex items-center justify-between px-3 py-2.5">
                     <span className="text-sm text-zinc-300">Ordner</span>
                     <button
-                      onClick={() => {
-                        setMoveError(null);
-                        setMoveIds([editing.id]);
-                      }}
+                      onClick={() => setFolderIds([editing.id])}
                       disabled={busy}
                       className="max-w-[60%] truncate rounded-lg bg-black/30 border border-white/10 px-3 py-1.5 text-sm disabled:opacity-50"
                     >
-                      {folders.find((f) => f.id === editing.folder_id)?.name ?? "Unsortiert"} ▾
+                      {folderNames(editing) || "Keinem Ordner"} ▾
                     </button>
                   </div>
                 </div>
@@ -623,18 +599,21 @@ export function CardGrid({
         </SwipeSheet>
       )}
 
-      {moveIds && (
+      {folderIds && (
         <FolderPicker
+          kind="card"
           folders={folders}
-          currentId={
-            moveIds.length === 1 ? (local.find((c) => c.id === moveIds[0])?.folder_id ?? null) : undefined
-          }
-          title={moveIds.length === 1 ? "In Ordner verschieben" : `${moveIds.length} Einträge verschieben`}
-          busy={moveBusy}
-          error={moveError}
-          onPick={(id) => void moveTo(moveIds, id)}
-          onCreate={() => void createAndMove(moveIds)}
-          onClose={() => setMoveIds(null)}
+          items={local.filter((c) => folderIds.includes(c.id))}
+          onChanged={folderChanged}
+          onFolderCreated={() => onFoldersChanged?.()}
+          onClose={() => {
+            // nach einer Mehrfachauswahl ist die Aufgabe erledigt
+            if (folderIds.length > 1 || selectMode) {
+              setSelected(new Set());
+              setSelectMode(false);
+            }
+            setFolderIds(null);
+          }}
         />
       )}
 
