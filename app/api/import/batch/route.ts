@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const batchKey: string = body?.batchKey ?? "";
   const allowDuplicates = Boolean(body?.allowDuplicates);
-  // Zielordner (Migration 014); fehlt er, landen die Karten in "Unsortiert"
+  // Optional: Karten zusätzlich diesem Ordner zuordnen (Migration 015)
   const folderId: string | null =
     typeof body?.folderId === "string" && /^[0-9a-f-]{36}$/i.test(body.folderId) ? body.folderId : null;
   const items: BatchItem[] = Array.isArray(body?.items) ? body.items : [];

@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { WishlistClient } from "@/components/WishlistClient";
 import { selectAll } from "@/lib/supabase/selectAll";
+import { attachFolders } from "@/lib/folders";
+import { loadFolderEntries } from "@/lib/folderEntries";
 
 export default async function WishlistPage() {
   const supabase = createClient();
@@ -30,5 +32,11 @@ export default async function WishlistPage() {
     );
   }
 
-  return <WishlistClient items={items} ownership={ownership} />;
+  // Eigene Ordner (gemeinsam mit der Sammlung) + Zuordnungen der Wunschkarten
+  const [{ data: folders }, entries] = await Promise.all([
+    supabase.from("folders").select("id, name, created_at").order("name"),
+    loadFolderEntries(supabase, "wishlist"),
+  ]);
+
+  return <WishlistClient items={attachFolders(items, entries)} ownership={ownership} initialFolders={folders ?? []} />;
 }

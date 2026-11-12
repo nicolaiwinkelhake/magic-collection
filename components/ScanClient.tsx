@@ -178,7 +178,7 @@ export function ScanClient({
     setLoaded(true);
     const p = load(PREFS_KEY, DEFAULT_PREFS);
     // Gelöschtes Deck als Ziel → zurück auf Sammlung
-    // Gelöschter Ordner als Ziel → Sammlung/Unsortiert
+    // Gelöschter Ordner als Ziel → Sammlung ohne Ordner
     if (p.target.kind === "collection" && p.target.folderId && !folders.some((f) => f.id === (p.target as { folderId?: string }).folderId)) {
       p.target = { kind: "collection" };
     }
@@ -655,10 +655,10 @@ export function ScanClient({
         onChange={(e) => setTarget(e.target.value)}
         className="appearance-none rounded-full bg-black/50 backdrop-blur border border-white/15 pl-3 pr-7 h-9 text-sm text-white outline-none max-w-[13rem] truncate"
       >
-        <option value="collection">→ Sammlung{folders.length ? " (Unsortiert)" : ""}</option>
+        <option value="collection">→ Sammlung</option>
         {folders.map((f) => (
           <option key={f.id} value={`folder:${f.id}`}>
-            → Ordner: {f.name}
+            → Sammlung + Ordner: {f.name}
           </option>
         ))}
         <option value="wishlist">→ Wunschliste</option>

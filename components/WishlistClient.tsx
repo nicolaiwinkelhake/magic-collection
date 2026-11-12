@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -9,22 +9,99 @@ import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
 import { ImportForm } from "@/components/ImportForm";
 import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
 import { toggle, toggleAll } from "@/lib/selection";
+import type { Folder } from "@/lib/types";
+import { FolderBar } from "@/components/FolderBar";
+import { FolderPicker } from "@/components/ui/FolderPicker";
+import { ALL, UNSORTED, folderStats, inFolder, wishlistMeasure, withFolder, type FolderFilter } from "@/lib/folders";
+import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
 
 type WishItem = {
   id: string;
   name: string;
   image_url: string | null;
   price_eur: number | null;
+  /** Ordner, in denen die Karte steht (gemeinsam mit der Sammlung) */
+  folder_ids?: string[];
 };
 
 export function WishlistClient({
-  items,
+  items: initialItems,
   ownership,
+  initialFolders = [],
 }: {
   items: WishItem[];
   ownership: Record<string, string[]>;
+  initialFolders?: Folder[];
 }) {
   const router = useRouter();
+  // lokal, damit Ordner-Zuordnungen sofort sichtbar sind
+  const [allItems, setAllItems] = useState<WishItem[]>(initialItems);
+  useEffect(() => setAllItems(initialItems), [initialItems]);
+
+  // Ordner (dieselben wie in der Sammlung); Auswahl wird im Browser gemerkt
+  const folders = initialFolders;
+  const [folder, setFolder] = useState<FolderFilter>(ALL);
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [folderIds, setFolderIds] = useState<string[] | null>(null);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("wishlist-folder");
+      if (saved) setFolder(saved);
+    } catch {
+      // Speicher gesperrt
+    }
+  }, []);
+  useEffect(() => {
+    if (folder !== ALL && folder !== UNSORTED && !folders.some((f) => f.id === folder)) setFolder(ALL);
+  }, [folder, folders]);
+  function selectFolder(f: FolderFilter) {
+    setFolder(f);
+    try {
+      window.localStorage.setItem("wishlist-folder", f);
+    } catch {
+      // ignorieren
+    }
+  }
+  const stats = useMemo(() => folderStats(allItems, wishlistMeasure), [allItems]);
+  const items = useMemo(() => inFolder(allItems, folder), [allItems, folder]);
+  const activeFolder = folders.find((f) => f.id === folder);
+  const folderNames = (it: WishItem) =>
+    folders
+      .filter((f) => it.folder_ids?.includes(f.id))
+      .map((f) => f.name)
+      .join(", ");
+
+  async function handleCreateFolder() {
+    setFolderBusy(true);
+    const r = await promptCreateFolder();
+    setFolderBusy(false);
+    if (!r) return;
+    if (r.error || !r.folder) {
+      alert(r.error ?? "Ordner konnte nicht angelegt werden");
+      return;
+    }
+    selectFolder(r.folder.id);
+    router.refresh();
+  }
+  async function handleRenameFolder(f: Folder) {
+    setFolderBusy(true);
+    const err = await renameFolder(f);
+    setFolderBusy(false);
+    if (err) alert(err);
+    router.refresh();
+  }
+  async function handleDeleteFolder(f: Folder) {
+    setFolderBusy(true);
+    const r = await deleteFolder(f, stats.get(f.id)?.entries ?? 0);
+    setFolderBusy(false);
+    if (r === "cancelled") return;
+    if (r) {
+      alert(r);
+      return;
+    }
+    selectFolder(ALL);
+    router.refresh();
+  }
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -61,17 +138,39 @@ export function WishlistClient({
   return (
     <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">⭐ Wunschliste</h1>
+        <h1 className="text-2xl font-semibold truncate">
+          ⭐ Wunschliste
+          {folder !== ALL && <span className="text-zinc-400 font-normal"> · {activeFolder?.name ?? "Ohne Ordner"}</span>}
+        </h1>
         <Link href="/collection" className="text-indigo-400 hover:underline text-sm">
           Zur Sammlung
         </Link>
       </header>
 
-      <ImportForm target="wishlist" defaultOpen={items.length === 0} />
+      {(folders.length > 0 || allItems.length > 0) && (
+        <FolderBar
+          folders={folders}
+          stats={stats}
+          active={folder}
+          onSelect={selectFolder}
+          onCreate={() => void handleCreateFolder()}
+          onRename={(f) => void handleRenameFolder(f)}
+          onDelete={(f) => void handleDeleteFolder(f)}
+          busy={folderBusy}
+        />
+      )}
+
+      <ImportForm
+        target="wishlist"
+        defaultOpen={allItems.length === 0}
+        folders={folders}
+        defaultFolderId={folder !== ALL && folder !== UNSORTED ? folder : null}
+        onFoldersChanged={() => router.refresh()}
+      />
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-zinc-500">
-          {items.length} Karten · Gesamtwert{" "}
+          {items.length} {items.length === 1 ? "Karte" : "Karten"} · {folder === ALL ? "Gesamtwert" : "Wert"}{" "}
           <span className="text-emerald-400 font-medium">{formatEur(total)}</span>
         </p>
         {items.length > 0 && (
@@ -91,7 +190,7 @@ export function WishlistClient({
 
       {items.length === 0 ? (
         <p className="text-zinc-500 text-center py-12">
-          Deine Wunschliste ist leer.
+          {allItems.length === 0 ? "Deine Wunschliste ist leer." : "In diesem Ordner ist noch keine Wunschkarte."}
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -149,6 +248,7 @@ export function WishlistClient({
           cards={items.map((i) => ({ key: i.id, name: i.name, image_url: i.image_url, price_eur: i.price_eur }))}
           index={viewIndex}
           onIndexChange={setViewIndex}
+          keyboardDisabled={!!folderIds}
           onClose={() => setViewIndex(null)}
           info={(c) => {
             const owners = ownership[c.name];
@@ -156,17 +256,25 @@ export function WishlistClient({
               <p className="text-sm text-emerald-400">✅ {owners.map((e) => e.split("@")[0]).join(", ")} hat sie</p>
             ) : null;
           }}
-          actions={(c) => (
-            <button
-              onClick={() => {
-                setViewIndex(null);
-                void remove(c.key);
-              }}
-              className={viewerButton.danger}
-            >
-              Von der Wunschliste entfernen
-            </button>
-          )}
+          actions={(c) => {
+            const it = allItems.find((i) => i.id === c.key);
+            return (
+              <>
+                <button onClick={() => setFolderIds([c.key])} className={viewerButton.secondary}>
+                  📁 {(it && folderNames(it)) || "Ordner"}
+                </button>
+                <button
+                  onClick={() => {
+                    setViewIndex(null);
+                    void remove(c.key);
+                  }}
+                  className={viewerButton.danger}
+                >
+                  Von der Wunschliste entfernen
+                </button>
+              </>
+            );
+          }}
         />
       )}
       {selectMode && (
@@ -184,8 +292,28 @@ export function WishlistClient({
             actionLabel="Entfernen"
             confirmText="{n} Karten von der Wunschliste entfernen?"
             busy={removing}
+            secondary={{ label: "Ordner", onClick: () => setFolderIds([...selected]) }}
           />
         </>
+      )}
+      {folderIds && (
+        <FolderPicker
+          kind="wishlist"
+          folders={folders}
+          items={allItems.filter((i) => folderIds.includes(i.id))}
+          onChanged={(folderId, ids, add) => {
+            setAllItems((prev) => withFolder(prev, new Set(ids), folderId, add));
+            router.refresh();
+          }}
+          onFolderCreated={() => router.refresh()}
+          onClose={() => {
+            if (selectMode) {
+              setSelectMode(false);
+              setSelected(new Set());
+            }
+            setFolderIds(null);
+          }}
+        />
       )}
     </main>
   );

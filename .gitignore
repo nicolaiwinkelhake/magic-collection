@@ -7,3 +7,6 @@ node_modules
 
 # Texterkennung, wird vor dev/build aus node_modules kopiert
 public/ocr/
+
+# von Next.js erzeugt
+next-env.d.ts

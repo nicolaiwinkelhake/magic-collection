@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { CollectionClient } from "@/components/CollectionClient";
 import { selectAll } from "@/lib/supabase/selectAll";
 import type { Card } from "@/lib/types";
+import { attachFolders } from "@/lib/folders";
+import { loadFolderEntries } from "@/lib/folderEntries";
 
 export default async function CollectionPage() {
   const supabase = createClient();
@@ -23,9 +25,13 @@ export default async function CollectionPage() {
     error = { message: e instanceof Error ? e.message : "Unbekannter Fehler" };
   }
 
-  // Eigene Ordner (Migration 014). Fehlt die Tabelle noch, bleibt die Liste
-  // leer und die Sammlung funktioniert wie bisher.
-  const { data: folders } = await supabase.from("folders").select("id, name, created_at").order("name");
+  // Eigene Ordner + Zuordnungen (eine Karte kann in mehreren Ordnern
+  // stehen). Fehlen die Tabellen noch, bleibt alles leer.
+  const [{ data: folders }, entries] = await Promise.all([
+    supabase.from("folders").select("id, name, created_at").order("name"),
+    loadFolderEntries(supabase, "card"),
+  ]);
+  cards = attachFolders(cards, entries);
 
   return (
     <CollectionClient

@@ -50,7 +50,7 @@ export async function POST(
   // false: Karten nur ins Deck legen (z. B. eine bereits besessene Karte aus
   // den Vorschlägen übernehmen) – sonst würde die Sammlung doppelt zählen.
   const addToCollection = body.addToCollection !== false;
-  // Zielordner für die Sammlung (Migration 014); ohne Angabe "Unsortiert"
+  // Optional: Sammlungskarten zusätzlich diesem Ordner zuordnen (Migration 015)
   const folderId: string | null =
     typeof body.folderId === "string" && /^[0-9a-f-]{36}$/i.test(body.folderId) ? body.folderId : null;
 
@@ -119,29 +119,20 @@ export async function POST(
       }
 
       if (addToCollection) {
-        // Exemplare können auf mehrere Ordner verteilt sein: die alte Menge
-        // je Karte nur EINMAL abziehen – zuerst aus "Unsortiert", dann aus
-        // den Ordnern (sonst würde sie von jeder Zeile abgezogen).
         const { data: collectionRowsForDeck } = await supabase
           .from("cards")
-          .select("id, scryfall_id, quantity, folder_id, created_at")
+          .select("id, scryfall_id, quantity")
           .eq("user_id", user.id)
           .eq("foil", false)
           .in("scryfall_id", Array.from(oldQtyByScryfallId.keys()));
 
-        const remaining = new Map(oldQtyByScryfallId);
-        const ordered = [...(collectionRowsForDeck ?? [])].sort(
-          (a, b) => Number(a.folder_id != null) - Number(b.folder_id != null) || String(a.created_at).localeCompare(String(b.created_at)),
-        );
-        for (const row of ordered) {
-          const left = remaining.get(row.scryfall_id) ?? 0;
-          if (left <= 0) continue;
-          const take = Math.min(left, row.quantity);
-          remaining.set(row.scryfall_id, left - take);
-          if (take >= row.quantity) {
+        for (const row of collectionRowsForDeck ?? []) {
+          const oldQty = oldQtyByScryfallId.get(row.scryfall_id) ?? 0;
+          const newQty = row.quantity - oldQty;
+          if (newQty <= 0) {
             await supabase.from("cards").delete().eq("id", row.id);
           } else {
-            await supabase.from("cards").update({ quantity: row.quantity - take }).eq("id", row.id);
+            await supabase.from("cards").update({ quantity: newQty }).eq("id", row.id);
           }
         }
       }
@@ -207,14 +198,11 @@ export async function POST(
   if (addToCollection) {
     // Bestehende Menge in der Sammlung wird addiert statt überschrieben.
     const ids = Array.from(new Set(Array.from(groups.values()).map((g) => g.card.id)));
-    // Nur die Zeilen im Zielordner zählen (dort wird addiert)
-    let existingQuery = supabase
+    const { data: existingRows } = await supabase
       .from("cards")
       .select("scryfall_id,foil,quantity")
       .eq("user_id", user.id)
       .in("scryfall_id", ids);
-    existingQuery = folderId ? existingQuery.eq("folder_id", folderId) : existingQuery.is("folder_id", null);
-    const { data: existingRows } = await existingQuery;
     const existingQty = new Map<string, number>(
       (existingRows ?? []).map((r) => [`${r.scryfall_id}_${r.foil}`, r.quantity as number])
     );
@@ -238,13 +226,22 @@ export async function POST(
         price_eur: eur,
         price_eur_foil: eurFoil,
         price_updated_at: new Date().toISOString(),
-        folder_id: folderId,
       };
     });
-    const { error: upsertError } = await supabase
+    const { data: upserted, error: upsertError } = await supabase
       .from("cards")
-      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil,folder_id" });
+      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" })
+      .select("id");
     if (upsertError) console.error("Deck-Import: Sammlung nicht aktualisiert", upsertError);
+    // Zusätzlich einem Ordner zuordnen (Migration 015)
+    if (folderId && upserted?.length) {
+      const { error: folderError } = await supabase.rpc("folder_add", {
+        p_folder_id: folderId,
+        p_card_ids: upserted.map((r) => r.id),
+        p_wishlist_ids: [],
+      });
+      if (folderError) console.error("Deck-Import: Ordner nicht zugeordnet", folderError);
+    }
   }
 
   // Preisverlauf je Karte festhalten (einmal pro Karte, unabhängig von der Menge)

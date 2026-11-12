@@ -22,8 +22,8 @@ export type Card = {
   condition: string;
   language: string;
   created_at: string;
-  /** Ordner (null = Unsortiert) – Migration 014 */
-  folder_id?: string | null;
+  /** Ordner, in denen die Karte steht (beliebig viele) – Migration 015 */
+  folder_ids?: string[];
 };
 
 export type Folder = {

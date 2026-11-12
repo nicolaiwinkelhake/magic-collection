@@ -1,8 +1,8 @@
 import { requireUser, unauthorized } from "@/lib/apiAuth";
 
-// Eigene Ordner der Sammlung: anlegen, umbenennen, löschen (Migration 014).
-// Löschen läuft über delete_folder(): Karten wandern nach "Unsortiert"
-// und werden dort zusammengelegt – es geht nie eine Karte verloren.
+// Eigene Ordner (Sammlung + Wunschliste): anlegen, umbenennen, löschen.
+// Löschen entfernt nur den Ordner und seine Zuordnungen – die Karten
+// bleiben in Sammlung bzw. Wunschliste (delete_folder, Migration 015).
 
 function cleanName(raw: unknown): string | null {
   const name = String(raw ?? "").replace(/\s+/g, " ").trim();
@@ -63,5 +63,5 @@ export async function DELETE(request: Request) {
   if (!body.id) return Response.json({ error: "Ordner fehlt" }, { status: 400 });
   const { data, error } = await supabase.rpc("delete_folder", { p_folder_id: body.id });
   if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json({ ok: true, moved: data });
+  return Response.json({ ok: true, removedEntries: data });
 }

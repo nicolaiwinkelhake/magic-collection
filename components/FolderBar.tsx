@@ -4,9 +4,10 @@ import { formatEur } from "@/lib/format";
 import { ALL, UNSORTED, type FolderFilter, type FolderStat } from "@/lib/folders";
 import type { Folder } from "@/lib/types";
 
-// Ordnerleiste der Sammlung: "Alle", "Unsortiert" und eigene Ordner als
-// wischbare Kacheln mit Kartenzahl und Wert; "+ Ordner" legt einen neuen an.
-// Der gewählte eigene Ordner lässt sich umbenennen oder löschen.
+// Ordnerleiste (Sammlung und Wunschliste): "Alle", "Ohne Ordner" und eigene
+// Ordner als wischbare Kacheln mit Kartenzahl und Wert; "+ Ordner" legt einen
+// neuen an. Eine Karte kann in mehreren Ordnern stehen und zählt dann in
+// jedem mit. Der gewählte eigene Ordner lässt sich umbenennen oder löschen.
 
 export function FolderBar({
   folders,
@@ -29,7 +30,7 @@ export function FolderBar({
 }) {
   const tiles: Array<{ key: FolderFilter; label: string }> = [
     { key: ALL, label: "Alle" },
-    { key: UNSORTED, label: "Unsortiert" },
+    { key: UNSORTED, label: "Ohne Ordner" },
     ...folders.map((f) => ({ key: f.id, label: f.name })),
   ];
   const activeFolder = folders.find((f) => f.id === active);
@@ -40,7 +41,7 @@ export function FolderBar({
         {tiles.map((t) => {
           const s = stats.get(t.key) ?? { cards: 0, entries: 0, value: 0 };
           const on = active === t.key;
-          // "Unsortiert" nur zeigen, wenn es Ordner gibt oder dort etwas liegt
+          // "Ohne Ordner" nur zeigen, wenn es Ordner gibt
           if (t.key === UNSORTED && !folders.length) return null;
           return (
             <button

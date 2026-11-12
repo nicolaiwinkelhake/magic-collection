@@ -40,7 +40,7 @@ export type ImportJob = {
   allowDuplicates: boolean;
   createdAt: string;
   batches: ImportBatch[];
-  /** Zielordner der Sammlung (null/fehlend = Unsortiert) */
+  /** Ordner, dem die Karten zusätzlich zugeordnet werden (null = keiner) */
   folderId?: string | null;
   /** Anzeigename des Zielordners für den Bericht */
   folderName?: string | null;

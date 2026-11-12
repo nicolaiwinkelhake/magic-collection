@@ -186,7 +186,7 @@ export function entriesToCsv(
     price_eur_foil: number | null;
     condition?: string;
     language?: string;
-    /** Ordnername (leer = Unsortiert) */
+    /** Ordnernamen, mit "; " getrennt (leer = kein Ordner) */
     folder?: string | null;
   }>
 ): string {

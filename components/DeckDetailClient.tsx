@@ -78,7 +78,7 @@ export function DeckDetailClient({
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [replaceMode, setReplaceMode] = useState(false);
-  // Ordner, in den die Karten beim Import in der Sammlung landen (leer = Unsortiert)
+  // Ordner, dem die Karten beim Import in der Sammlung zugeordnet werden (leer = keiner)
   const [importFolder, setImportFolder] = useState<string>("");
   const [ownership, setOwnership] = useState<FriendOwnership>({});
   const [loadingOwnership, setLoadingOwnership] = useState(false);
@@ -1010,7 +1010,7 @@ export function DeckDetailClient({
                     disabled={importing}
                     className="rounded-lg bg-zinc-800 border border-white/10 px-2 py-1.5 outline-none"
                   >
-                    <option value="">📥 Unsortiert</option>
+                    <option value="">Kein Ordner</option>
                     {folders.map((f) => (
                       <option key={f.id} value={f.id}>
                         📁 {f.name}
