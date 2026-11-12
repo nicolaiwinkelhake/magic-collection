@@ -1,72 +1,79 @@
 import { requireUser, unauthorized } from "@/lib/apiAuth";
-import { fetchCardsCollection } from "@/lib/scryfall";
-import { cachedSearch, type CompactCard } from "@/lib/scryfallCache";
 import { selectAll } from "@/lib/supabase/selectAll";
-import { buildablePoolSpecs, identityKey, scorePool } from "@/lib/discover";
+import { cachedCommanderSlugs, commanderSlug, getCommander, type EdhrecCommander } from "@/lib/edhrec";
+import { loadFriendCards } from "@/lib/discoverData";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
-// "Welche Commander kann ich bauen?" – für jede Legende der Sammlung: Anteil
-// der typischen Karten ihrer Farben, den ich schon besitze, und Wert der
-// fehlenden. Pools je Farbidentität (gecacht), daher ohne Claude-Aufrufe.
+// Höchstens so viele noch unbekannte Commander je Aufruf bei EDHREC abfragen
+// (kurz und höflich); der Client ruft erneut auf, solange pending > 0.
+const FETCH_PER_CALL = 8;
+const TOP = 100;
+
+// "Neues Deck bauen": Welche Legenden meiner Sammlung kann ich am besten als
+// Commander bauen? Bewertet nach EDHREC – wie viele der typischen Karten
+// (gewichtet nach Anteil der Decks) ich schon besitze, und wie viele der
+// fehlenden ein Freund hat.
 export async function GET() {
   const { supabase, user } = await requireUser();
   if (!user) return unauthorized();
 
-  const legends = await selectAll<{ name: string; scryfall_id: string; type_line: string | null; oracle_text: string | null }>(() =>
-    supabase
-      .from("cards")
-      .select("name, scryfall_id, type_line, oracle_text")
-      .eq("user_id", user.id)
-      .ilike("type_line", "%Legendary%")
-      .order("id")
+  type Row = { name: string; type_line: string | null; oracle_text: string | null; image_url: string | null; colors: string[] | null };
+  const mine = await selectAll<Row>(() =>
+    supabase.from("cards").select("name, type_line, oracle_text, image_url, colors").eq("user_id", user.id).order("id"),
   );
-  const candidates = Array.from(
+  const ownedNames = new Set(mine.map((c) => c.name));
+  const legends = Array.from(
     new Map(
-      legends
-        .filter((c) => /Creature/.test(c.type_line ?? "") || /can be your commander/i.test(c.oracle_text ?? ""))
-        .map((c) => [c.name, c])
-    ).values()
-  ).slice(0, 200);
-  if (!candidates.length) return Response.json({ commanders: [] });
-
-  const scryfall = await fetchCardsCollection(candidates.map((c) => ({ id: c.scryfall_id })));
-
-  const allOwned = await selectAll<{ name: string }>(() =>
-    supabase.from("cards").select("name").eq("user_id", user.id).order("id")
-  );
-  const ownedNames = new Set(allOwned.map((c) => c.name));
+      mine
+        .filter((c) => /Legendary/.test(c.type_line ?? "") && (/Creature/.test(c.type_line ?? "") || /can be your commander/i.test(c.oracle_text ?? "")))
+        .map((c) => [c.name, c]),
+    ).values(),
+  ).slice(0, 150);
+  if (!legends.length) return Response.json({ commanders: [], pending: 0 });
 
   const { data: decks } = await supabase.from("decks").select("commander_name").eq("user_id", user.id);
   const withDeck = new Set((decks ?? []).map((d) => d.commander_name as string));
+  const friends = await loadFriendCards(supabase);
 
-  // Pools je Farbidentität einmal laden.
-  const pools = new Map<string, CompactCard[]>();
+  const cached = await cachedCommanderSlugs(supabase, legends.map((l) => commanderSlug([l.name])));
+  let fetched = 0;
   const result = [];
-  for (const cand of candidates) {
-    const card = scryfall.get(cand.scryfall_id);
-    if (!card) continue;
-    const identity = card.color_identity ?? card.colors ?? [];
-    const key = identityKey(identity);
-    if (!pools.has(key)) {
-      const pool: CompactCard[] = [];
-      for (const spec of buildablePoolSpecs(identity)) {
-        pool.push(...(await cachedSearch(supabase, spec.query, { order: spec.order, limit: spec.limit, ttlDays: spec.ttlDays })));
-      }
-      pools.set(key, pool);
+  let pending = 0;
+  for (const l of legends) {
+    const slug = commanderSlug([l.name]);
+    let page: EdhrecCommander | null = null;
+    if (cached.has(slug)) page = await getCommander(supabase, [l.name], { cacheOnly: true });
+    else if (fetched < FETCH_PER_CALL) {
+      fetched += 1;
+      page = await getCommander(supabase, [l.name]);
+    } else {
+      pending += 1;
+      continue;
     }
-    const score = scorePool(pools.get(key)!.filter((c) => c.name !== card.name), ownedNames);
-    const raw = card as unknown as { edhrec_rank?: number };
+    if (!page || !page.cards.length) continue;
+    const top = page.cards
+      .filter((c) => !/^(Plains|Island|Swamp|Mountain|Forest|Wastes)$/.test(c.name) && c.name !== l.name)
+      .sort((a, b) => b.inclusion - a.inclusion)
+      .slice(0, TOP);
+    const total = top.reduce((s, c) => s + c.inclusion, 0) || 1;
+    const have = top.filter((c) => ownedNames.has(c.name));
+    const missing = top.filter((c) => !ownedNames.has(c.name));
+    const fromFriends = missing.filter((c) => friends.byName.has(c.name));
     result.push({
-      name: card.name,
-      image: card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? null,
-      identity,
-      rank: raw.edhrec_rank ?? null,
-      hasDeck: withDeck.has(card.name),
-      ...score,
+      name: l.name,
+      image: l.image_url,
+      colors: l.colors ?? [],
+      hasDeck: withDeck.has(l.name),
+      numDecks: page.numDecks,
+      themes: page.themes.slice(0, 3).map((t) => t.name),
+      coverage: Math.round((have.reduce((s, c) => s + c.inclusion, 0) / total) * 1000) / 1000,
+      owned: have.length,
+      total: top.length,
+      friends: fromFriends.length,
+      topMissing: missing.slice(0, 5).map((c) => c.name),
     });
   }
-
-  result.sort((a, b) => b.share - a.share || a.missingValue - b.missingValue);
-  return Response.json({ commanders: result });
+  result.sort((a, b) => b.coverage - a.coverage);
+  return Response.json({ commanders: result, pending });
 }
