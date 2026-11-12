@@ -80,3 +80,9 @@ export async function directByName(name: string): Promise<ScanMatch | null> {
   const c = await get(`${API}/cards/named?fuzzy=${encodeURIComponent(name)}`);
   return c ? toMatch(c, false) : null;
 }
+
+/** Karte über den exakten (vom Wörterbuch korrigierten) englischen Namen. */
+export async function directExact(name: string): Promise<ScanMatch | null> {
+  const c = await get(`${API}/cards/named?exact=${encodeURIComponent(name)}`);
+  return c ? toMatch(c, false) : null;
+}

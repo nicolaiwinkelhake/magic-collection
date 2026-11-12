@@ -9,7 +9,9 @@ import { detectCard } from "@/lib/cardDetect";
 import { pickBest, type CardHash } from "@/lib/imageHash";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
 import { loadPrints } from "@/components/ui/PrintPicker";
-import { directByName, directPrint } from "@/lib/scryfallDirect";
+import { directByName, directExact, directPrint } from "@/lib/scryfallDirect";
+import { matchName, type NameMatch } from "@/lib/nameIndex";
+import { loadNameIndex, nameIndexIfReady } from "@/lib/nameIndexClient";
 import { formatEur } from "@/lib/format";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
@@ -18,8 +20,13 @@ import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type Oc
 import { coverGuide, fromVisible, visibleRegion, type Rect } from "@/lib/scanGeometry";
 import { contrast, initialWatch, markScanned, toGray, watchFrame, WATCH, type WatchState } from "@/lib/frameWatch";
 import {
+  addPending,
   addScan,
+  failPending,
+  pendingKey,
+  resolvePending,
   setQuantity,
+  unresolved,
   stackTotals,
   undoLast,
   unitPrice,
@@ -34,6 +41,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 // - Automatik: Karte hinlegen, kurz ruhig halten → wird erkannt (Ton +
 //   Vibration) und landet auf dem Scan-Stapel; danach wartet der Scanner,
 //   bis eine andere Karte im Rahmen liegt
+// - Tempo: Kartennamen-Wörterbuch auf dem Gerät korrigiert Lesefehler sofort;
+//   ist der Name sicher, wird ohne Warten aufs Netz bestätigt – Druck und
+//   Preis kommen im Hintergrund nach, während die nächste Karte schon liegt
 // - Stapel: Menge, Foil, Druck ändern, rückgängig; überlebt Neuladen
 // - Speichern in Sammlung, Wunschliste oder ein Deck – in Paketen, mit
 //   Ladebalken und Wiederholung
@@ -84,6 +94,19 @@ function regionToCanvas(source: CanvasImageSource, sx: number, sy: number, sw: n
   preprocessPixels(img.data);
   ctx.putImageData(img, 0, 0);
   return canvas;
+}
+
+// Zeitmessung für die Optimierung: nur aktiv mit localStorage "scan-debug" = "1"
+let debugT0 = 0;
+function scanLog(event: string, reset = false) {
+  try {
+    if (window.localStorage.getItem("scan-debug") !== "1") return;
+  } catch {
+    return;
+  }
+  const now = performance.now();
+  if (reset) debugT0 = now;
+  console.log(`TIMING ${event} ${Math.round(now - debugT0)}`);
 }
 
 function load<T>(key: string, fallback: T): T {
@@ -175,8 +198,11 @@ export function ScanClient({
 
   // Stapel und Einstellungen laden / speichern
   useEffect(() => {
-    setStack(loadStack());
+    const restored = loadStack();
+    setStack(restored);
     setLoaded(true);
+    // Nach Neuladen: offene Einträge erneut nachschlagen
+    for (const item of restored.filter((x) => x.pending)) void finishPending(item.key, item.name, null, [], null, item.foil);
     const p = load(PREFS_KEY, DEFAULT_PREFS);
     // Gelöschtes Deck als Ziel → zurück auf Sammlung
     // Gelöschter Ordner als Ziel → Sammlung ohne Ordner
@@ -192,6 +218,8 @@ export function ScanClient({
   // Anfangszustand den gespeicherten Stapel (z. B. bei doppeltem Rendern).
   useEffect(() => {
     if (loaded) save(STACK_KEY, stack);
+    // "Einen Moment – lädt noch" erledigt sich, sobald alles geladen ist
+    if (!unresolved(stack).pending) setSaveMsg((m) => (m?.startsWith("Einen Moment") ? null : m));
   }, [stack, loaded]);
   useEffect(() => {
     if (loaded) save(PREFS_KEY, prefs);
@@ -201,7 +229,22 @@ export function ScanClient({
   // sie bereit, wenn die Kamera startet.
   useEffect(() => {
     const t = setTimeout(() => void warmUp().catch(() => {}), 800);
-    return () => clearTimeout(t);
+    // Wörterbuch im Leerlauf vorbereiten (einmal laden, danach vom Gerät)
+    const d = setTimeout(() => void loadNameIndex(), 1500);
+    // Verbindung zu Scryfall schon aufbauen – spart beim ersten Scan den Handshake
+    for (const href of ["https://api.scryfall.com", "https://cards.scryfall.io"]) {
+      if (!document.head.querySelector(`link[rel="preconnect"][href="${href}"]`)) {
+        const link = document.createElement("link");
+        link.rel = "preconnect";
+        link.href = href;
+        link.crossOrigin = "anonymous";
+        document.head.appendChild(link);
+      }
+    }
+    return () => {
+      clearTimeout(t);
+      clearTimeout(d);
+    };
   }, []);
 
   // Aufräumen: Kamera aus, Texterkennung beenden.
@@ -333,11 +376,52 @@ export function ScanClient({
   // Kandidaten nacheinander prüfen, erster Treffer gewinnt.
   async function resolveCandidates(names: string[], info: CardInfo | null, suggest: boolean) {
     if (!names.length && !(info?.set && info?.number)) return { match: null, read: "" };
-    for (const n of names.length ? names : [""]) {
+    const list = names.length ? names : [""];
+    if (!suggest) {
+      // Automatik: alle Lesarten gleichzeitig prüfen, die erste (beste) Lesart gewinnt
+      const results = await Promise.all(list.map((n) => resolve(n, info, false).catch(() => null)));
+      const i = results.findIndex(Boolean);
+      return i >= 0 ? { match: results[i], read: list[i] } : { match: null, read: list[0] ?? "" };
+    }
+    for (const n of list) {
       const match = await resolve(n, info, suggest);
       if (match) return { match, read: n };
     }
     return { match: null, read: names[0] ?? "" };
+  }
+
+  function feedbackOk() {
+    setSuggestions([]);
+    setManualName("");
+    setStatus(null);
+    setFlash("ok");
+    setTimeout(() => setFlash(null), 450);
+    if (prefsRef.current.sound) beep(true);
+    navigator.vibrate?.(40);
+  }
+
+  // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
+  function acceptPending(name: string, info: CardInfo | null, readNames: string[], camHash: CardHash | null) {
+    const foil = prefsRef.current.foil;
+    const key = pendingKey();
+    setStack((s) => addPending(s, name, foil, Date.now(), key).stack);
+    feedbackOk();
+    void finishPending(key, name, info, readNames, camHash, foil);
+  }
+
+  async function finishPending(key: string, name: string, info: CardInfo | null, readNames: string[], camHash: CardHash | null, foil: boolean) {
+    let match: ScanMatch | null = null;
+    try {
+      if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [name, ...readNames]);
+      match ??= await directExact(name);
+      match ??= await resolve(name, info, false);
+    } catch {
+      match = null;
+    }
+    scanLog(`pending_resolved ${match ? match.name : "-"}`);
+    const keep = match && !match.exact && camHash ? Array.from(camHash) : undefined;
+    setStack((s) => (match ? resolvePending(s, key, match, keep) : failPending(s, key)));
+    if (match && !match.exact && camHash) void refinePrint(match, foil, camHash);
   }
 
   function accept(match: ScanMatch, foil = prefsRef.current.foil, camHash?: CardHash) {
@@ -392,8 +476,27 @@ export function ScanClient({
       const card = detectedRef.current?.video ?? guide.video;
       // Bild der Karte sofort festhalten (für den Bildvergleich der Drucke)
       const camHash = hashOf(video, card.x * W, card.y * H, card.w * W, card.h * H);
+      scanLog("scan_start");
       const { names, info } = await readCard(video, card, W, H);
-      const { match, read } = await resolveCandidates(names, info, !auto);
+      scanLog(`ocr_done names=${JSON.stringify(names)} info=${JSON.stringify(info)}`);
+      // Wörterbuch auf dem Gerät: Lesefehler sofort korrigieren
+      // (nur englische Namen – fremdsprachige Karten gehen den sicheren Weg)
+      const dict = info?.lang && info.lang !== "EN" ? null : nameIndexIfReady();
+      let sure: NameMatch | null = null;
+      let corrected: string[] = [];
+      if (dict) {
+        const hits = names.map((n) => matchName(dict, n)).filter((m): m is NameMatch => !!m);
+        sure = hits.find((m) => m.confident) ?? null;
+        corrected = hits.filter((m) => m.score >= 0.7).map((m) => m.name);
+      }
+      if (sure) {
+        scanLog(`dict ${sure.name} ${sure.score}`);
+        acceptPending(sure.name, info, names, camHash);
+        return true;
+      }
+      const tryNames = Array.from(new Set([...corrected, ...names]));
+      const { match, read } = await resolveCandidates(tryNames, info, !auto);
+      scanLog(`resolved ${match ? match.name : "-"}`);
       if (match) {
         accept(match, prefsRef.current.foil, camHash);
         if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
@@ -419,6 +522,7 @@ export function ScanClient({
     if (!cameraOn || !prefs.auto || !guide) return;
     let stopped = false;
     let misses = 0;
+    const presentRef = { current: false };
     thumbRef.current ??= document.createElement("canvas");
     const thumb = thumbRef.current;
     thumb.width = THUMB_W;
@@ -430,6 +534,7 @@ export function ScanClient({
       const video = videoRef.current;
       const view = viewRef.current;
       if (video?.videoWidth && view && !scanningRef.current && !printFor && !sheetOpen) {
+        const tickStart = performance.now();
         // 1) Karte im sichtbaren Bild suchen
         const vis = visibleRegion(video.videoWidth, video.videoHeight, view.clientWidth, view.clientHeight);
         const dw = DETECT_W;
@@ -465,8 +570,11 @@ export function ScanClient({
         // hellem Tisch): sehr kontrastreicher Inhalt im Hilfsrahmen. Doppelte
         // Schwelle, damit gemusterte Tische nicht als Karte gelten.
         const present = Boolean(found) || guideContrast >= WATCH.minContrast * 2;
+        if (present && !presentRef.current) scanLog("card_present", true);
+        presentRef.current = present;
         const r = watchFrame(watchRef.current, frame, present);
         watchRef.current = r.state;
+        scanLog(`tick ${Math.round(performance.now() - tickStart)}ms present=${present} still=${r.state.stillCount} armed=${r.state.armed}`);
         if (r.shouldScan) {
           const ok = await scanFrame(true);
           if (ok) {
@@ -482,9 +590,9 @@ export function ScanClient({
           }
         }
       }
-      if (!stopped) setTimeout(tick, 150);
+      if (!stopped) setTimeout(tick, 100);
     }
-    const t = setTimeout(tick, 300);
+    const t = setTimeout(tick, 200);
     return () => {
       stopped = true;
       clearTimeout(t);
@@ -553,6 +661,15 @@ export function ScanClient({
   // Speichern: in Paketen, mit Wiederholung bei Netz-/Scryfall-Fehlern.
   async function saveStack() {
     if (!stack.length || saving) return;
+    const open = unresolved(stack);
+    if (open.pending) {
+      setSaveMsg(`Einen Moment – ${open.pending} ${open.pending === 1 ? "Karte lädt" : "Karten laden"} noch Druck und Preis.`);
+      return;
+    }
+    if (open.failed) {
+      setSaveMsg(`${open.failed} ${open.failed === 1 ? "Karte wurde" : "Karten wurden"} nicht gefunden – bitte korrigieren oder entfernen.`);
+      return;
+    }
     const target = prefs.target;
     const items = [...stack].reverse(); // in Scan-Reihenfolge
     const total = items.reduce((n, s) => n + s.quantity, 0);
@@ -679,6 +796,11 @@ export function ScanClient({
       onQty={(k, q) => setStack((s) => setQuantity(s, k, q))}
       onFoil={(k, f) => setStack((s) => updateItem(s, k, { foil: f }))}
       onPrints={(item) => setPrintFor(item.key)}
+      onFix={(item) => {
+        setStack((st) => st.filter((x) => x.key !== item.key));
+        setManualName(item.name);
+        setStatus(`„${item.name}“ wurde nicht gefunden – Namen prüfen und suchen.`);
+      }}
       selectMode={stackSelect}
       selected={stackSelected}
       onToggle={(k) => setStackSelected((sel) => toggle(sel, k))}
@@ -1090,6 +1212,7 @@ function StackList({
   onQty,
   onFoil,
   onPrints,
+  onFix,
   selectMode = false,
   selected,
   onToggle,
@@ -1098,6 +1221,8 @@ function StackList({
   onQty: (key: string, q: number) => void;
   onFoil: (key: string, foil: boolean) => void;
   onPrints: (item: ScanItem) => void;
+  /** nicht gefundene Karte korrigieren */
+  onFix: (item: ScanItem) => void;
   selectMode?: boolean;
   selected?: Set<string>;
   onToggle?: (key: string) => void;
@@ -1115,12 +1240,24 @@ function StackList({
           aria-selected={selectMode ? selected?.has(s.key) : undefined}
         >
           {selectMode && <SelectCheck selected={!!selected?.has(s.key)} className="shrink-0" />}
-          <button onClick={() => onPrints(s)} className="relative shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800" aria-label={`Druck von ${s.name} ändern`}>
+          <button
+            onClick={() => !s.pending && !s.failed && onPrints(s)}
+            className={`relative shrink-0 w-10 h-14 rounded-[4px] overflow-hidden bg-zinc-800 ${s.pending ? "animate-pulse" : ""}`}
+            aria-label={`Druck von ${s.name} ändern`}
+          >
             {s.imageUrl && <Image src={s.imageUrl} alt="" width={40} height={56} className="w-full h-full object-cover" />}
             {s.foil && <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/30 via-transparent to-cyan-300/30" aria-hidden />}
           </button>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{s.name}</p>
+            {s.pending ? (
+              <p className="text-xs text-indigo-300 animate-pulse">Lade Druck &amp; Preis …</p>
+            ) : s.failed ? (
+              <button onClick={() => onFix(s)} className="text-xs text-red-300 underline text-left">
+                Nicht gefunden – antippen zum Korrigieren
+              </button>
+            ) : (
+            <>
             <button onClick={() => onPrints(s)} className="text-xs text-zinc-500 hover:text-zinc-300 truncate max-w-full text-left">
               <span className="uppercase">{s.set}</span> #{s.collectorNumber} ·{" "}
               {s.exact ? (
@@ -1140,6 +1277,8 @@ function StackList({
               </button>
               <span className="text-xs text-emerald-400 tabular-nums">{formatEur(unitPrice(s))}</span>
             </div>
+            </>
+            )}
           </div>
           <div className="flex items-center gap-1 rounded-full bg-black/30 p-1">
             <button onClick={() => onQty(s.key, s.quantity - 1)} aria-label={`${s.name} weniger`} className="w-7 h-7 rounded-full bg-white/10">
