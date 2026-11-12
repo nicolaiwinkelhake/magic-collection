@@ -183,7 +183,7 @@ export function PrintPicker({
       aria-label={`Druck von ${name} wählen`}
     >
       <div
-        className="w-full sm:max-w-2xl max-h-[88dvh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-zinc-900 border border-white/10 pb-[env(safe-area-inset-bottom)] animate-[sheet_200ms_ease-out] sm:animate-none"
+        className="w-full sm:max-w-2xl max-h-[88dvh] flex flex-col rounded-t-[2rem] sm:rounded-3xl bg-zinc-900 border border-white/10 pb-[env(safe-area-inset-bottom)] animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] sm:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 pb-3 space-y-3 border-b border-white/5">

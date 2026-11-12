@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Loan = {
   id: string;
@@ -57,22 +58,21 @@ export function LoansClient({ loans }: { loans: Loan[] }) {
   }
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">📤 Verliehene Karten</h1>
-        <Link href="/collection" className="text-indigo-400 hover:underline text-sm">
-          Zur Sammlung
-        </Link>
-      </header>
+    <main className="page max-w-2xl">
+      <PageHeader title="Verliehen" subtitle="Karten, die gerade bei Freunden sind" />
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <button onClick={() => setOpen(!open)} className="text-indigo-400 font-medium">
-          {open ? "Schließen ▲" : "Neue Leihe erfassen ▼"}
+      <div className="surface p-4">
+        <button onClick={() => setOpen(!open)} aria-expanded={open} className="w-full flex items-center gap-3 text-left font-medium">
+          <span className="grid place-items-center w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 shadow-glow text-lg leading-none" aria-hidden>
+            {open ? "−" : "+"}
+          </span>
+          <span className="flex-1">Neue Leihe erfassen</span>
+          <span className={`text-zinc-500 transition ${open ? "rotate-180" : ""}`} aria-hidden>▾</span>
         </button>
         {open && (
           <form onSubmit={create} className="mt-3 space-y-3">
             <input
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+              className="input"
               placeholder="Kartenname"
               value={cardName}
               onChange={(e) => setCardName(e.target.value)}
@@ -80,7 +80,7 @@ export function LoansClient({ loans }: { loans: Loan[] }) {
             />
             <div className="flex gap-3">
               <input
-                className="flex-1 rounded-md bg-zinc-800 px-3 py-2 outline-none"
+                className="input w-auto flex-1 min-w-0"
                 placeholder="An wen? (Name)"
                 value={borrowerName}
                 onChange={(e) => setBorrowerName(e.target.value)}
@@ -89,24 +89,24 @@ export function LoansClient({ loans }: { loans: Loan[] }) {
               <input
                 type="number"
                 min="1"
-                className="w-20 rounded-md bg-zinc-800 px-3 py-2 outline-none"
+                className="input w-20"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
               />
             </div>
             <input
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+              className="input"
               placeholder="E-Mail des Freundes (optional, verknüpft den Account)"
               value={borrowerEmail}
               onChange={(e) => setBorrowerEmail(e.target.value)}
             />
             <input
-              className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+              className="input"
               placeholder="Notiz (optional)"
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
-            <button className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium">
+            <button className="btn-primary">
               Speichern
             </button>
           </form>
@@ -121,7 +121,7 @@ export function LoansClient({ loans }: { loans: Loan[] }) {
           out.map((l) => (
             <div
               key={l.id}
-              className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-md px-4 py-3"
+              className="surface rounded-xl flex items-center justify-between px-4 py-3"
             >
               <div>
                 <p className="font-medium">
@@ -151,7 +151,7 @@ export function LoansClient({ loans }: { loans: Loan[] }) {
           {returned.map((l) => (
             <div
               key={l.id}
-              className="flex items-center justify-between bg-zinc-900/60 border border-zinc-800 rounded-md px-4 py-2 text-zinc-500"
+              className="surface rounded-xl flex items-center justify-between px-4 py-2 text-zinc-500"
             >
               <span className="text-sm">
                 {l.quantity}× {l.card_name} · {l.borrower_name}

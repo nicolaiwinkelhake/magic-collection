@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatEur, formatDate } from "@/lib/format";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type TradeItem = {
   name: string;
@@ -104,26 +105,17 @@ export function TradesClient({
   }
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">🔁 Trades</h1>
-        <div className="flex gap-4 text-sm text-zinc-400">
-          <Link href="/collection" className="hover:text-indigo-400">
-            Sammlung
-          </Link>
-          <Link href="/friends" className="hover:text-indigo-400">
-            Freunde
-          </Link>
-        </div>
-      </header>
+    <main className="page max-w-3xl">
+      <PageHeader title="Trades" subtitle="Karten mit Freunden tauschen" />
 
       {/* Neuer Trade */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <button
-          onClick={() => setFormOpen(!formOpen)}
-          className="text-indigo-400 font-medium"
-        >
-          {formOpen ? "Formular schließen ▲" : "Neuen Trade vorschlagen ▼"}
+      <div className="surface p-4">
+        <button onClick={() => setFormOpen(!formOpen)} aria-expanded={formOpen} className="w-full flex items-center gap-3 text-left font-medium">
+          <span className="grid place-items-center w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 shadow-glow text-lg leading-none" aria-hidden>
+            {formOpen ? "−" : "+"}
+          </span>
+          <span className="flex-1">Neuen Trade vorschlagen</span>
+          <span className={`text-zinc-500 transition ${formOpen ? "rotate-180" : ""}`} aria-hidden>▾</span>
         </button>
 
         {formOpen && (
@@ -142,7 +134,7 @@ export function TradesClient({
                   <select
                     value={partnerEmail}
                     onChange={(e) => setPartnerEmail(e.target.value)}
-                    className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+                    className="input"
                   >
                     {friends.map((f) => (
                       <option key={f} value={f}>
@@ -162,7 +154,7 @@ export function TradesClient({
                       onChange={(e) => setGive(e.target.value)}
                       rows={4}
                       placeholder={"1x Sol Ring\nArcane Signet"}
-                      className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none font-mono text-sm"
+                      className="input font-mono text-sm"
                     />
                   </div>
                   <div className="space-y-1">
@@ -174,7 +166,7 @@ export function TradesClient({
                       onChange={(e) => setReceive(e.target.value)}
                       rows={4}
                       placeholder={"Cyclonic Rift"}
-                      className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none font-mono text-sm"
+                      className="input font-mono text-sm"
                     />
                   </div>
                 </div>
@@ -183,13 +175,13 @@ export function TradesClient({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Notiz (optional)"
-                  className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none text-sm"
+                  className="input text-sm"
                 />
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="bg-indigo-600 hover:bg-indigo-500 transition rounded-md px-4 py-2 font-medium disabled:opacity-50"
+                  className="btn-primary"
                 >
                   {loading ? "Sende..." : "Trade vorschlagen"}
                 </button>
@@ -246,7 +238,7 @@ function TradeCard({
     trade.status === "pending" && trade.proposer_id === currentUserId;
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-3">
+    <div className="surface p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div>
           <span className="text-sm text-zinc-400">

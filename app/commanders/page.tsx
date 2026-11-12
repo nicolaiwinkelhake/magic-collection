@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { selectAll } from "@/lib/supabase/selectAll";
 import { CommanderSearch } from "@/components/CommanderSearch";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -46,13 +47,8 @@ export default async function CommandersPage() {
   ).filter((n) => !deckCommanders.has(n));
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">👑 Commander</h1>
-        <Link href="/collection" className="text-sm text-indigo-400 hover:underline">
-          Zur Sammlung
-        </Link>
-      </header>
+    <main className="page max-w-5xl">
+      <PageHeader title="Commander" subtitle="Empfehlungen, Themen und passende Karten aus deiner Sammlung" />
 
       <CommanderSearch />
 
@@ -64,7 +60,7 @@ export default async function CommandersPage() {
               <li key={d.id as string}>
                 <Link
                   href={commanderHref(d.commander_name as string, d.partner_name as string | null)}
-                  className="block rounded-md bg-zinc-900 border border-zinc-800 hover:border-zinc-600 px-3 py-2 text-sm"
+                  className="surface rounded-xl block hover:border-zinc-600 px-3 py-2 text-sm"
                 >
                   {d.commander_name as string}
                   {d.partner_name && ` + ${d.partner_name}`}

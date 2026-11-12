@@ -80,7 +80,7 @@ export function FolderPicker({
       aria-label={title}
     >
       <div
-        className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-zinc-900 border border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3 animate-[sheet_200ms_ease-out] sm:animate-none"
+        className="w-full sm:max-w-sm rounded-t-[2rem] sm:rounded-3xl bg-zinc-900 border border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3 animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] sm:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">

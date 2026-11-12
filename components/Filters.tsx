@@ -87,7 +87,7 @@ export function Filters({
         />
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="shrink-0 flex items-center gap-1 rounded-full bg-white/5 border border-white/10 p-1" role="group" aria-label="Farben">
           {COLOR_OPTIONS.map((c) => {
             const on = state.colors.includes(c.code);

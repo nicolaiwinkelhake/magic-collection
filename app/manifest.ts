@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Magic-Sammlung verwalten, Commander-Decks analysieren, traden und den Wertverlauf verfolgen.",
     start_url: "/collection",
     display: "standalone",
-    background_color: "#0f0f12",
-    theme_color: "#0f0f12",
+    background_color: "#0b0b10",
+    theme_color: "#0b0b10",
     orientation: "portrait",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

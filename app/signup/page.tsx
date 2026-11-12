@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { AuthShell } from "@/components/ui/AuthShell";
 
 export default function SignupPage() {
   const supabase = createClient();
@@ -40,8 +41,8 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-sm text-center space-y-3">
+      <AuthShell>
+        <div className="surface-strong p-6 text-center space-y-3">
           <h1 className="text-xl font-semibold">Fast geschafft!</h1>
           <p className="text-zinc-400">
             Wir haben dir eine Bestätigungs-E-Mail geschickt. Bitte klicke
@@ -51,17 +52,17 @@ export default function SignupPage() {
             Zurück zum Login
           </Link>
         </div>
-      </main>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
+    <AuthShell>
       <form
         onSubmit={handleSignup}
-        className="w-full max-w-sm bg-zinc-900 rounded-xl p-8 space-y-4 border border-zinc-800"
+        className="surface-strong p-6 space-y-4"
       >
-        <h1 className="text-2xl font-semibold mb-2">Account erstellen</h1>
+        <h1 className="text-xl font-semibold">Account erstellen</h1>
 
         <div className="space-y-1">
           <label className="text-sm text-zinc-400">E-Mail</label>
@@ -70,7 +71,7 @@ export default function SignupPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
 
@@ -81,7 +82,7 @@ export default function SignupPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
 
@@ -92,7 +93,7 @@ export default function SignupPage() {
             required
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500"
+            className="input"
           />
         </div>
 
@@ -101,7 +102,7 @@ export default function SignupPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 transition rounded-md py-2 font-medium disabled:opacity-50"
+          className="btn-primary w-full"
         >
           {loading ? "Wird erstellt..." : "Registrieren"}
         </button>
@@ -113,6 +114,6 @@ export default function SignupPage() {
           </Link>
         </p>
       </form>
-    </main>
+    </AuthShell>
   );
 }

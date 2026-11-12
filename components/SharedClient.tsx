@@ -8,6 +8,7 @@ import { formatEur } from "@/lib/format";
 import type { Card } from "@/lib/types";
 import { selectAll } from "@/lib/supabase/selectAll";
 import { CardViewer } from "@/components/ui/CardViewer";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export function SharedClient({
   owners,
@@ -42,13 +43,8 @@ export function SharedClient({
   );
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">👀 Geteilte Sammlungen</h1>
-        <Link href="/friends" className="text-indigo-400 hover:underline text-sm">
-          Zu Freunden
-        </Link>
-      </header>
+    <main className="page max-w-5xl">
+      <PageHeader title="Geteilte Sammlungen" subtitle="Sammlungen, die Freunde mit dir teilen" />
 
       {owners.length === 0 ? (
         <p className="text-zinc-500 text-sm">
@@ -60,7 +56,7 @@ export function SharedClient({
           <select
             value={selected}
             onChange={(e) => load(e.target.value)}
-            className="w-full sm:w-80 rounded-md bg-zinc-800 px-3 py-2 outline-none"
+            className="input sm:w-80"
           >
             <option value="">Sammlung wählen…</option>
             {owners.map((o) => (
@@ -76,7 +72,7 @@ export function SharedClient({
                 placeholder="Karte suchen…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-md bg-zinc-800 px-3 py-2 outline-none"
+                className="input"
               />
               <p className="text-sm text-zinc-500">
                 {filtered.length} Karten · Wert{" "}
@@ -93,7 +89,7 @@ export function SharedClient({
                       key={c.id}
                       onClick={() => setViewIndex(i)}
                       aria-label={`${c.name} ansehen`}
-                      className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800 text-left hover:border-indigo-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                      className="surface relative overflow-hidden text-left hover:border-indigo-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                     >
                       {c.image_url ? (
                         <Image src={c.image_url} alt={c.name} width={244} height={340} className="w-full h-auto" />

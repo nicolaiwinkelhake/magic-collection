@@ -34,10 +34,10 @@ export function SelectionBar({
   const allSelected = total > 0 && count === total;
   return (
     <div
-      className={`fixed inset-x-0 px-3 animate-[sheet_200ms_ease-out] ${
+      className={`fixed inset-x-0 px-3 animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] ${
         overlay
           ? "z-[65] bottom-[calc(1rem+env(safe-area-inset-bottom))]"
-          : "z-[45] bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4" // über dem Installations-Hinweis
+          : "z-[45] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-4" // über dem Installations-Hinweis
       }`}
       role="toolbar"
       aria-label="Auswahl"

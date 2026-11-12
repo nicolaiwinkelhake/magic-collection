@@ -279,7 +279,7 @@ export function CommanderClient({
           <h2 className="font-medium text-lg">Combos mit {c.name}</h2>
           <ul className="space-y-2 text-sm">
             {data.combos.map((combo) => (
-              <li key={combo.id} className="rounded-md bg-zinc-900 border border-zinc-800 px-3 py-2">
+              <li key={combo.id} className="surface rounded-xl px-3 py-2">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span>{combo.cards.join(" + ")}</span>
                   <a
@@ -394,7 +394,7 @@ function CardTile({
   onDeck: () => void;
 }) {
   return (
-    <li className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden flex flex-col">
+    <li className="surface overflow-hidden flex flex-col">
       <button
         onClick={onOpen}
         aria-label={`${card.name} ansehen`}

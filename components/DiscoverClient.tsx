@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Owned = { owned: number };
 type Card = Owned & { id?: string; name: string; image?: string | null; eur?: number | null; gameChanger?: boolean; edhrecRank?: number | null };
 
 const TABS = [
-  { key: "buildable", label: "Baubare Commander" },
+  { key: "buildable", label: "Baubar" },
   { key: "rankings", label: "Ranglisten" },
   { key: "typal", label: "Typal" },
   { key: "sets", label: "Neue Sets" },
@@ -31,22 +32,15 @@ async function getJson<T>(url: string): Promise<{ data: T | null; error: string 
 export function DiscoverClient() {
   const [tab, setTab] = useState<Tab>("buildable");
   return (
-    <main className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">🔭 Entdecken</h1>
-        <Link href="/collection" className="text-sm text-indigo-400 hover:underline">
-          Zur Sammlung
-        </Link>
-      </header>
-      <nav className="flex flex-wrap gap-1 border-b border-zinc-800" aria-label="Bereiche">
+    <main className="page max-w-6xl">
+      <PageHeader title="Entdecken" subtitle="Was du mit deiner Sammlung bauen kannst" />
+      <nav className="segmented -mx-1" aria-label="Bereiche">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             aria-current={tab === t.key ? "page" : undefined}
-            className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-              tab === t.key ? "border-indigo-500 text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"
-            }`}
+            className={`segment ${tab === t.key ? "segment-active" : ""}`}
           >
             {t.label}
           </button>
@@ -112,7 +106,7 @@ function Buildable() {
         <button
           onClick={load}
           disabled={loading}
-          className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="btn-primary"
         >
           {loading ? "Analysiere Sammlung… (beim ersten Mal bis zu einer Minute)" : "Sammlung analysieren"}
         </button>
@@ -122,7 +116,7 @@ function Buildable() {
       {data && data.length > 0 && (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((c) => (
-            <li key={c.name} className="flex gap-3 bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+            <li key={c.name} className="surface flex gap-3 p-3">
               {c.image && <Image src={c.image} alt={c.name} width={73} height={102} className="rounded" />}
               <div className="min-w-0 space-y-1 text-sm">
                 <Link href={commanderHref(c.name)} className="font-medium hover:text-indigo-300">
@@ -252,9 +246,9 @@ function Typal() {
           onChange={(e) => setType(e.target.value)}
           placeholder="Kreaturentyp (englisch), z. B. Elf, Zombie, Dragon"
           aria-label="Kreaturentyp"
-          className="flex-1 min-w-[220px] rounded-md bg-zinc-800 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="input w-auto flex-1 min-w-0 min-w-[220px] text-sm"
         />
-        <button type="submit" disabled={!type.trim() || loading} className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50">
+        <button type="submit" disabled={!type.trim() || loading} className="btn-primary">
           {loading ? "Suche…" : "Suchen"}
         </button>
       </form>
