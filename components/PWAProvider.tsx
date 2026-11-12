@@ -77,7 +77,7 @@ export function PWAProvider() {
         margin: "0 auto",
       }}
       // Auf Handy/Tablet über der Tab-Leiste, sonst unten am Rand.
-      className="bottom-3 max-lg:[.has-tabbar_&]:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-4 shadow-lg"
+      className="bottom-3 max-lg:[.has-tabbar_&]:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] bg-zinc-900 border border-white/10 rounded-2xl p-4 shadow-lg"
     >
       <div className="flex items-start gap-3">
         <span className="text-2xl">🪄</span>

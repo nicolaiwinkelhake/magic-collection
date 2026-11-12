@@ -34,9 +34,23 @@ export function SwipeSheet({
   children: ReactNode;
 }) {
   const [slideDir, setSlideDir] = useState<-1 | 0 | 1>(0);
-  const [dragX, setDragX] = useState(0);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+  // Mitziehen beim Wischen direkt am DOM (ohne React-Neurender je Bewegung),
+  // gebündelt pro Bildschirm-Frame – das hält das Wischen flüssig.
+  const slideRef = useRef<HTMLDivElement>(null);
+  const frame = useRef<number | null>(null);
+  const dragging = useRef(false);
+  function setDrag(x: number) {
+    if (frame.current != null) cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      frame.current = null;
+      const el = slideRef.current;
+      if (!el) return;
+      el.style.transition = x ? "none" : "transform 200ms cubic-bezier(.2,.8,.2,1)";
+      el.style.transform = x ? `translate3d(${x}px,0,0)` : "";
+    });
+  }
 
   const prev = neighborIndex(index, -1, count);
   const next = neighborIndex(index, 1, count);
@@ -80,13 +94,17 @@ export function SwipeSheet({
     if (Math.abs(dx) > Math.abs(dy) * 1.5) {
       // Am Rand gedämpft ziehen, damit klar ist: hier geht es nicht weiter.
       const blocked = (dx < 0 && next == null) || (dx > 0 && prev == null);
-      setDragX(blocked ? dx / 4 : dx);
+      dragging.current = true;
+      setDrag(blocked ? dx / 4 : dx);
     }
   }
   function onTouchEnd(e: React.TouchEvent) {
     const start = touchStart.current;
     touchStart.current = null;
-    setDragX(0);
+    if (dragging.current) {
+      dragging.current = false;
+      setDrag(0);
+    }
     if (!start) return;
     const t = e.changedTouches[0];
     const dir = swipeStep(t.clientX - start.x, t.clientY - start.y);
@@ -98,7 +116,7 @@ export function SwipeSheet({
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
+      className="fixed inset-0 z-50 bg-black/75 flex items-end sm:items-center justify-center sm:p-4"
       onClick={() => !closeDisabled && onClose()}
     >
       {/* Blättern-Pfeile neben dem Fenster (Desktop) */}
@@ -135,10 +153,11 @@ export function SwipeSheet({
         onTouchEnd={onTouchEnd}
         onTouchCancel={() => {
           touchStart.current = null;
-          setDragX(0);
+          dragging.current = false;
+          setDrag(0);
         }}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 pt-4 pb-3 bg-zinc-900/90 backdrop-blur-2xl border-b border-white/[0.06]">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-4 pt-4 pb-3 bg-zinc-900 border-b border-white/[0.06]">
           <span className="sm:hidden absolute left-1/2 top-1.5 -translate-x-1/2 h-1.5 w-10 rounded-full bg-white/15" aria-hidden />
           <button
             onClick={() => step(-1)}
@@ -174,8 +193,8 @@ export function SwipeSheet({
         </div>
         <div
           key={index}
-          style={dragX ? { transform: `translateX(${dragX}px)`, transition: "none" } : undefined}
-          className={`transition-transform duration-200 ${
+          ref={slideRef}
+          className={`will-change-transform ${
             slideDir === 1
               ? "animate-[swipe-from-right_180ms_ease-out]"
               : slideDir === -1

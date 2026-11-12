@@ -3,6 +3,9 @@
 // Markenfarbe. Die bestehenden Klassen (zinc/indigo/rounded-*) werden hier
 // zentral auf den neuen Look gemappt, damit alle Seiten einheitlich wirken.
 module.exports = {
+  // Hover-Effekte nur auf Geräten mit Maus – auf dem Handy blieben sie nach
+  // dem Antippen "kleben" und lösten unnötige Neuzeichnungen aus.
+  future: { hoverOnlyWhenSupported: true },
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -50,7 +53,7 @@ module.exports = {
       },
       boxShadow: {
         glow: "0 8px 30px -8px rgba(119, 100, 251, 0.55)",
-        card: "0 1px 0 0 rgba(255,255,255,0.06) inset, 0 10px 30px -12px rgba(0,0,0,0.6)",
+        card: "0 1px 0 0 rgba(255,255,255,0.06) inset, 0 6px 16px -10px rgba(0,0,0,0.6)",
       },
       keyframes: {
         "fade-up": { from: { opacity: "0", transform: "translateY(8px)" }, to: { opacity: "1", transform: "none" } },

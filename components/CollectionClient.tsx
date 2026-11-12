@@ -334,7 +334,7 @@ export function CollectionClient({
         <p className="text-red-400">Fehler beim Laden: {loadError}</p>
       )}
 
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0b0b10]/85 backdrop-blur-xl">
+      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0b0b10]/95">
         <Filters state={filters} onChange={setFilters} sets={availableSets} />
       </div>
 

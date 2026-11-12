@@ -74,7 +74,7 @@ export function CardViewToggle({
 export function QuantityBadge({ count }: { count: number }) {
   if (count <= 1) return null;
   return (
-    <span className="absolute top-1.5 right-1.5 bg-black/80 backdrop-blur text-white text-[11px] font-semibold rounded-md px-1.5 py-0.5 tabular-nums ring-1 ring-white/10">
+    <span className="absolute top-1.5 right-1.5 bg-black/80 text-white text-[11px] font-semibold rounded-md px-1.5 py-0.5 tabular-nums ring-1 ring-white/10">
       ×{count}
     </span>
   );

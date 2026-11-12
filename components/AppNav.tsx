@@ -53,7 +53,21 @@ export function AppNav({ email }: { email: string | null }) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 36);
+    // Nur beim Überschreiten der Schwelle neu rendern, höchstens einmal pro Frame
+    let last: boolean | null = null;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const now = window.scrollY > 36;
+        if (now !== last) {
+          last = now;
+          setScrolled(now);
+        }
+      });
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -100,8 +114,8 @@ export function AppNav({ email }: { email: string | null }) {
   return (
     <>
       <header
-        className={`sticky top-0 z-40 pt-[env(safe-area-inset-top)] transition-colors duration-300 ${
-          scrolled ? "bg-[#0b0b10]/75 backdrop-blur-2xl border-b border-white/[0.06]" : "border-b border-transparent lg:bg-[#0b0b10]/60 lg:backdrop-blur-2xl"
+        className={`sticky top-0 z-40 pt-[env(safe-area-inset-top)] transition-colors duration-200 ${
+          scrolled ? "bg-[#0b0b10]/90 backdrop-blur-md border-b border-white/[0.06]" : "border-b border-transparent lg:bg-[#0b0b10]/90"
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-2">
@@ -137,7 +151,7 @@ export function AppNav({ email }: { email: string | null }) {
               {moreOpen && (
                 <>
                   <div className="fixed inset-0 z-0" onClick={() => setMoreOpen(false)} aria-hidden />
-                  <div className="absolute left-0 z-10 mt-2 w-64 rounded-2xl border border-white/10 bg-zinc-900/90 backdrop-blur-2xl p-1.5 shadow-2xl shadow-black/60 animate-fade-up">
+                  <div className="absolute left-0 z-10 mt-2 w-64 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/60 animate-fade-up">
                     {MORE.map((l) => (
                       <Link key={l.href} href={l.href} className={desktopLink(l.href)}>
                         <Icon name={l.icon} className="w-4 h-4" />
@@ -165,7 +179,7 @@ export function AppNav({ email }: { email: string | null }) {
 
           {/* Handy/Tablet: Titel blendet beim Scrollen ein (großer Titel steht auf der Seite) */}
           <span
-            className={`flex-1 lg:hidden truncate text-center font-semibold transition-all duration-300 ${
+            className={`flex-1 lg:hidden truncate text-center font-semibold transition-all duration-200 ${
               scrolled ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
             }`}
             aria-hidden={!scrolled}
@@ -183,7 +197,7 @@ export function AppNav({ email }: { email: string | null }) {
         aria-label="Hauptmenü"
         className="lg:hidden fixed inset-x-3 bottom-[calc(0.5rem+env(safe-area-inset-bottom))] z-40 mx-auto max-w-md"
       >
-        <div className="grid grid-cols-5 items-center h-[4.25rem] px-1.5 rounded-[1.75rem] border border-white/10 bg-zinc-900/75 backdrop-blur-2xl shadow-2xl shadow-black/70 ring-1 ring-inset ring-white/[0.04]">
+        <div className="grid grid-cols-5 items-center h-[4.25rem] px-1.5 rounded-[1.75rem] border border-white/10 bg-zinc-900/90 backdrop-blur-md shadow-2xl shadow-black/70 ring-1 ring-inset ring-white/[0.04]">
           {TABS.slice(0, 2).map((t) => (
             <TabLink key={t.href} link={t} active={isActive(t.href)} />
           ))}
@@ -224,10 +238,10 @@ export function AppNav({ email }: { email: string | null }) {
       {/* "Mehr"-Blatt von unten */}
       {sheetOpen && (
         <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Weitere Bereiche">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSheetOpen(false)} aria-hidden />
+          <div className="absolute inset-0 bg-black/70" onClick={() => setSheetOpen(false)} aria-hidden />
           <div
             id="more-sheet"
-            className="absolute bottom-0 inset-x-0 rounded-t-[2rem] border-t border-white/10 bg-zinc-900/95 backdrop-blur-2xl px-4 pt-2.5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[85dvh] overflow-y-auto animate-[sheet_260ms_cubic-bezier(.2,.8,.2,1)]"
+            className="absolute bottom-0 inset-x-0 rounded-t-[2rem] border-t border-white/10 bg-zinc-900 px-4 pt-2.5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[85dvh] overflow-y-auto animate-[sheet_260ms_cubic-bezier(.2,.8,.2,1)]"
           >
             <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-white/15" aria-hidden />
             <Link

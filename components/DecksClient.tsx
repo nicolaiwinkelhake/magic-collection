@@ -119,7 +119,7 @@ export function DecksClient({ initialDecks }: { initialDecks: Deck[] }) {
                 />
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-black/0" aria-hidden />
-              <div className="absolute top-3 right-3 rounded-full bg-black/50 backdrop-blur px-1.5 py-1">
+              <div className="absolute top-3 right-3 rounded-full bg-black/70 px-1.5 py-1">
                 <ColorIdentity colors={deck.color_identity} />
               </div>
               <div className="absolute inset-x-0 bottom-0 p-4">

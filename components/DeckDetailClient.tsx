@@ -600,7 +600,7 @@ export function DeckDetailClient({
 
       {/* Reiter */}
       <nav
-        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0b0b10]/85 backdrop-blur-xl"
+        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0b0b10]/95"
         aria-label="Deck-Bereiche"
       >
         <div className="segmented">
