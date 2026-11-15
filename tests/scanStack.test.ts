@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addScan, setQuantity, stackTotals, undoLast, updateItem, type ScanMatch } from "@/lib/scanStack";
+import { addPending, addScan, failPending, resolvePending, setQuantity, stackTotals, undoLast, unresolved, updateItem, type ScanMatch } from "@/lib/scanStack";
 
 const m = (id: string, eur = 1, eurFoil: number | null = 3): ScanMatch => ({ id, name: `Card ${id}`, imageUrl: null, eur, eurFoil });
 
@@ -50,5 +50,36 @@ describe("scanStack", () => {
     s = setQuantity(s, s[1].key, 2);
     // a: Foil 5 € × 2, b: kein Foilpreis → 1,50 €
     expect(stackTotals(s)).toEqual({ cards: 3, value: 11.5 });
+  });
+});
+
+
+describe("sofort bestätigen (vorläufige Einträge)", () => {
+  const bolt = { id: "b1", name: "Lightning Bolt", imageUrl: null, eur: 1, eurFoil: 3 };
+
+  it("ersetzt den vorläufigen Eintrag durch den Druck", () => {
+    const { stack, key } = addPending([], "Lightning Bolt", false, 5);
+    expect(stack[0]).toMatchObject({ name: "Lightning Bolt", pending: true, quantity: 1 });
+    expect(unresolved(stack)).toEqual({ pending: 1, failed: 0 });
+    const done = resolvePending(stack, key, bolt, [1, 0]);
+    expect(done).toEqual([{ ...bolt, key: "b1|0", foil: false, quantity: 1, scannedAt: 5, camHash: [1, 0] }]);
+    expect(unresolved(done)).toEqual({ pending: 0, failed: 0 });
+  });
+
+  it("legt mit vorhandenem gleichen Druck zusammen", () => {
+    const first = resolvePending(addPending([], "Lightning Bolt", false, 1).stack, addPending([], "x", false).key, bolt);
+    let { stack, key } = addPending([{ ...bolt, key: "b1|0", foil: false, quantity: 2, scannedAt: 0 }], "Lightning Bolt", false, 9);
+    stack = resolvePending(stack, key, bolt);
+    expect(stack).toHaveLength(1);
+    expect(stack[0].quantity).toBe(3);
+    expect(first).toHaveLength(1); // unbekannter Schlüssel ändert nichts
+  });
+
+  it("markiert Fehlschläge und ignoriert zurückgenommene Einträge", () => {
+    const { stack, key } = addPending([], "Unbekannt", true);
+    const failed = failPending(stack, key);
+    expect(failed[0]).toMatchObject({ failed: true, pending: false, foil: true });
+    expect(unresolved(failed)).toEqual({ pending: 0, failed: 1 });
+    expect(resolvePending([], key, bolt)).toEqual([]);
   });
 });

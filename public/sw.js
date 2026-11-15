@@ -26,7 +26,8 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      // "mtg-data-…" (z. B. Kartennamen für den Scanner) bleibt über Updates erhalten
+      Promise.all(keys.filter((k) => k !== CACHE && !k.startsWith("mtg-data-")).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();

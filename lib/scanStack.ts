@@ -21,6 +21,10 @@ export type ScanItem = ScanMatch & {
   scannedAt: number;
   /** Fingerabdruck des Kamerabilds (für "Druck ändern" nach Ähnlichkeit) */
   camHash?: number[];
+  /** sofort bestätigt, Druck/Preis werden noch nachgeladen */
+  pending?: boolean;
+  /** Nachladen fehlgeschlagen – bitte korrigieren */
+  failed?: boolean;
 };
 
 const itemKey = (id: string, foil: boolean) => `${id}|${foil ? 1 : 0}`;
@@ -89,4 +93,58 @@ export function stackTotals(stack: ScanItem[]): { cards: number; value: number }
     value += unitPrice(s) * s.quantity;
   }
   return { cards, value: Math.round(value * 100) / 100 };
+}
+
+// ---------------------------------------------------------------------------
+// Sofort bestätigen: Der Name ist sicher erkannt (Wörterbuch), Druck und Preis
+// kommen im Hintergrund nach – der Scanner muss nicht auf das Netz warten.
+// ---------------------------------------------------------------------------
+
+/** Vorläufigen Eintrag oben anlegen; liefert den Schlüssel zum späteren Auflösen. */
+export function pendingKey(now = Date.now()): string {
+  return `pending:${now}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function addPending(stack: ScanItem[], name: string, foil: boolean, now = Date.now(), key = pendingKey(now)): { stack: ScanItem[]; key: string } {
+  const item: ScanItem = { id: key, key, name, imageUrl: null, eur: null, eurFoil: null, foil, quantity: 1, scannedAt: now, pending: true };
+  return { stack: [item, ...stack], key };
+}
+
+/**
+ * Vorläufigen Eintrag durch den gefundenen Druck ersetzen. Gibt es den Druck
+ * (mit gleichem Foil) schon, wird die Menge dort addiert. Wurde der Eintrag
+ * inzwischen entfernt (rückgängig), bleibt der Stapel unverändert.
+ */
+export function resolvePending(stack: ScanItem[], key: string, match: ScanMatch, camHash?: number[]): ScanItem[] {
+  const item = stack.find((s) => s.key === key);
+  if (!item) return stack;
+  const finalKey = itemKey(match.id, item.foil);
+  const twin = stack.find((s) => s.key === finalKey);
+  if (twin) {
+    return stack.filter((s) => s.key !== key).map((s) => (s.key === finalKey ? { ...s, quantity: s.quantity + item.quantity } : s));
+  }
+  const resolved: ScanItem = {
+    ...match,
+    key: finalKey,
+    foil: item.foil,
+    quantity: item.quantity,
+    scannedAt: item.scannedAt,
+    ...(camHash ? { camHash } : {}),
+  };
+  return stack.map((s) => (s.key === key ? resolved : s));
+}
+
+export function failPending(stack: ScanItem[], key: string): ScanItem[] {
+  return stack.map((s) => (s.key === key ? { ...s, pending: false, failed: true } : s));
+}
+
+/** Noch nicht fertig zum Speichern? (lädt noch oder nicht gefunden) */
+export function unresolved(stack: ScanItem[]): { pending: number; failed: number } {
+  let pending = 0;
+  let failed = 0;
+  for (const s of stack) {
+    if (s.pending) pending += 1;
+    else if (s.failed) failed += 1;
+  }
+  return { pending, failed };
 }
