@@ -23,6 +23,8 @@ export function commanderDeckRow(deckId: string, userId: string, c: ResolvedComm
     scryfall_id: c.card.id,
     name: c.card.name,
     image_url: c.imageUrl,
+    set_code: c.card.set ?? null,
+    collector_number: c.card.collector_number ?? null,
     mana_cost: c.card.mana_cost ?? null,
     cmc: c.card.cmc,
     type_line: c.card.type_line,

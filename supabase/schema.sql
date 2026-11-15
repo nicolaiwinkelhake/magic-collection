@@ -2238,3 +2238,17 @@ drop function if exists public.move_cards(uuid[], uuid);
 alter table public.cards drop constraint if exists cards_unique_printing_folder;
 drop index if exists public.cards_folder_idx;
 alter table public.cards drop column if exists folder_id;
+
+-- ============================================================
+-- Migration 017 – Druck je Deckkarte
+-- Im Supabase SQL-Editor ausführen. Idempotent, nur neue Spalten.
+--
+-- Deckkarten merken sich jetzt den genauen Druck (Set + Sammlernummer)
+-- und ob sie Foil sind – so wie die Sammlung. Der Druck lässt sich im Deck
+-- ändern. Bestehende Deckkarten werden beim Öffnen des Decks aus Scryfall
+-- (über die gespeicherte Scryfall-ID) nachgefüllt.
+-- ============================================================
+
+alter table public.deck_cards add column if not exists set_code text;
+alter table public.deck_cards add column if not exists collector_number text;
+alter table public.deck_cards add column if not exists foil boolean not null default false;

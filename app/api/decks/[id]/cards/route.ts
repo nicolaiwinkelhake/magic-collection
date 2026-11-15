@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getPrices, type ScryfallCard } from "@/lib/scryfall";
+import { fetchCollectionWithRetry, getPrices, type ScryfallCard } from "@/lib/scryfall";
+import { samePrintFamily } from "@/lib/cardMove";
 import { resolveCards, ResolveUnavailableError, type ResolveInput } from "@/lib/resolveCards";
 
 export const maxDuration = 60;
@@ -159,7 +160,7 @@ export async function POST(
 
   const qtyByCard = new Map<string, { name: string; qty: number }>();
   const rowsToInsert: Record<string, unknown>[] = [];
-  for (const { card, qty } of groups.values()) {
+  for (const { card, qty, foil } of groups.values()) {
     const prev = qtyByCard.get(card.id);
     qtyByCard.set(card.id, { name: card.name, qty: (prev?.qty ?? 0) + qty });
     const { eur, eurFoil } = getPrices(card);
@@ -170,6 +171,10 @@ export async function POST(
         scryfall_id: card.id,
         name: card.name,
         image_url: imageUrlOf(card),
+        // genau der importierte Druck (Migration 017)
+        set_code: card.set ?? null,
+        collector_number: card.collector_number ?? null,
+        foil,
         mana_cost: card.mana_cost ?? null,
         cmc: card.cmc,
         type_line: card.type_line,
@@ -283,4 +288,64 @@ export async function DELETE(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
+}
+
+// Druck einer Deckkarte ändern (alle Kopien dieses Drucks im Deck) und/oder
+// Foil umschalten. Body: { scryfallId, toScryfallId?, foil?, isCommander? }.
+// Der neue Druck muss dieselbe Karte sein (oracle_id). Die Sammlung bleibt
+// unverändert. Antwort: { card } mit den neuen Druckdaten.
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+
+  const body = await request.json().catch(() => ({}));
+  const UUID = /^[0-9a-f-]{36}$/i;
+  const from = typeof body.scryfallId === "string" && UUID.test(body.scryfallId) ? body.scryfallId : null;
+  const to = typeof body.toScryfallId === "string" && UUID.test(body.toScryfallId) ? body.toScryfallId : null;
+  const foil = typeof body.foil === "boolean" ? body.foil : undefined;
+  const isCommander = body.isCommander === true;
+  if (!from || (!to && foil === undefined)) return NextResponse.json({ error: "Druck fehlt" }, { status: 400 });
+
+  const { data: rows } = await supabase
+    .from("deck_cards")
+    .select("id, name")
+    .eq("deck_id", params.id)
+    .eq("user_id", user.id)
+    .eq("scryfall_id", from)
+    .eq("is_commander", isCommander);
+  if (!rows?.length) return NextResponse.json({ error: "Karte nicht im Deck" }, { status: 404 });
+
+  const updates: Record<string, unknown> = {};
+  if (foil !== undefined) updates.foil = foil;
+  let card: ScryfallCard | null = null;
+  if (to && to !== from) {
+    const found = await fetchCollectionWithRetry([{ id: to }, { id: from }]);
+    if (found === null) return NextResponse.json({ error: "Scryfall ist gerade nicht erreichbar – bitte gleich erneut versuchen." }, { status: 503 });
+    card = found.find((c) => c.id === to) ?? null;
+    const current = found.find((c) => c.id === from);
+    if (!card) return NextResponse.json({ error: "Diesen Druck gibt es bei Scryfall nicht." }, { status: 404 });
+    if (!samePrintFamily(card, current ?? { name: rows[0].name as string })) {
+      return NextResponse.json({ error: `„${card.name}“ ist eine andere Karte als „${rows[0].name}“.` }, { status: 400 });
+    }
+    const { eur, eurFoil } = getPrices(card);
+    Object.assign(updates, {
+      scryfall_id: card.id,
+      name: card.name,
+      image_url: imageUrlOf(card),
+      set_code: card.set ?? null,
+      collector_number: card.collector_number ?? null,
+      price_eur: eur,
+      price_eur_foil: eurFoil,
+    });
+  }
+  const { error } = await supabase
+    .from("deck_cards")
+    .update(updates)
+    .in("id", rows.map((r) => r.id))
+    .eq("user_id", user.id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, updated: rows.length, card: updates });
 }

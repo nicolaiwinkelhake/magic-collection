@@ -20,7 +20,7 @@ export async function GET() {
   const rows = await selectAll<Row>(() =>
     supabase
       .from("cards")
-      .select("name, quantity, foil, set_code, price_eur, price_eur_foil, condition, language, folder_entries(folders(name))")
+      .select("name, quantity, foil, set_code, collector_number, scryfall_id, price_eur, price_eur_foil, condition, language, folder_entries(folders(name))")
       .eq("user_id", user.id)
       .order("name", { ascending: true })
       .order("id")

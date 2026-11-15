@@ -95,6 +95,13 @@ export function csvToEntries(text: string): ParsedEntry[] {
   const foilIdx = header.findIndex((h) =>
     ["foil", "is foil", "finish", "printing"].includes(h)
   );
+  // Druck (Archidekt, Deckbox, TCGplayer …): Set-Kürzel + Sammlernummer
+  const setIdx = header.findIndex((h) =>
+    ["set code", "set_code", "edition code", "setcode", "set"].includes(h)
+  );
+  const cnIdx = header.findIndex((h) =>
+    ["collector number", "collector_number", "collector nr", "card number", "number"].includes(h)
+  );
 
   // Kein erkennbarer Header -> jede Zeile als Kartenname behandeln
   const dataRows = nameIdx === -1 ? rows : rows.slice(1);
@@ -108,7 +115,17 @@ export function csvToEntries(text: string): ParsedEntry[] {
       countIdx >= 0 ? Math.max(1, parseInt(r[countIdx] || "1", 10) || 1) : 1;
     const foilVal = foilIdx >= 0 ? (r[foilIdx] || "").trim().toLowerCase() : "";
     const foil = ["foil", "true", "yes", "1", "etched"].includes(foilVal);
-    entries.push({ name, quantity, foil });
+    const set = nameIdx >= 0 && setIdx >= 0 ? (r[setIdx] ?? "").trim().toLowerCase() : "";
+    const collectorNumber = nameIdx >= 0 && cnIdx >= 0 ? (r[cnIdx] ?? "").trim() : "";
+    // Nur echte Set-Kürzel (2–6 Zeichen), keine ausgeschriebenen Set-Namen
+    const validSet = /^[a-z0-9]{2,6}$/.test(set);
+    entries.push({
+      name,
+      quantity,
+      foil,
+      ...(validSet ? { set } : {}),
+      ...(validSet && collectorNumber ? { collectorNumber } : {}),
+    });
   }
   return entries;
 }
@@ -182,6 +199,8 @@ export function entriesToCsv(
     quantity: number;
     foil: boolean;
     set_code: string | null;
+    collector_number?: string | null;
+    scryfall_id?: string | null;
     price_eur: number | null;
     price_eur_foil: number | null;
     condition?: string;
@@ -192,13 +211,16 @@ export function entriesToCsv(
 ): string {
   const esc = (v: string) =>
     /[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  const head = ["Name", "Count", "Foil", "Set", "Condition", "Language", "Price_EUR", "Folder"].join(",");
+  // Mit Sammlernummer + Scryfall-ID: beim erneuten Import exakt derselbe Druck
+  const head = ["Name", "Count", "Foil", "Set", "Collector Number", "Scryfall ID", "Condition", "Language", "Price_EUR", "Folder"].join(",");
   const lines = cards.map((c) =>
     [
       esc(c.name),
       String(c.quantity),
       c.foil ? "foil" : "",
       esc(c.set_code ?? ""),
+      esc(c.collector_number ?? ""),
+      esc(c.scryfall_id ?? ""),
       esc(c.condition ?? "NM"),
       esc(c.language ?? "EN"),
       String((c.foil ? c.price_eur_foil : c.price_eur) ?? ""),

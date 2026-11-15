@@ -35,11 +35,13 @@ describe("csvToEntries", () => {
 
   it("ist ein Roundtrip-Partner zu entriesToCsv", () => {
     const cards = [
-      { name: "Sol Ring", quantity: 2, foil: false, set_code: "c21", price_eur: 1.8, price_eur_foil: null },
+      { name: "Sol Ring", quantity: 2, foil: false, set_code: "c21", collector_number: "263", scryfall_id: "abc-1", price_eur: 1.8, price_eur_foil: null },
     ];
     const csv = entriesToCsv(cards);
-    const back = csvToEntries(csv);
-    expect(back[0]).toEqual({ name: "Sol Ring", quantity: 2, foil: false });
+    // ohne ID-Spalte gelesen: Name + Druck
+    expect(csvToEntries(csv)[0]).toEqual({ name: "Sol Ring", quantity: 2, foil: false, set: "c21", collectorNumber: "263" });
+    // als Datei mit Scryfall-ID: exakt derselbe Druck
+    expect(moxfieldCsvToEntries(csv)?.[0]).toEqual({ scryfallId: "abc-1", name: "Sol Ring", quantity: 2, foil: false, set: "c21", collectorNumber: "263" });
   });
 });
 
@@ -79,5 +81,14 @@ describe("moxfieldCsvToEntries mit ManaBox-Export", () => {
         collectorNumber: "292",
       },
     ]);
+  });
+});
+
+describe("csvToEntries – Druck", () => {
+  it("übernimmt Set-Kürzel und Sammlernummer, ignoriert ausgeschriebene Set-Namen", async () => {
+    const { csvToEntries } = await import("@/lib/csv");
+    const rows = csvToEntries("Quantity,Name,Set Code,Collector Number,Foil\n1,Sol Ring,C21,263,\n2,Island,Lord of the Rings,715,foil\n");
+    expect(rows[0]).toEqual({ name: "Sol Ring", quantity: 1, foil: false, set: "c21", collectorNumber: "263" });
+    expect(rows[1]).toEqual({ name: "Island", quantity: 2, foil: true });
   });
 });

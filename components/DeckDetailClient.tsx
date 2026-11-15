@@ -30,6 +30,7 @@ import type { Deck, DeckCard } from "@/lib/deckTypes";
 import { ColorIdentity, ManaCost } from "@/components/ui/Mana";
 import { groupByType } from "@/lib/deckTypeGroups";
 import { CardViewer, viewerButton, type ViewerCard } from "@/components/ui/CardViewer";
+import { PrintPicker } from "@/components/ui/PrintPicker";
 import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
 import { toggle, toggleAll } from "@/lib/selection";
 
@@ -64,6 +65,29 @@ export function DeckDetailClient({
   const [tab, setTab] = useState<DeckTab>("analysis");
   // Kartendetail zum Durchwischen: Deckliste bzw. Vorschläge einer Kategorie
   const [viewKey, setViewKey] = useState<string | null>(null);
+  // Druck einer Deckkarte ändern (Migration 017)
+  const [printFor, setPrintFor] = useState<DeckCard | null>(null);
+  const [printBusy, setPrintBusy] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
+
+  async function changeDeckPrint(card: DeckCard, change: { toScryfallId?: string; foil?: boolean }) {
+    setPrintBusy(true);
+    setPrintError(null);
+    const res = await fetch(`/api/decks/${deck.id}/cards`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scryfallId: card.scryfall_id, isCommander: card.is_commander, ...change }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    setPrintBusy(false);
+    if (!res?.ok) {
+      setPrintError(data?.error ?? "Druck konnte nicht geändert werden.");
+      return false;
+    }
+    setPrintFor(null);
+    router.refresh();
+    return true;
+  }
   // Mehrfachauswahl in der Kartenliste (Schlüssel = erste Karte eines Stapels)
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -292,7 +316,8 @@ export function DeckDetailClient({
 
   // Farbidentität nachfüllen (ältere Decks speicherten nur "colors").
   useEffect(() => {
-    if (!initialCards.some((c) => c.color_identity == null || c.produced_mana == null)) return;
+    // … und den Druck (Set + Nummer) älterer Deckkarten
+    if (!initialCards.some((c) => c.color_identity == null || c.produced_mana == null || c.set_code === null)) return;
     fetch(`/api/decks/${deck.id}/metadata`, { method: "POST" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -307,7 +332,7 @@ export function DeckDetailClient({
   );
 
   const totalValue = useMemo(() => {
-    return initialCards.reduce((sum, c) => sum + (c.price_eur ?? 0), 0);
+    return initialCards.reduce((sum, c) => sum + ((c.foil ? c.price_eur_foil ?? c.price_eur : c.price_eur) ?? 0), 0);
   }, [initialCards]);
 
   const categories = useMemo(
@@ -321,7 +346,7 @@ export function DeckDetailClient({
   const stackedCards = useMemo(() => {
     const groups = new Map<string, DeckCard[]>();
     for (const card of initialCards) {
-      const key = `${card.scryfall_id}-${card.is_commander}`;
+      const key = `${card.scryfall_id}-${card.is_commander}-${card.foil ? 1 : 0}`;
       const list = groups.get(key);
       if (list) list.push(card);
       else groups.set(key, [card]);
@@ -344,6 +369,9 @@ export function DeckDetailClient({
         oracle_text: stack[0].oracle_text,
         price_eur: stack[0].price_eur,
         price_eur_foil: stack[0].price_eur_foil,
+        set_code: stack[0].set_code ?? null,
+        collector_number: stack[0].collector_number ?? null,
+        foil: stack[0].foil ?? false,
         quantity: stack.length,
       })),
     [viewerStacks],
@@ -1135,12 +1163,22 @@ export function DeckDetailClient({
                                 👥 {owners.map((o) => o.friendEmail.split("@")[0]).join(", ")}
                               </span>
                             ) : (
-                              <span className="block text-xs text-zinc-500 truncate">{card.type_line}</span>
+                              <span className="block text-xs text-zinc-500 truncate">
+                                {card.set_code ? (
+                                  <>
+                                    <span className="uppercase">{card.set_code}</span>
+                                    {card.collector_number && ` #${card.collector_number}`}
+                                    {card.foil && <span className="text-fuchsia-300"> · Foil</span>}
+                                    {" · "}
+                                  </>
+                                ) : null}
+                                {card.type_line}
+                              </span>
                             )}
                           </span>
                           </button>
                           <span className="shrink-0 text-sm tabular-nums text-emerald-400">
-                            {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
+                            {(card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur) != null ? formatEur((card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur)!) : "–"}
                           </span>
                           {!card.is_commander && !selectMode && (
                             <button
@@ -1208,7 +1246,7 @@ export function DeckDetailClient({
                           {cardView === "details" && (
                             <div className="flex items-center justify-between gap-1 px-0.5 pt-1.5 text-[11px]">
                               <span className="tabular-nums font-medium text-emerald-400">
-                                {card.price_eur !== null ? formatEur(card.price_eur) : "–"}
+                                {(card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur) != null ? formatEur((card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur)!) : "–"}
                               </span>
                               {owners?.length ? (
                                 <span
@@ -1309,6 +1347,7 @@ export function DeckDetailClient({
           index={viewIndex}
           onIndexChange={(i) => setViewKey(viewerCards[i].key)}
           onClose={() => setViewKey(null)}
+          keyboardDisabled={!!printFor}
           info={(c) => {
             const owners = ownership[c.name];
             const isCommander = viewerStacks.find((st) => st[0].id === c.key)?.[0].is_commander;
@@ -1323,8 +1362,27 @@ export function DeckDetailClient({
           }}
           actions={(c) => {
             const head = viewerStacks.find((st) => st[0].id === c.key)?.[0];
-            if (!head || head.is_commander) return null;
+            if (!head) return null;
+            const printButtons = (
+              <>
+                <button
+                  onClick={() => {
+                    setPrintError(null);
+                    setPrintFor(head);
+                  }}
+                  className={viewerButton.secondary}
+                >
+                  Druck / Edition ändern
+                </button>
+                <button onClick={() => void changeDeckPrint(head, { foil: !head.foil })} className={viewerButton.secondary} aria-pressed={!!head.foil}>
+                  {head.foil ? "✓ Foil" : "Foil"}
+                </button>
+              </>
+            );
+            if (head.is_commander) return printButtons;
             return (
+              <>
+              {printButtons}
               <button
                 onClick={() => {
                   setViewKey(null);
@@ -1334,6 +1392,7 @@ export function DeckDetailClient({
               >
                 {(c.quantity ?? 1) > 1 ? "Eine Kopie aus dem Deck entfernen" : "Aus Deck entfernen"}
               </button>
+              </>
             );
           }}
         />
@@ -1391,6 +1450,16 @@ export function DeckDetailClient({
           />
         );
       })()}
+      {printFor && (
+        <PrintPicker
+          name={printFor.name}
+          currentId={printFor.scryfall_id}
+          busy={printBusy}
+          error={printError}
+          onPick={(p) => void changeDeckPrint(printFor, { toScryfallId: p.id })}
+          onClose={() => !printBusy && setPrintFor(null)}
+        />
+      )}
     </main>
   );
 }
