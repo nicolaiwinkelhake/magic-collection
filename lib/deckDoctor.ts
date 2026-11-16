@@ -7,7 +7,14 @@
 import { ALL_ROLES, ROLE_LABEL, ROLE_TARGETS, isLand, type CardRole } from "@/lib/cardRoles";
 import type { EdhrecCard } from "@/lib/edhrec";
 
-export type DoctorDeckCard = { name: string; type_line: string | null; cmc: number | null; is_commander: boolean; image_url?: string | null };
+export type DoctorDeckCard = {
+  name: string;
+  type_line: string | null;
+  cmc: number | null;
+  is_commander: boolean;
+  image_url?: string | null;
+  oracle_text?: string | null;
+};
 
 export type RoleCheck = { key: CardRole | "lands"; label: string; have: number; target: number; min: number; ok: boolean };
 
@@ -127,6 +134,10 @@ export type SwapIn = {
   score: number;
   typeLine: string;
   cmc: number;
+  /** EDHREC-Kategorie beim Commander, z. B. "manaartifacts", "highsynergycards" */
+  list: string;
+  /** Themen des Commanders, zu denen die Karte passt */
+  themes: string[];
 };
 
 export type SwapOut = {
@@ -139,6 +150,9 @@ export type SwapOut = {
   weakness: number;
   image: string | null;
   typeLine: string | null;
+  /** false = Rolle (noch) nicht ermittelt */
+  rolesKnown: boolean;
+  themes: string[];
 };
 
 export type Swap = { out: SwapOut; in: SwapIn };
@@ -150,27 +164,49 @@ const pct = (x: number) => `${Math.round(x * 100)} %`;
  * Commanders, die sie spielen, plus Synergie; Kernrolle leicht plus, sehr
  * teure Karten leicht minus. Nicht in der EDHREC-Liste = spielt kaum jemand.
  */
-export function deckValue(card: { cmc: number | null }, edh: EdhrecCard | undefined, roles: CardRole[]): number {
+export function deckValue(card: { cmc: number | null }, edh: EdhrecCard | undefined, roles: CardRole[] | undefined): number {
   let v = edh ? edh.inclusion * 1.2 + Math.max(0, edh.synergy) * 0.8 : -0.1;
-  if (roles.length) v += 0.1;
+  // Rolle unbekannt (noch nicht ermittelt) = im Zweifel für die Karte
+  if (!roles || roles.length) v += 0.1;
   if ((card.cmc ?? 0) >= 6) v -= 0.1;
   return Math.round(v * 1000) / 1000;
 }
 
 /** Wie entbehrlich ist eine Deckkarte? (höher = eher raus) */
-export function weakness(card: DoctorDeckCard, edh: EdhrecCard | undefined, roles: CardRole[]): number {
+export function weakness(card: DoctorDeckCard, edh: EdhrecCard | undefined, roles: CardRole[] | undefined): number {
   return -deckValue(card, edh, roles);
 }
 
 /** Mindestgewinn, damit ein Tausch vorgeschlagen wird */
 const MIN_GAIN = 0.12;
 
-function outReason(edh: EdhrecCard | undefined, roles: CardRole[], cmc: number): string {
+function outReason(edh: EdhrecCard | undefined, roles: CardRole[] | undefined, cmc: number): string {
   const parts: string[] = [];
   parts.push(edh ? `in ${pct(edh.inclusion)} der Decks` : "selten mit diesem Commander");
-  if (!roles.length) parts.push("keine Kernrolle");
+  if (roles && !roles.length) parts.push("keine Grundrolle");
   if (cmc >= 6) parts.push(`${cmc} Mana`);
   return parts.join(" · ");
+}
+
+const SINGULAR: Record<string, string> = { elves: "elf", dwarves: "dwarf", wolves: "wolf", fungi: "fungus", "fae": "faerie", faeries: "faerie" };
+
+/**
+ * Zu welchen Themen des Commanders (EDHREC-Tags wie "Dragons", "Flying",
+ * "Tokens") passt eine Karte? Stammestyp über die Typzeile, Schlüsselwörter
+ * und Begriffe über den Kartentext.
+ */
+export function themeFit(themes: string[], typeLine: string | null | undefined, oracle?: string | null): string[] {
+  const types = (typeLine ?? "").toLowerCase();
+  const subtypes = types.includes("—") ? types.split("—")[1].split(/[\s/]+/).filter(Boolean) : [];
+  const text = (oracle ?? "").toLowerCase();
+  const out: string[] = [];
+  for (const t of themes) {
+    const key = t.toLowerCase();
+    const sing = SINGULAR[key] ?? key.replace(/ies$/, "y").replace(/(ch|sh|x)es$/, "$1").replace(/s$/, "");
+    if (subtypes.includes(sing) || subtypes.includes(key)) out.push(t);
+    else if (text && sing.length >= 4 && text.includes(sing)) out.push(t);
+  }
+  return out;
 }
 
 export function planSwaps(input: {
@@ -184,6 +220,8 @@ export function planSwaps(input: {
   health: DeckHealth;
   /** z. B. Karten in einem anderen Deck nicht doppelt vorschlagen */
   exclude?: Set<string>;
+  /** Themen des Commanders (EDHREC) */
+  themes?: string[];
   limit?: number;
 }): { swaps: Swap[]; adds: SwapIn[] } {
   const { deck, identity, edhrec, roles, info, availability, health } = input;
@@ -230,6 +268,8 @@ export function planSwaps(input: {
       score: Math.round(score * 1000) / 1000,
       typeLine: meta.typeLine,
       cmc: meta.cmc,
+      list: e.list,
+      themes: themeFit(input.themes ?? [], meta.typeLine),
     });
   }
   adds.sort((a, b) => b.score - a.score);
@@ -239,18 +279,20 @@ export function planSwaps(input: {
   const outs: SwapOut[] = deck
     .filter((c) => !c.is_commander && !isLand(c))
     .map((c) => {
-      const r = roles.get(c.name) ?? [];
+      const known = roles.get(c.name);
       const e = edhByName.get(c.name);
       return {
         name: c.name,
         inclusion: e ? e.inclusion : null,
         synergy: e ? e.synergy : null,
-        roles: r,
+        roles: known ?? [],
         cmc: c.cmc ?? 0,
-        reason: outReason(e, r, c.cmc ?? 0),
-        weakness: weakness(c, e, r),
+        reason: outReason(e, known, c.cmc ?? 0),
+        weakness: weakness(c, e, known),
         image: c.image_url ?? null,
         typeLine: c.type_line,
+        rolesKnown: known !== undefined,
+        themes: themeFit(input.themes ?? [], c.type_line, c.oracle_text),
       };
     })
     .sort((a, b) => b.weakness - a.weakness);

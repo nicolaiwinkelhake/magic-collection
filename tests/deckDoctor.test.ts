@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deckHealth, planSwaps, type Availability, type CandidateInfo, type DoctorDeckCard } from "@/lib/deckDoctor";
+import { deckHealth, planSwaps, themeFit, type Availability, type CandidateInfo, type DoctorDeckCard } from "@/lib/deckDoctor";
 import type { CardRole } from "@/lib/cardRoles";
 
 const land = (i: number): DoctorDeckCard => ({ name: `Land ${i}`, type_line: "Basic Land — Forest", cmc: 0, is_commander: false });
@@ -90,5 +90,14 @@ describe("planSwaps", () => {
     expect(swaps[1]?.in.friend?.ownerName).toBe("max");
     // die starke Karte bleibt
     expect(swaps.some((s) => s.out.name === "Stütze")).toBe(false);
+  });
+});
+
+describe("themeFit", () => {
+  it("erkennt Stammestyp und Schlüsselwort", () => {
+    expect(themeFit(["Dragons", "Flying", "Elves"], "Creature — Dragon", "Flying")).toEqual(["Dragons", "Flying"]);
+    expect(themeFit(["Elves"], "Creature — Elf Druid")).toEqual(["Elves"]);
+    expect(themeFit(["Tokens"], "Instant", "Create two 1/1 tokens")).toEqual(["Tokens"]);
+    expect(themeFit(["Dragons"], "Enchantment", "")).toEqual([]);
   });
 });

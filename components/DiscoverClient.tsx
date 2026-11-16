@@ -12,7 +12,7 @@ import type { DeckHealth, FriendCopy, Swap, SwapIn, SwapOut } from "@/lib/deckDo
 import { ROLE_LABEL, type CardRole } from "@/lib/cardRoles";
 import { edhrecSlug } from "@/lib/edhrec";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
-import { explainIn, explainOut } from "@/lib/swapExplain";
+import { EDHREC_LIST, explainIn, explainOut } from "@/lib/swapExplain";
 
 // Entdecken – entlang der Fragen, die Spieler wirklich haben:
 // 1) Deck-Check: Wo hakt mein Deck, welcher Tausch lohnt sich?
@@ -384,6 +384,7 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
           onClose={() => setCompare(null)}
           commander={data.deck.commander}
           numDecks={data.edhrec?.numDecks ?? null}
+          themes={(data.edhrec?.themes ?? []).map((t) => t.name)}
           health={data.health}
           edhrecSlug={data.edhrec?.slug ?? null}
           onTrade={onTrade}
@@ -407,12 +408,14 @@ function SwapCompare({
   onClose,
   commander,
   numDecks,
+  themes,
   health,
   edhrecSlug: slug,
   onTrade,
 }: {
   items: Array<{ out?: SwapOut; in: SwapIn }>;
   numDecks: number | null;
+  themes: string[];
   health: DeckHealth;
   index: number;
   onIndexChange: (i: number) => void;
@@ -439,7 +442,8 @@ function SwapCompare({
       in: `${add.synergy >= 0 ? "+" : ""}${Math.round(add.synergy * 100)} %`,
       better: out ? cmp(out.synergy ?? 0, add.synergy) : null,
     },
-    { label: "Rolle", out: out ? roles(out.roles) : undefined, in: roles(add.roles) },
+    { label: "Grundrolle", out: out ? (out.rolesKnown ? roles(out.roles) : "noch offen") : undefined, in: roles(add.roles) },
+    { label: "Thema", out: out ? (out.themes.join(", ") || "–") : undefined, in: add.themes.join(", ") || (EDHREC_LIST[add.list] ? `EDHREC: ${EDHREC_LIST[add.list]}` : "–") },
     { label: "Mana", out: out ? String(out.cmc) : undefined, in: String(add.cmc), better: out ? cmp(out.cmc, add.cmc, false) : null },
     { label: "Preis", out: out ? "im Deck" : undefined, in: add.eur != null ? `≈ ${formatEur(add.eur)}` : "–" },
   ];
@@ -488,7 +492,7 @@ function SwapCompare({
         <section className="rounded-xl bg-emerald-500/[0.07] border border-emerald-400/20 p-3 space-y-1.5">
           <h4 className="text-sm font-semibold text-emerald-300">Warum {add.name} rein</h4>
           <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-emerald-400/70">
-            {explainIn(add, out, health, { commander, numDecks }).map((w) => (
+            {explainIn(add, out, health, { commander, numDecks, themes }).map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
@@ -497,7 +501,7 @@ function SwapCompare({
           <section className="rounded-xl bg-red-500/[0.06] border border-red-400/20 p-3 space-y-1.5">
             <h4 className="text-sm font-semibold text-red-300">Warum {out.name} raus</h4>
             <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-red-400/70">
-              {explainOut(out, { commander }).map((w) => (
+              {explainOut(out, { commander, themes }).map((w) => (
                 <li key={w}>{w}</li>
               ))}
             </ul>
