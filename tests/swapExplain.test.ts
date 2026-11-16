@@ -37,3 +37,14 @@ describe("Tausch-Begründung", () => {
     expect(explainOut({ ...out, roles: ["removal"] }, { commander: "X" }).join(" ")).toMatch(/Rolle: Removal/);
   });
 });
+
+describe("Begründung mit Zusammenspiel", () => {
+  it("nennt Partner im Deck für Rein und Raus", () => {
+    const pIn = { known: true, partners: [{ name: "Miirym", lift: 9.6 }, { name: "Old Gnawbone", lift: 4 }] };
+    const pOut = { known: true, partners: [] };
+    const why = explainIn(add, out, health, { commander: "X", pairsIn: pIn, pairsOut: pOut }).join(" ");
+    expect(why).toMatch(/zusammen mit 2 deiner Karten \(Miirym, Old Gnawbone\) – Doubling Season nur mit 0/);
+    expect(explainOut(out, { commander: "X", pairsOut: pOut }).join(" ")).toMatch(/mit keiner deiner Karten/);
+    expect(explainOut(out, { commander: "X", pairsOut: { known: false, partners: [] } }).join(" ")).toMatch(/keine Daten/);
+  });
+});
