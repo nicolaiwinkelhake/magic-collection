@@ -8,6 +8,7 @@ import { getGermanWorker, getNameWorker, NAME_PSM, terminateAll, warmUp } from "
 import { detectCard } from "@/lib/cardDetect";
 import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, regionToCanvas } from "@/lib/scanRead";
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
+import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
 import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
 import { pickBest, type CardHash } from "@/lib/imageHash";
@@ -354,7 +355,7 @@ export function ScanClient({
     setFlash("ok");
     setTimeout(() => setFlash(null), 450);
     if (prefsRef.current.sound) beep(true);
-    navigator.vibrate?.(40);
+    buzz(40);
   }
 
   // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
@@ -393,7 +394,7 @@ export function ScanClient({
     setFlash("ok");
     setTimeout(() => setFlash(null), 450);
     if (prefsRef.current.sound) beep(true);
-    navigator.vibrate?.(40);
+    buzz(40);
   }
 
   // Druck per Bildvergleich bestimmen, wenn Set/Nummer nicht lesbar waren:
