@@ -12,6 +12,7 @@ import type { DeckHealth, FriendCopy, Swap, SwapIn, SwapOut } from "@/lib/deckDo
 import { ROLE_LABEL, type CardRole } from "@/lib/cardRoles";
 import { edhrecSlug } from "@/lib/edhrec";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
+import { explainIn, explainOut } from "@/lib/swapExplain";
 
 // Entdecken – entlang der Fragen, die Spieler wirklich haben:
 // 1) Deck-Check: Wo hakt mein Deck, welcher Tausch lohnt sich?
@@ -153,18 +154,29 @@ function Thumb({ src, alt, w = 40 }: { src: string | null | undefined; alt: stri
 }
 
 function SourceBadge({ add, onTrade }: { add: SwapIn; onTrade: (c: FriendCopy) => void }) {
-  if (add.source === "collection") return <span className="rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium">In deiner Sammlung</span>;
-  if (add.source === "friend" && add.friend)
-    return (
-      <button onClick={() => onTrade(add.friend!)} className="press rounded-full bg-indigo-500/20 text-indigo-200 px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ring-indigo-400/40">
-        {add.friend.ownerName} hat sie · Trade
-      </button>
-    );
-  return (
-    <a href={cardmarket(add.name)} target="_blank" rel="noopener noreferrer" className="rounded-full bg-white/[0.06] text-zinc-300 px-2 py-0.5 text-[11px]">
-      {add.eur != null ? `≈ ${formatEur(add.eur)}` : "kaufen"} ↗
+  // Preis + Cardmarket immer zeigen – auch wenn man (oder ein Freund) die Karte hat
+  const price = (
+    <a href={cardmarket(add.name)} target="_blank" rel="noopener noreferrer" className="rounded-full bg-white/[0.06] text-zinc-300 px-2 py-0.5 text-[11px] whitespace-nowrap">
+      {add.eur != null ? `≈ ${formatEur(add.eur)}` : "Cardmarket"} ↗
     </a>
   );
+  if (add.source === "collection")
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+        <span className="rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">In deiner Sammlung</span>
+        {price}
+      </span>
+    );
+  if (add.source === "friend" && add.friend)
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+        <button onClick={() => onTrade(add.friend!)} className="press rounded-full bg-indigo-500/20 text-indigo-200 px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ring-indigo-400/40 whitespace-nowrap">
+          {add.friend.ownerName} hat sie · Trade
+        </button>
+        {price}
+      </span>
+    );
+  return price;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +383,8 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
           onIndexChange={setCompare}
           onClose={() => setCompare(null)}
           commander={data.deck.commander}
+          numDecks={data.edhrec?.numDecks ?? null}
+          health={data.health}
           edhrecSlug={data.edhrec?.slug ?? null}
           onTrade={onTrade}
         />
@@ -392,10 +406,14 @@ function SwapCompare({
   onIndexChange,
   onClose,
   commander,
+  numDecks,
+  health,
   edhrecSlug: slug,
   onTrade,
 }: {
   items: Array<{ out?: SwapOut; in: SwapIn }>;
+  numDecks: number | null;
+  health: DeckHealth;
   index: number;
   onIndexChange: (i: number) => void;
   onClose: () => void;
@@ -423,6 +441,7 @@ function SwapCompare({
     },
     { label: "Rolle", out: out ? roles(out.roles) : undefined, in: roles(add.roles) },
     { label: "Mana", out: out ? String(out.cmc) : undefined, in: String(add.cmc), better: out ? cmp(out.cmc, add.cmc, false) : null },
+    { label: "Preis", out: out ? "im Deck" : undefined, in: add.eur != null ? `≈ ${formatEur(add.eur)}` : "–" },
   ];
   const tone = (side: "in" | "out", r: Row) => (r.better === side ? "text-emerald-300 font-semibold" : "text-zinc-200");
   const scry = (n: string) => `https://scryfall.com/search?q=${encodeURIComponent(`!"${n}"`)}`;
@@ -466,19 +485,27 @@ function SwapCompare({
           </table>
         </div>
 
-        <div className="space-y-1.5 text-xs">
-          {out && (
-            <p>
-              <span className="text-red-300">Warum raus:</span> <span className="text-zinc-300">{out.reason}</span>
-            </p>
-          )}
-          <p>
-            <span className="text-emerald-300">Warum rein:</span> <span className="text-zinc-300">{add.reason}</span>
-          </p>
-          <p className="text-[11px] text-zinc-500">
-            „Spielen es“ = Anteil der EDHREC-Decks mit {commander}, die die Karte enthalten. Synergie = wie viel häufiger sie dort ist als in anderen Decks derselben Farben.
-          </p>
-        </div>
+        <section className="rounded-xl bg-emerald-500/[0.07] border border-emerald-400/20 p-3 space-y-1.5">
+          <h4 className="text-sm font-semibold text-emerald-300">Warum {add.name} rein</h4>
+          <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-emerald-400/70">
+            {explainIn(add, out, health, { commander, numDecks }).map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </section>
+        {out && (
+          <section className="rounded-xl bg-red-500/[0.06] border border-red-400/20 p-3 space-y-1.5">
+            <h4 className="text-sm font-semibold text-red-300">Warum {out.name} raus</h4>
+            <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-red-400/70">
+              {explainOut(out, { commander }).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+        <p className="text-[11px] text-zinc-500">
+          „Spielen es“ = Anteil der EDHREC-Decks mit {commander}, die die Karte enthalten. Synergie = wie viel häufiger sie dort ist als in anderen Decks derselben Farben.
+        </p>
 
         <div className="flex flex-wrap items-center gap-2">
           <SourceBadge add={add} onTrade={onTrade} />
