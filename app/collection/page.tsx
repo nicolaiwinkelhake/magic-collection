@@ -15,20 +15,18 @@ export default async function CollectionPage() {
 
   if (!user) redirect("/login");
 
-  // Seitenweise laden: ohne Blättern zeigte die Sammlung max. 1000 Einträge.
+  // Alles gleichzeitig laden (statt nacheinander) – spart je Abfrage einen
+  // Hin- und Rückweg zur Datenbank. Karten seitenweise: ohne Blättern zeigte
+  // die Sammlung max. 1000 Einträge.
   let cards: Card[] = [];
   let error: { message: string } | null = null;
-  try {
-    cards = await selectAll<Card>(() =>
-      supabase.from("cards").select("*").order("name", { ascending: true }).order("id")
-    );
-  } catch (e) {
-    error = { message: e instanceof Error ? e.message : "Unbekannter Fehler" };
-  }
-
-  // Eigene Ordner + Zuordnungen (eine Karte kann in mehreren Ordnern
-  // stehen). Fehlen die Tabellen noch, bleibt alles leer.
-  const [{ data: folders }, entries, { data: decks }, deckCards] = await Promise.all([
+  const [loaded, { data: folders }, entries, { data: decks }, deckCards] = await Promise.all([
+    selectAll<Card>(() => supabase.from("cards").select("*").order("name", { ascending: true }).order("id")).catch((e) => {
+      error = { message: e instanceof Error ? e.message : "Unbekannter Fehler" };
+      return [] as Card[];
+    }),
+    // Eigene Ordner + Zuordnungen (eine Karte kann in mehreren Ordnern
+    // stehen). Fehlen die Tabellen noch, bleibt alles leer.
     supabase.from("folders").select("id, name, created_at").order("name"),
     loadFolderEntries(supabase, "card"),
     supabase.from("decks").select("id, name").eq("user_id", user.id),
@@ -37,13 +35,14 @@ export default async function CollectionPage() {
       supabase.from("deck_cards").select("deck_id, name").eq("user_id", user.id).order("id"),
     ).catch(() => [] as Array<{ deck_id: string; name: string }>),
   ]);
+  cards = loaded;
   cards = attachFolders(cards, entries);
   const uses = deckUsage(deckCards, decks ?? []);
 
   return (
     <CollectionClient
       initialCards={cards ?? []}
-      loadError={error?.message}
+      loadError={(error as { message: string } | null)?.message}
       initialFolders={folders ?? []}
       deckUses={uses}
     />

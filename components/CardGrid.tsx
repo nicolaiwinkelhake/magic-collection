@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
+// Karten, die sofort aufgebaut werden, und Nachschub je Scroll-Schritt
+const FIRST_BATCH = 60;
+const NEXT_BATCH = 180;
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { formatEur, formatDate } from "@/lib/format";
@@ -338,12 +342,46 @@ export function CardGrid({
     setSelected((sel) => prune(sel, visibleKey ? visibleKey.split(",") : []));
   }, [visibleKey]);
 
+  // Nur so viele Karten aufbauen, wie man gerade braucht: Die ersten sofort,
+  // weitere beim Scrollen. Tausende Kacheln auf einmal kosten auf dem Handy
+  // über eine Sekunde, bevor die Seite überhaupt reagiert.
+  const [limit, setLimit] = useState(FIRST_BATCH);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const total = ordered.length;
+  useEffect(() => {
+    // neue Liste (Filter, Sortierung) und man steht oben: wieder klein anfangen
+    if (typeof window !== "undefined" && window.scrollY < 600) setLimit(FIRST_BATCH);
+  }, [visibleKey, groupBy, view]);
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!el || limit >= total) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setLimit((n) => Math.min(total, n + NEXT_BATCH));
+      },
+      { rootMargin: "1800px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [limit, total]);
+  const shown = useMemo(() => {
+    if (limit >= total) return groups;
+    const out: typeof groups = [];
+    let left = limit;
+    for (const g of groups) {
+      if (left <= 0) break;
+      out.push(g.cards.length <= left ? g : { ...g, cards: g.cards.slice(0, left) });
+      left -= g.cards.length;
+    }
+    return out;
+  }, [groups, limit, total]);
+
   const gridContent = useMemo(() => (
-      groups.length === 1 && groupBy === "none" ? (
-        renderCards(groups[0].cards)
+      shown.length === 1 && groupBy === "none" ? (
+        renderCards(shown[0].cards)
       ) : (
         <div className="space-y-6">
-          {groups.map((g) => (
+          {shown.map((g) => (
             <section key={g.key} aria-label={g.label}>
               <h3 className="flex items-baseline justify-between gap-3 mb-2 px-0.5">
                 <span className="text-sm font-semibold text-zinc-200">
@@ -356,7 +394,7 @@ export function CardGrid({
           ))}
         </div>
       )
-  ), [groups, groupBy, view, selectMode, selected, deckUses]);
+  ), [shown, groupBy, view, selectMode, selected, deckUses]);
 
   if (!local.length) {
     return (
@@ -394,6 +432,11 @@ export function CardGrid({
       </div>
 
       {gridContent}
+      {limit < total && (
+        <div ref={moreRef} className="py-6 text-center text-xs text-zinc-500" aria-live="polite">
+          {limit} von {total} Karten – weitere werden beim Scrollen geladen
+        </div>
+      )}
 
       {/* Platz, damit die letzten Karten nicht unter der Auswahlleiste liegen */}
       {selectMode && <div className="h-24" aria-hidden />}
