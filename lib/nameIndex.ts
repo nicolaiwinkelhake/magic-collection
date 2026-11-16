@@ -73,6 +73,11 @@ export function readScore(q: string, c: string): number {
 
 export type NameMatch = { name: string; score: number; confident: boolean };
 
+/** ab hier darf ein einzelner Lesevorgang sofort bestätigen */
+export const CONFIDENT = 0.9;
+/** ab hier gilt ein Name als wahrscheinlich (zwei übereinstimmende Lesungen = sicher) */
+export const PROBABLE = 0.72;
+
 /**
  * Besten Kartennamen zu einer Lesung finden. `confident`: so sicher, dass der
  * Scanner sofort bestätigen darf (deutlicher Abstand zum Zweitbesten).
@@ -113,6 +118,9 @@ function matchOne(index: NameIndex, q: string, opts: { candidates?: number }): N
   }
   if (!best) return null;
   const score = Math.round(best.score * 1000) / 1000;
-  const confident = score >= 0.82 && (score - second >= 0.06 || score >= 0.97);
+  // Sofort bestätigen nur bei sehr guter Übereinstimmung: Im Messstand lagen
+  // alle falsch erkannten Karten unter 0,87 ("i Scare" → "Teferi's Care").
+  // Darunter gilt der Name als wahrscheinlich und braucht eine zweite Lesung.
+  const confident = score >= CONFIDENT && (score - second >= 0.06 || score >= 0.97);
   return { name: index.names[best.i], score, confident };
 }

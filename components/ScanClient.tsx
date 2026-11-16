@@ -4,19 +4,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Worker } from "tesseract.js";
-import { getInfoWorker, getNameWorker, terminateAll, warmUp } from "@/lib/ocrEngine";
+import { getNameWorker, NAME_PSM, terminateAll, warmUp } from "@/lib/ocrEngine";
 import { detectCard } from "@/lib/cardDetect";
+import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, regionToCanvas } from "@/lib/scanRead";
+import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
+import { quadBounds } from "@/lib/cardQuad";
+import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
 import { pickBest, type CardHash } from "@/lib/imageHash";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
 import { loadPrints } from "@/components/ui/PrintPicker";
 import { directByName, directExact, directPrint } from "@/lib/scryfallDirect";
-import { matchName, type NameMatch } from "@/lib/nameIndex";
 import { loadNameIndex, nameIndexIfReady } from "@/lib/nameIndexClient";
 import { formatEur } from "@/lib/format";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
 import { toggle, toggleAll } from "@/lib/selection";
-import { nameCandidates, parseCardInfo, preprocessPixels, type CardInfo, type OcrLine } from "@/lib/ocr";
+import { nameCandidates, type CardInfo } from "@/lib/ocr";
 import { coverGuide, fromVisible, visibleRegion, type Rect } from "@/lib/scanGeometry";
 import { contrast, initialWatch, markScanned, toGray, watchFrame, WATCH, type WatchState } from "@/lib/frameWatch";
 import {
@@ -48,16 +51,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 // - Speichern in Sammlung, Wunschliste oder ein Deck – in Paketen, mit
 //   Ladebalken und Wiederholung
 
-// Bereiche relativ zur Karte: Namensbalken oben, Infozeile unten links
-// (Sammlernummer, Set-Kürzel – auf Karten ab 2015).
-const NAME_AREA = { x: 0.04, y: 0.02, w: 0.8, h: 0.09 };
-const INFO_AREA = { x: 0.02, y: 0.91, w: 0.53, h: 0.08 };
-const MIN_OCR_HEIGHT = 140; // Foto/obere Bildhälfte (mehrere Zeilen)
-const NAME_OCR_HEIGHT = 56; // Namensbalken: eine Zeile
-const INFO_OCR_HEIGHT = 72; // Infozeile: zwei kleine Zeilen
 const THUMB_W = 32;
 const THUMB_H = 45;
-const DETECT_W = 120; // Breite des Suchbilds für die Kartenkanten
 const MAX_HASH_PRINTS = 40;
 
 // Treffer und Bild-Fingerabdrücke je Sitzung merken (gleiche Karte erneut = sofort)
@@ -69,32 +64,6 @@ const PREFS_KEY = "scan-prefs-v1";
 type Target = { kind: "collection"; folderId?: string | null } | { kind: "wishlist" } | { kind: "deck"; deckId: string };
 type Prefs = { auto: boolean; foil: boolean; sound: boolean; target: Target };
 const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, target: { kind: "collection" } };
-
-function subArea(card: Rect, area: Rect, srcW: number, srcH: number) {
-  return {
-    sx: (card.x + area.x * card.w) * srcW,
-    sy: (card.y + area.y * card.h) * srcH,
-    sw: area.w * card.w * srcW,
-    sh: area.h * card.h * srcH,
-  };
-}
-
-// Bildausschnitt auf eine feste Höhe gebracht und kontrastverstärkt für die
-// Texterkennung. Nicht größer als nötig: Tesseract liest am besten bei
-// ~25–35 px Schrifthöhe, und jedes Pixel mehr kostet Zeit (auf dem Handy viel).
-function regionToCanvas(source: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, targetH = MIN_OCR_HEIGHT) {
-  const scale = targetH / sh;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(sw * scale);
-  canvas.height = Math.round(sh * scale);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  preprocessPixels(img.data);
-  ctx.putImageData(img, 0, 0);
-  return canvas;
-}
 
 // Zeitmessung für die Optimierung: nur aktiv mit localStorage "scan-debug" = "1"
 let debugT0 = 0;
@@ -170,6 +139,8 @@ export function ScanClient({
   const thumbRef = useRef<HTMLCanvasElement | null>(null);
   const watchRef = useRef<WatchState>(initialWatch());
   const scanningRef = useRef(false);
+  // Standbild fürs Lesen (gelesen wird in mehreren Schritten, das Video läuft weiter)
+  const snapRef = useRef<HTMLCanvasElement | null>(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [guide, setGuide] = useState<{ video: Rect; screen: Rect } | null>(null);
@@ -230,7 +201,10 @@ export function ScanClient({
   useEffect(() => {
     const t = setTimeout(() => void warmUp().catch(() => {}), 800);
     // Wörterbuch im Leerlauf vorbereiten (einmal laden, danach vom Gerät)
-    const d = setTimeout(() => void loadNameIndex(), 1500);
+    const d = setTimeout(() => {
+      void loadNameIndex();
+      void loadSetPrior();
+    }, 1500);
     // Verbindung zu Scryfall schon aufbauen – spart beim ersten Scan den Handshake
     for (const href of ["https://api.scryfall.com", "https://cards.scryfall.io"]) {
       if (!document.head.querySelector(`link[rel="preconnect"][href="${href}"]`)) {
@@ -321,24 +295,6 @@ export function ScanClient({
     }
   }
 
-  async function ocrLines(canvas: HTMLCanvasElement, worker: Worker): Promise<OcrLine[]> {
-    const { data } = await worker.recognize(canvas);
-    const lines = (data.lines ?? []).map((l) => ({ text: l.text, confidence: l.confidence }));
-    return lines.length ? lines : [{ text: data.text, confidence: data.confidence }];
-  }
-
-  // Name und Infozeile gleichzeitig lesen (zwei Worker).
-  async function readCard(source: CanvasImageSource, card: Rect, w: number, h: number) {
-    const n = subArea(card, NAME_AREA, w, h);
-    const a = subArea(card, INFO_AREA, w, h);
-    const nameCanvas = regionToCanvas(source, n.sx, n.sy, n.sw, n.sh, NAME_OCR_HEIGHT);
-    const infoCanvas = regionToCanvas(source, a.sx, a.sy, a.sw, a.sh, INFO_OCR_HEIGHT);
-    const [nameWorker, infoWorker] = await Promise.all([getNameWorker(), getInfoWorker()]);
-    const [nameLines, infoLines] = await Promise.all([ocrLines(nameCanvas, nameWorker), ocrLines(infoCanvas, infoWorker)]);
-    const info = parseCardInfo(infoLines.map((l) => l.text).join(" "));
-    return { names: nameCandidates(nameLines), info: info.set || info.number ? info : null };
-  }
-
   async function resolve(name: string, info: CardInfo | null, suggest: boolean): Promise<ScanMatch | null> {
     const params = new URLSearchParams({ name });
     if (info?.set && info.number) {
@@ -401,7 +357,7 @@ export function ScanClient({
   }
 
   // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
-  function acceptPending(name: string, info: CardInfo | null, readNames: string[], camHash: CardHash | null) {
+  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null) {
     const foil = prefsRef.current.foil;
     const key = pendingKey();
     setStack((s) => addPending(s, name, foil, Date.now(), key).stack);
@@ -409,7 +365,9 @@ export function ScanClient({
     void finishPending(key, name, info, readNames, camHash, foil);
   }
 
-  async function finishPending(key: string, name: string, info: CardInfo | null, readNames: string[], camHash: CardHash | null, foil: boolean) {
+  // Druck/Preis nachtragen; die Infozeile (Set/Nummer) wird evtl. noch gelesen.
+  async function finishPending(key: string, name: string, infoRead: Promise<CardInfo | null> | null, readNames: string[], camHash: CardHash | null, foil: boolean) {
+    const info = infoRead ? await infoRead.catch(() => null) : null;
     let match: ScanMatch | null = null;
     try {
       if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [name, ...readNames]);
@@ -472,30 +430,49 @@ export function ScanClient({
     try {
       const W = video.videoWidth;
       const H = video.videoHeight;
-      // Gefundene Karte bevorzugen, sonst den festen Rahmen
-      const card = detectedRef.current?.video ?? guide.video;
-      // Bild der Karte sofort festhalten (für den Bildvergleich der Drucke)
-      const camHash = hashOf(video, card.x * W, card.y * H, card.w * W, card.h * H);
-      scanLog("scan_start");
-      const { names, info } = await readCard(video, card, W, H);
-      scanLog(`ocr_done names=${JSON.stringify(names)} info=${JSON.stringify(info)}`);
-      // Wörterbuch auf dem Gerät: Lesefehler sofort korrigieren
-      // (nur englische Namen – fremdsprachige Karten gehen den sicheren Weg)
-      const dict = info?.lang && info.lang !== "EN" ? null : nameIndexIfReady();
-      let sure: NameMatch | null = null;
-      let corrected: string[] = [];
-      if (dict) {
-        const hits = names.map((n) => matchName(dict, n)).filter((m): m is NameMatch => !!m);
-        sure = hits.find((m) => m.confident) ?? null;
-        corrected = hits.filter((m) => m.score >= 0.7).map((m) => m.name);
+      // Standbild festhalten: gelesen wird in mehreren Schritten, das Video läuft weiter
+      snapRef.current ??= document.createElement("canvas");
+      const snap = snapRef.current;
+      if (snap.width !== W || snap.height !== H) {
+        snap.width = W;
+        snap.height = H;
       }
+      snap.getContext("2d", { willReadFrequently: true })!.drawImage(video, 0, 0, W, H);
+      const view = viewRef.current;
+      const vis = view ? visibleRegion(W, H, view.clientWidth, view.clientHeight) : { x: 0, y: 0, w: 1, h: 1 };
+      const dict = nameIndexIfReady();
+      scanLog("scan_start");
+      // Karte als Viereck finden, entzerren, Name + Infozeile lesen
+      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady());
+      // Bild der Karte festhalten (für den Bildvergleich der Drucke)
+      const card = read.quad ? quadBounds(read.quad, 1, 1) : detectedRef.current?.video ?? guide.video;
+      const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
+      const { names, sure, corrected } = await read.name;
+      scanLog(`name_done names=${JSON.stringify(names)} sure=${sure?.name ?? "-"}`);
       if (sure) {
-        scanLog(`dict ${sure.name} ${sure.score}`);
-        acceptPending(sure.name, info, names, camHash);
+        acceptPending(sure.name, read.info, names, camHash);
+        return true;
+      }
+      const info = await read.info;
+      scanLog(`info_done ${JSON.stringify(info)}`);
+      if (auto && (!info?.lang || info.lang === "EN")) {
+        // Automatik, Name nicht sicher: Nur annehmen, wenn zwei Dinge
+        // zusammenpassen – Set + Nummer ergeben eine Karte, deren Name zum
+        // Gelesenen passt, oder Scryfall kennt den gelesenen Text eindeutig.
+        // Ein bloß wahrscheinlicher Name allein reicht nicht (lieber noch
+        // einmal lesen als eine falsche Karte im Stapel).
+        const guess = bestGuess({ names, sure, corrected }, dict);
+        let match: ScanMatch | null = null;
+        if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [...names, ...(guess ? [guess.name] : [])], true).catch(() => null);
+        for (const raw of names.slice(0, 2)) match ??= await directByName(raw, 0.8).catch(() => null);
+        scanLog(`resolved ${match ? match.name : "-"}`);
+        if (!match) return false;
+        accept(match, prefsRef.current.foil, camHash);
+        if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
         return true;
       }
       const tryNames = Array.from(new Set([...corrected, ...names]));
-      const { match, read } = await resolveCandidates(tryNames, info, !auto);
+      const { match, read: readName } = await resolveCandidates(tryNames, info, !auto);
       scanLog(`resolved ${match ? match.name : "-"}`);
       if (match) {
         accept(match, prefsRef.current.foil, camHash);
@@ -503,8 +480,8 @@ export function ScanClient({
         return true;
       }
       if (!auto) {
-        setManualName(read);
-        setStatus(read ? `Keine Karte für „${read}“ gefunden – Namen korrigieren oder Vorschlag antippen.` : "Kein Name erkannt – Karte gerade in den Rahmen legen.");
+        setManualName(readName);
+        setStatus(readName ? `Keine Karte für „${readName}“ gefunden – Namen korrigieren oder Vorschlag antippen.` : "Kein Name erkannt – Karte gerade in den Rahmen legen.");
         if (prefsRef.current.sound) beep(false);
       }
       return false;
@@ -624,15 +601,22 @@ export function ScanClient({
       const ratio = w / h;
       let result;
       const card: Rect | null = found ?? (ratio > 0.62 && ratio < 0.82 ? { x: 0, y: 0, w: 1, h: 1 } : null);
-      if (card) {
-        const { names, info } = await readCard(full, card, w, h);
-        result = await resolveCandidates(names, info, true);
+      const whole = { x: 0, y: 0, w: 1, h: 1 };
+      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady());
+      if (card || photo.quad) {
+        const name = await photo.name;
+        const info = await photo.info;
+        if (name.sure) {
+          acceptPending(name.sure.name, Promise.resolve(info), name.names, null);
+          return;
+        }
+        result = await resolveCandidates(Array.from(new Set([...name.corrected, ...name.names])), info, true);
       } else {
         // Mehrere Zeilen: kurz auf automatische Seitenaufteilung umstellen
         const worker = await getNameWorker();
         await worker.setParameters({ tessedit_pageseg_mode: "3" as never });
         const lines = await ocrLines(regionToCanvas(full, 0, 0, w, h * 0.5), worker).finally(() =>
-          worker.setParameters({ tessedit_pageseg_mode: "7" as never }),
+          worker.setParameters({ tessedit_pageseg_mode: NAME_PSM as never }),
         );
         result = await resolveCandidates(nameCandidates(lines, 4), null, true);
       }
