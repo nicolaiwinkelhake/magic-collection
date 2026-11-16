@@ -14,6 +14,12 @@ export type DoctorDeckCard = {
   is_commander: boolean;
   image_url?: string | null;
   oracle_text?: string | null;
+  /** Zeile in deck_cards (zum Entfernen/Markieren) */
+  id?: string;
+  mana_cost?: string | null;
+  produced_mana?: string[] | null;
+  /** "Karte behalten": nie zum Rausnehmen vorschlagen (Migration 018) */
+  keep?: boolean | null;
 };
 
 export type RoleCheck = { key: CardRole | "lands"; label: string; have: number; target: number; min: number; ok: boolean };
@@ -150,6 +156,8 @@ export type SwapOut = {
   weakness: number;
   image: string | null;
   typeLine: string | null;
+  /** Zeile in deck_cards */
+  id: string | null;
   /** false = Rolle (noch) nicht ermittelt */
   rolesKnown: boolean;
   themes: string[];
@@ -222,8 +230,12 @@ export function planSwaps(input: {
   exclude?: Set<string>;
   /** Themen des Commanders (EDHREC) */
   themes?: string[];
+  /** Budget: nur Karten bis zu diesem Preis (eigene/Freundes-Karten zählen immer) */
+  maxEur?: number | null;
+  /** nur Karten, die frei in der eigenen Sammlung liegen */
+  ownOnly?: boolean;
   limit?: number;
-}): { swaps: Swap[]; adds: SwapIn[] } {
+}): { swaps: Swap[]; adds: SwapIn[]; lands: SwapIn[] } {
   const { deck, identity, edhrec, roles, info, availability, health } = input;
   const limit = input.limit ?? 8;
   const inDeck = new Set(deck.map((c) => c.name));
@@ -231,15 +243,19 @@ export function planSwaps(input: {
 
   // Kandidaten zum Reinnehmen
   const adds: SwapIn[] = [];
+  // typische Länder des Commanders (für "Länder fehlen")
+  const lands: SwapIn[] = [];
   for (const e of edhrec) {
     if (inDeck.has(e.name) || input.exclude?.has(e.name)) continue;
     const meta = info.get(e.name);
     if (!meta) continue;
-    if (/\bLand\b/.test(meta.typeLine.split(" // ")[0]) && !/Creature/.test(meta.typeLine)) continue; // Länder separat
+    const isLandCard = /\bLand\b/.test(meta.typeLine.split(" // ")[0]) && !/Creature/.test(meta.typeLine);
     if (!meta.identity.every((c) => identity.includes(c))) continue;
     const r = roles.get(e.name) ?? [];
     const av = availability.get(e.name) ?? { free: 0, owned: 0, friends: [] };
-    const fills = r.filter((x) => gaps.has(x));
+    if (input.ownOnly && av.free <= 0) continue;
+    if (input.maxEur != null && av.free <= 0 && !av.friends.length && (meta.eur == null || meta.eur > input.maxEur)) continue;
+    const fills = isLandCard ? [] : r.filter((x) => gaps.has(x));
     const value = Math.round((e.inclusion * 1.2 + Math.max(0, e.synergy) * 0.8 + fills.length * 0.25) * 1000) / 1000;
     // Verfügbarkeit entscheidet nur bei ähnlich guten Karten
     let score = value;
@@ -254,7 +270,7 @@ export function planSwaps(input: {
     const why: string[] = [`in ${pct(e.inclusion)} der Decks`];
     if (e.synergy >= 0.1) why.push(`Synergie +${Math.round(e.synergy * 100)} %`);
     if (fills.length) why.push(`${fills.map((f) => ROLE_LABEL[f]).join(", ")} fehlt`);
-    adds.push({
+    (isLandCard ? lands : adds).push({
       name: e.name,
       value,
       source,
@@ -273,11 +289,12 @@ export function planSwaps(input: {
     });
   }
   adds.sort((a, b) => b.score - a.score);
+  lands.sort((a, b) => b.score - a.score);
 
   // Kandidaten zum Rausnehmen (keine Länder, nicht der Commander)
   const edhByName = new Map(edhrec.map((e) => [e.name, e]));
   const outs: SwapOut[] = deck
-    .filter((c) => !c.is_commander && !isLand(c))
+    .filter((c) => !c.is_commander && !isLand(c) && !c.keep)
     .map((c) => {
       const known = roles.get(c.name);
       const e = edhByName.get(c.name);
@@ -291,6 +308,7 @@ export function planSwaps(input: {
         weakness: weakness(c, e, known),
         image: c.image_url ?? null,
         typeLine: c.type_line,
+        id: c.id ?? null,
         rolesKnown: known !== undefined,
         themes: themeFit(input.themes ?? [], c.type_line, c.oracle_text),
       };
@@ -314,7 +332,7 @@ export function planSwaps(input: {
     used.add(out.name);
     swaps.push({ out, in: add });
   }
-  return { swaps, adds: adds.slice(0, 40) };
+  return { swaps, adds: adds.slice(0, 40), lands: lands.slice(0, 24) };
 }
 
 /** Nutzt die Sammlung schon genug? – Kurzfazit für die Übersicht. */

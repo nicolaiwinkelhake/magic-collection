@@ -11,7 +11,7 @@ const health = {
   ],
 } as DeckHealth;
 const add: SwapIn = { name: "Crux of Fate", value: 1, source: "buy", eur: 1.03, image: null, inclusion: 0.71, synergy: 0.63, roles: ["wipe", "removal"], reason: "", score: 1, typeLine: "Sorcery", cmc: 5, list: "highsynergycards", themes: [] };
-const out: SwapOut = { name: "Doubling Season", inclusion: null, synergy: null, roles: [], cmc: 5, reason: "", weakness: 0.1, image: null, typeLine: "Enchantment", rolesKnown: true, themes: [] };
+const out: SwapOut = { name: "Doubling Season", inclusion: null, synergy: null, roles: [], cmc: 5, reason: "", weakness: 0.1, image: null, typeLine: "Enchantment", id: null, rolesKnown: true, themes: [] };
 
 describe("Tausch-Begründung", () => {
   it("erklärt, warum die neue Karte rein soll", () => {

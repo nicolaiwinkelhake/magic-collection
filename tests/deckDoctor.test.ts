@@ -101,3 +101,41 @@ describe("themeFit", () => {
     expect(themeFit(["Dragons"], "Enchantment", "")).toEqual([]);
   });
 });
+
+describe("planSwaps – behalten, Budget, Länder", () => {
+  const deck: DoctorDeckCard[] = [
+    { name: "Cmdr", type_line: "Legendary Creature", cmc: 4, is_commander: true },
+    { name: "Liebling", type_line: "Creature", cmc: 3, is_commander: false, keep: true, id: "k1" },
+    { name: "Altkarte", type_line: "Creature", cmc: 3, is_commander: false, id: "a1" },
+  ];
+  const roles = new Map<string, CardRole[]>([["Liebling", []], ["Altkarte", []], ["Billig", []], ["Teuer", []]]);
+  const info = new Map<string, CandidateInfo>([
+    ["Billig", { typeLine: "Creature", cmc: 2, eur: 1, image: null, identity: [] }],
+    ["Teuer", { typeLine: "Creature", cmc: 2, eur: 30, image: null, identity: [] }],
+    ["Turm", { typeLine: "Land", cmc: 0, eur: 0.5, image: null, identity: [] }],
+  ]);
+  const edhrec = [
+    { name: "Teuer", inclusion: 0.9, synergy: 0.5, lift: 3, list: "x" },
+    { name: "Billig", inclusion: 0.6, synergy: 0.3, lift: 2, list: "x" },
+    { name: "Turm", inclusion: 0.7, synergy: 0.1, lift: 1, list: "lands" },
+  ];
+  const base = { deck, identity: [], commanderNames: ["Cmdr"], edhrec, roles, info, availability: new Map<string, Availability>(), health: deckHealth(deck, roles) };
+
+  it("schlägt behaltene Karten nie zum Rausnehmen vor", () => {
+    const { swaps } = planSwaps(base);
+    expect(swaps.map((s) => s.out.name)).toEqual(["Altkarte"]);
+    expect(swaps[0].out.id).toBe("a1");
+  });
+  it("Budget blendet teure Kaufkarten aus", () => {
+    expect(planSwaps(base).adds.map((a) => a.name)).toEqual(["Teuer", "Billig"]);
+    expect(planSwaps({ ...base, maxEur: 5 }).adds.map((a) => a.name)).toEqual(["Billig"]);
+    expect(planSwaps({ ...base, ownOnly: true }).adds).toEqual([]);
+    const own = new Map<string, Availability>([["Teuer", { free: 1, owned: 1, friends: [] }]]);
+    expect(planSwaps({ ...base, availability: own, ownOnly: true }).adds.map((a) => a.name)).toEqual(["Teuer"]);
+  });
+  it("führt typische Länder getrennt", () => {
+    const r = planSwaps(base);
+    expect(r.lands.map((l) => l.name)).toEqual(["Turm"]);
+    expect(r.adds.some((a) => a.name === "Turm")).toBe(false);
+  });
+});

@@ -13,7 +13,7 @@ import { ROLE_LABEL, type CardRole } from "@/lib/cardRoles";
 import { edhrecSlug } from "@/lib/edhrec";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
 import { EDHREC_LIST, explainIn, explainOut } from "@/lib/swapExplain";
-import type { DeckSynergy, PairFit, StrategyFit } from "@/lib/deckSynergy";
+import { cardmarket, getJson, Hint, Loading, ScoreRing, SourceBadge, Thumb } from "@/components/discoverShared";
 
 // Entdecken – entlang der Fragen, die Spieler wirklich haben:
 // 1) Deck-Check: Wo hakt mein Deck, welcher Tausch lohnt sich?
@@ -32,15 +32,8 @@ type Tab = (typeof TABS)[number]["key"];
 const TAB_KEY = "discover-tab";
 
 const commanderHref = (name: string) => `/commanders/${encodeURIComponent(name)}`;
-const cardmarket = (name: string) => `https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(name)}`;
 const pct = (x: number) => `${Math.round(x * 100)} %`;
 
-async function getJson<T>(url: string): Promise<{ data: T | null; error: string | null }> {
-  const res = await fetch(url).catch(() => null);
-  const data = await res?.json().catch(() => null);
-  if (!res?.ok || !data) return { data: null, error: data?.error ?? "Konnte nicht geladen werden." };
-  return { data, error: null };
-}
 
 type TradeState = { partner: { id: string; name: string }; basket: Basket } | null;
 
@@ -86,7 +79,7 @@ export function DiscoverClient() {
           </button>
         ))}
       </nav>
-      {tab === "decks" && <DeckCheck onTrade={requestTrade} />}
+      {tab === "decks" && <DeckCheck />}
       {tab === "friends" && <Friends onTrade={requestTrade} />}
       {tab === "synergies" && <Synergies onTrade={requestTrade} />}
       {tab === "new" && <NewDeck />}
@@ -114,73 +107,6 @@ export function DiscoverClient() {
 }
 
 // ---------------------------------------------------------------------------
-// Bausteine
-// ---------------------------------------------------------------------------
-
-function Loading({ text }: { text: string }) {
-  return (
-    <div className="space-y-2" aria-live="polite">
-      <p className="text-sm text-zinc-400">{text}</p>
-      {Array.from({ length: 3 }, (_, i) => (
-        <div key={i} className="h-20 rounded-2xl bg-white/[0.04] animate-pulse" />
-      ))}
-    </div>
-  );
-}
-
-function Hint({ children }: { children: React.ReactNode }) {
-  return <p className="surface p-4 text-sm text-zinc-400">{children}</p>;
-}
-
-function ScoreRing({ score, tone }: { score: number; tone: "good" | "ok" | "bad" }) {
-  const color = tone === "good" ? "#34d399" : tone === "ok" ? "#fbbf24" : "#f87171";
-  return (
-    <span
-      className="grid place-items-center w-12 h-12 shrink-0 rounded-full text-sm font-bold tabular-nums"
-      style={{ background: `conic-gradient(${color} ${score * 3.6}deg, rgba(255,255,255,0.08) 0)` }}
-      aria-label={`${score} von 100 Punkten`}
-    >
-      <span className="grid place-items-center w-9 h-9 rounded-full bg-zinc-900">{score}</span>
-    </span>
-  );
-}
-
-function Thumb({ src, alt, w = 40 }: { src: string | null | undefined; alt: string; w?: number }) {
-  const h = Math.round(w * 1.4);
-  return (
-    <span className="relative shrink-0 rounded-[5px] overflow-hidden bg-zinc-800" style={{ width: w, height: h }}>
-      {src && <Image src={src} alt={alt} width={w} height={h} className="w-full h-full object-cover" />}
-    </span>
-  );
-}
-
-function SourceBadge({ add, onTrade }: { add: SwapIn; onTrade: (c: FriendCopy) => void }) {
-  // Preis + Cardmarket immer zeigen – auch wenn man (oder ein Freund) die Karte hat
-  const price = (
-    <a href={cardmarket(add.name)} target="_blank" rel="noopener noreferrer" className="rounded-full bg-white/[0.06] text-zinc-300 px-2 py-0.5 text-[11px] whitespace-nowrap">
-      {add.eur != null ? `≈ ${formatEur(add.eur)}` : "Cardmarket"} ↗
-    </a>
-  );
-  if (add.source === "collection")
-    return (
-      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-        <span className="rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">In deiner Sammlung</span>
-        {price}
-      </span>
-    );
-  if (add.source === "friend" && add.friend)
-    return (
-      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-        <button onClick={() => onTrade(add.friend!)} className="press rounded-full bg-indigo-500/20 text-indigo-200 px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ring-indigo-400/40 whitespace-nowrap">
-          {add.friend.ownerName} hat sie · Trade
-        </button>
-        {price}
-      </span>
-    );
-  return price;
-}
-
-// ---------------------------------------------------------------------------
 // 1) Deck-Check
 // ---------------------------------------------------------------------------
 
@@ -191,13 +117,16 @@ type DeckSummary = {
   image: string | null;
   identity: string[];
   health: DeckHealth;
+  /** Gesamtnote (Gerüst + Stimmigkeit) */
+  overall: number;
+  /** die wichtigsten Schritte in Kurzform */
+  steps: string[];
   label: { label: string; tone: "good" | "ok" | "bad" };
 };
 
-function DeckCheck({ onTrade }: { onTrade: (c: FriendCopy) => void }) {
+function DeckCheck() {
   const [decks, setDecks] = useState<DeckSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     getJson<{ decks: DeckSummary[] }>("/api/discover/decks").then((r) => {
@@ -217,13 +146,11 @@ function DeckCheck({ onTrade }: { onTrade: (c: FriendCopy) => void }) {
 
   return (
     <section className="space-y-3">
-      <p className="text-sm text-zinc-400">
-        Gemessen am üblichen Deckbau-Gerüst (≈37 Länder, 10 Ramp, 10 Kartenvorteil, 8 Removal, 3 Wipes, niedrige Kurve) und daran, was andere Spieler mit deinem Commander spielen (EDHREC).
-      </p>
-      <ul className="space-y-3">
+      <p className="text-sm text-zinc-400">Tippe ein Deck an: Du bekommst die wichtigsten Schritte und konkrete Vorschläge, die du direkt übernehmen kannst.</p>
+      <ul className="space-y-2.5">
         {decks.map((d) => (
-          <li key={d.id} className="surface overflow-hidden">
-            <button onClick={() => setOpen(open === d.id ? null : d.id)} aria-expanded={open === d.id} className="w-full flex items-center gap-3 p-3 text-left">
+          <li key={d.id}>
+            <Link href={`/discover/deck/${d.id}`} className="surface press flex items-center gap-3 p-3">
               <Thumb src={d.image} alt={d.commander} w={44} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
@@ -231,548 +158,17 @@ function DeckCheck({ onTrade }: { onTrade: (c: FriendCopy) => void }) {
                   <ColorIdentity colors={d.identity} size="xs" />
                 </span>
                 <span className="block text-xs text-zinc-500 truncate">{d.commander}</span>
-                <span className="block text-xs text-zinc-300 mt-0.5 truncate">
-                  {d.health.notes.length ? d.health.notes.slice(0, 2).join(" · ") : "Grundgerüst passt"}
-                </span>
+                <span className="block text-xs text-zinc-300 mt-0.5 truncate">{d.steps.length ? d.steps.join(" · ") : "Grundgerüst passt – Feinschliff ansehen"}</span>
               </span>
-              <ScoreRing score={d.health.score} tone={d.label.tone} />
-            </button>
-            {open === d.id && <DeckDetail id={d.id} onTrade={onTrade} />}
+              <ScoreRing score={d.overall} tone={d.label.tone} />
+              <span className="text-zinc-500 text-lg" aria-hidden>
+                ›
+              </span>
+            </Link>
           </li>
         ))}
       </ul>
     </section>
-  );
-}
-
-type DeckDetailData = {
-  deck: { id: string; name: string; commander: string };
-  health: DeckHealth;
-  edhrec: { numDecks: number; themes: Array<{ name: string }>; avgLands: number | null; slug: string } | null;
-  strategy: { slug: string; name: string; auto: boolean; autoSlug: string } | null;
-  strategies: StrategyFit[];
-  synergy: DeckSynergy | null;
-  swaps: Swap[];
-  more: SwapIn[];
-  sharing: number;
-};
-
-type Pairs = Record<string, PairFit | "loading">;
-
-function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => void }) {
-  const [data, setData] = useState<DeckDetailData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // geöffneter Vergleich: Index in [...swaps, ...more]
-  const [compare, setCompare] = useState<number | null>(null);
-  // gewählte Strategie (null = automatisch), je Deck auf dem Gerät gemerkt
-  const strategyKey = `deck-strategy:${id}`;
-  const [theme, setTheme] = useState<string | null | undefined>(undefined);
-  const [pairs, setPairs] = useState<Pairs>({});
-
-  useEffect(() => {
-    let t: string | null = null;
-    try {
-      t = window.localStorage.getItem(strategyKey);
-    } catch {
-      // ignorieren
-    }
-    setTheme(t);
-  }, [strategyKey]);
-
-  useEffect(() => {
-    if (theme === undefined) return;
-    setData(null);
-    const q = theme === null ? "" : `?theme=${encodeURIComponent(theme)}`;
-    getJson<DeckDetailData>(`/api/discover/decks/${id}${q}`).then((r) => {
-      setError(r.error);
-      setData(r.data);
-    });
-  }, [id, theme]);
-
-  function chooseStrategy(slug: string | null) {
-    setCompare(null);
-    setTheme(slug);
-    try {
-      if (slug === null) window.localStorage.removeItem(strategyKey);
-      else window.localStorage.setItem(strategyKey, slug);
-    } catch {
-      // ignorieren
-    }
-  }
-
-  // Zusammenspiel Karte↔Karte nachladen (nur für geöffnete Vergleiche)
-  const asked = useRef(new Set<string>());
-  const loadPairs = useCallback(
-    (names: string[]) => {
-      const todo = names.filter((n) => !asked.current.has(n));
-      if (!todo.length) return;
-      for (const n of todo) asked.current.add(n);
-      setPairs((cur) => ({ ...cur, ...Object.fromEntries(todo.map((n) => [n, "loading" as const])) }));
-      const qs = todo.map((n) => `card=${encodeURIComponent(n)}`).join("&");
-      getJson<{ cards: Record<string, PairFit> }>(`/api/discover/pairs?deck=${id}&${qs}`).then((r) => {
-        if (!r.data) for (const n of todo) asked.current.delete(n); // später erneut versuchen
-        setPairs((cur) => ({ ...cur, ...Object.fromEntries(todo.map((n) => [n, r.data?.cards[n] ?? { known: false, partners: [] }])) }));
-      });
-    },
-    [id],
-  );
-
-  if (error) return <p className="px-3 pb-3 text-sm text-red-400">{error}</p>;
-  if (!data) return <p className="px-3 pb-4 text-sm text-zinc-400 animate-pulse">Vergleiche mit tausenden Decks dieses Commanders …</p>;
-  const { health } = data;
-  const maxCurve = Math.max(1, ...health.curve);
-
-  return (
-    <div className="border-t border-white/[0.06] p-3 space-y-4">
-      {/* Gerüst */}
-      <div className="grid grid-cols-[1fr_auto] gap-4">
-        <ul className="space-y-1.5">
-          {health.checks.map((c) => {
-            const ratio = c.key === "lands" ? Math.min(1, c.have / c.target) : Math.min(1, c.have / c.target);
-            return (
-              <li key={c.key} className="text-xs">
-                <div className="flex justify-between">
-                  <span className="text-zinc-300">{c.label}</span>
-                  <span className={`tabular-nums ${c.ok ? "text-zinc-400" : "text-amber-300"}`}>
-                    {c.have} / {c.target}
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                  <div className={`h-full rounded-full ${c.ok ? "bg-emerald-400" : "bg-amber-400"}`} style={{ width: `${ratio * 100}%` }} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="w-28">
-          <p className="text-[11px] text-zinc-400 mb-1">Kurve · Ø {health.avgCmc.toFixed(1).replace(".", ",")}</p>
-          <div className="flex items-end gap-1 h-16" aria-label="Manakurve">
-            {health.curve.map((n, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
-                <div className="w-full rounded-t bg-indigo-400/70" style={{ height: `${(n / maxCurve) * 100}%`, minHeight: n ? 2 : 0 }} title={`${i === 7 ? "7+" : i} Mana: ${n}`} />
-                <span className="text-[9px] text-zinc-500">{i === 7 ? "7+" : i}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      {health.unknownRoles > 5 && <p className="text-[11px] text-zinc-500">Rollen für {health.unknownRoles} Karten werden noch ermittelt – Werte können steigen.</p>}
-
-      {data.edhrec ? (
-        <>
-          {data.strategies.length > 1 && data.strategy && (
-            <div className="space-y-1.5">
-              <p className="text-xs text-zinc-400">
-                Strategie{" "}
-                <span className="text-zinc-500">
-                  {data.strategy.auto ? "· automatisch erkannt" : "· von dir gewählt"} – Vorschläge richten sich nach Decks mit diesem Schwerpunkt
-                </span>
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {data.strategies.map((f) => {
-                  const active = f.slug === data.strategy!.slug;
-                  return (
-                    <button
-                      key={f.slug || "general"}
-                      onClick={() => chooseStrategy(f.slug === data.strategy!.autoSlug ? null : f.slug)}
-                      className={`chip ${active ? "chip-active" : ""}`}
-                      aria-pressed={active}
-                      title={`${f.numDecks.toLocaleString("de-DE")} Decks · dein Deck passt zu ${Math.round(f.fit * 100)} %`}
-                    >
-                      {f.name}
-                      <span className="opacity-60 tabular-nums">{Math.round(f.fit * 100)} %</span>
-                      {f.slug === data.strategy!.autoSlug && <span aria-label="automatisch">✦</span>}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-zinc-500">% = wie typisch dein Deck für Decks mit diesem Schwerpunkt ist (Ø Anteil der Decks, die deine Karten auch spielen). ✦ = beste Übereinstimmung.</p>
-            </div>
-          )}
-          {data.synergy && <SynergyPanel syn={data.synergy} commander={data.deck.commander} strategy={data.strategy?.slug ? data.strategy.name : null} />}
-          <p className="text-xs text-zinc-400">
-            Grundlage: {data.edhrec.numDecks.toLocaleString("de-DE")} Decks mit {data.deck.commander} auf EDHREC
-            {data.strategy?.slug ? ` (Schwerpunkt ${data.strategy.name})` : ""} · typische Themen: {data.edhrec.themes.map((t) => t.name).join(", ")}
-            {data.edhrec.avgLands != null && ` · Ø ${data.edhrec.avgLands} Länder`}
-          </p>
-        </>
-      ) : (
-        <p className="text-xs text-zinc-500">Für diesen Commander gibt es (noch) keine EDHREC-Statistik – Tauschvorschläge fehlen daher.</p>
-      )}
-
-      {/* Tausche */}
-      {data.swaps.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">Lohnende Tausche</h3>
-          <ul className="space-y-2">
-            {data.swaps.map((s) => (
-              <li key={s.in.name} className="rounded-xl bg-white/[0.04] p-2.5">
-                <button
-                  onClick={() => setCompare(data.swaps.indexOf(s))}
-                  className="w-full flex items-center gap-3 text-left"
-                  aria-label={`Tausch ansehen: ${s.out.name} gegen ${s.in.name}`}
-                >
-                  <span className="relative shrink-0 flex">
-                    <Thumb src={s.out.image} alt={s.out.name} w={30} />
-                    <span className="flex -ml-3 mt-2 ring-2 ring-zinc-900 rounded-[5px]">
-                      <Thumb src={s.in.image} alt={s.in.name} />
-                    </span>
-                  </span>
-                  <span className="min-w-0 flex-1 space-y-0.5">
-                    <span className="block text-xs text-red-300/90 truncate">
-                      − {s.out.name} <span className="text-zinc-500">({s.out.reason})</span>
-                    </span>
-                    <span className="block text-sm font-medium truncate">+ {s.in.name}</span>
-                    <span className="block text-[11px] text-zinc-400 truncate">{s.in.reason}</span>
-                  </span>
-                  <span className="text-zinc-500 text-lg" aria-hidden>›</span>
-                </button>
-                <div className="mt-1.5 flex justify-end">
-                  <SourceBadge add={s.in} onTrade={onTrade} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {data.edhrec && data.swaps.length === 0 && <p className="text-sm text-emerald-300">Kein Tausch drängt sich auf – das Deck nutzt die typischen Karten schon gut.</p>}
-
-      {data.more.length > 0 && (
-        <details className="group">
-          <summary className="cursor-pointer text-sm text-zinc-300">Weitere passende Karten ({data.more.length})</summary>
-          <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
-            {data.more.map((a) => (
-              <li key={a.name} className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-2 py-1.5 min-w-0">
-                <button onClick={() => setCompare(data.swaps.length + data.more.indexOf(a))} className="min-w-0 flex-1 flex items-center gap-2 text-left">
-                  <Thumb src={a.image} alt={a.name} w={28} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm truncate">{a.name}</span>
-                    <span className="block text-[11px] text-zinc-500 truncate">{a.reason}</span>
-                  </span>
-                </button>
-                <SourceBadge add={a} onTrade={onTrade} />
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {data.sharing === 0 && <p className="text-[11px] text-zinc-500">Tipp: Teilen Freunde ihre Sammlung mit dir, siehst du auch, wer die Karten hat.</p>}
-      <Link href={`/decks/${data.deck.id}`} className="btn-secondary w-full h-10">
-        Deck öffnen
-      </Link>
-      {compare != null && (
-        <SwapCompare
-          items={[...data.swaps, ...data.more.map((a) => ({ in: a }))]}
-          index={compare}
-          onIndexChange={setCompare}
-          onClose={() => setCompare(null)}
-          commander={data.deck.commander}
-          numDecks={data.edhrec?.numDecks ?? null}
-          themes={(data.edhrec?.themes ?? []).map((t) => t.name)}
-          pairs={pairs}
-          loadPairs={loadPairs}
-          health={data.health}
-          edhrecSlug={data.edhrec?.slug ?? null}
-          onTrade={onTrade}
-        />
-      )}
-    </div>
-  );
-}
-
-const pctLabel = (x: number | null | undefined) => (x == null ? "–" : `${Math.round(x * 100)} %`);
-
-/**
- * Vergleich zum Nachprüfen: raus- und reinkommende Karte groß nebeneinander,
- * darunter die Zahlen, auf denen der Vorschlag beruht (EDHREC-Anteil,
- * Synergie, Rollen, Mana, Preis) plus Links zu EDHREC und Scryfall.
- */
-function SwapCompare({
-  items,
-  index,
-  onIndexChange,
-  onClose,
-  commander,
-  numDecks,
-  themes,
-  pairs,
-  loadPairs,
-  health,
-  edhrecSlug: slug,
-  onTrade,
-}: {
-  pairs: Pairs;
-  loadPairs: (names: string[]) => void;
-  items: Array<{ out?: SwapOut; in: SwapIn }>;
-  numDecks: number | null;
-  themes: string[];
-  health: DeckHealth;
-  index: number;
-  onIndexChange: (i: number) => void;
-  onClose: () => void;
-  commander: string;
-  edhrecSlug: string | null;
-  onTrade: (c: FriendCopy) => void;
-}) {
-  const [zoom, setZoom] = useState<string | null>(null);
-  const item = items[index];
-  const outName = item?.out?.name;
-  const inName = item?.in.name;
-  useEffect(() => {
-    if (inName) loadPairs(outName ? [inName, outName] : [inName]);
-  }, [inName, outName, loadPairs]);
-  if (!item) return null;
-  const { out, in: add } = item;
-  const pIn = pairs[add.name];
-  const pOut = out ? pairs[out.name] : undefined;
-  const ready = (p: PairFit | "loading" | undefined): PairFit | null => (p && p !== "loading" ? p : null);
-  const pairLabel = (p: PairFit | "loading" | undefined) => (p === undefined || p === "loading" ? "…" : !p.known ? "–" : `${p.partners.length} ${p.partners.length === 1 ? "Karte" : "Karten"}`);
-  const roles = (r: CardRole[]) => (r.length ? r.map((x) => ROLE_LABEL[x]).join(", ") : "–");
-  type Row = { label: string; out?: string; in: string; better?: "in" | "out" | null };
-  const cmp = (a: number | null | undefined, b: number | null | undefined, higherIsBetter = true): "in" | "out" | null => {
-    if (a == null || b == null || a === b) return null;
-    return (b > a) === higherIsBetter ? "in" : "out";
-  };
-  const rows: Row[] = [
-    { label: "Spielen es", out: out ? (out.inclusion == null ? "kaum" : pctLabel(out.inclusion)) : undefined, in: pctLabel(add.inclusion), better: out ? cmp(out.inclusion ?? 0, add.inclusion) : null },
-    {
-      label: "Synergie",
-      out: out ? (out.synergy == null ? "–" : `${out.synergy >= 0 ? "+" : ""}${Math.round(out.synergy * 100)} %`) : undefined,
-      in: `${add.synergy >= 0 ? "+" : ""}${Math.round(add.synergy * 100)} %`,
-      better: out ? cmp(out.synergy ?? 0, add.synergy) : null,
-    },
-    { label: "Grundrolle", out: out ? (out.rolesKnown ? roles(out.roles) : "noch offen") : undefined, in: roles(add.roles) },
-    { label: "Thema", out: out ? (out.themes.join(", ") || "–") : undefined, in: add.themes.join(", ") || (EDHREC_LIST[add.list] ? `EDHREC: ${EDHREC_LIST[add.list]}` : "–") },
-    { label: "Mana", out: out ? String(out.cmc) : undefined, in: String(add.cmc), better: out ? cmp(out.cmc, add.cmc, false) : null },
-    {
-      label: "Zusammenspiel",
-      out: out ? pairLabel(pOut) : undefined,
-      in: pairLabel(pIn),
-      better: out && ready(pIn) && ready(pOut) ? cmp(ready(pOut)!.partners.length, ready(pIn)!.partners.length) : null,
-    },
-    { label: "Preis", out: out ? "im Deck" : undefined, in: add.eur != null ? `≈ ${formatEur(add.eur)}` : "–" },
-  ];
-  const tone = (side: "in" | "out", r: Row) => (r.better === side ? "text-emerald-300 font-semibold" : "text-zinc-200");
-  const scry = (n: string) => `https://scryfall.com/search?q=${encodeURIComponent(`!"${n}"`)}`;
-
-  return (
-    <>
-    <SwipeSheet
-      index={index}
-      count={items.length}
-      onIndexChange={onIndexChange}
-      onClose={onClose}
-      title={out ? "Tausch prüfen" : add.name}
-      subtitle={out ? `${out.name} → ${add.name}` : "passt zu deinem Deck"}
-      label="Tauschvorschlag"
-      keyboardDisabled={zoom != null}
-    >
-      <div className="px-4 pt-3 pb-6 space-y-4">
-        <div className={`grid gap-3 ${out ? "grid-cols-2" : "grid-cols-1 max-w-[16rem] mx-auto"}`}>
-          {out && <CompareCard tag="Raus" tone="out" name={out.name} image={out.image} typeLine={out.typeLine} onZoom={setZoom} />}
-          <CompareCard tag={out ? "Rein" : "Vorschlag"} tone="in" name={add.name} image={add.image} typeLine={add.typeLine} onZoom={setZoom} />
-        </div>
-
-        <div className="rounded-xl bg-white/[0.04] overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] text-zinc-500">
-                <th className="text-left font-normal px-3 pt-2">mit {commander}</th>
-                {out && <th className="text-right font-normal px-3 pt-2">Raus</th>}
-                <th className="text-right font-normal px-3 pt-2">Rein</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.label} className="border-t border-white/[0.05]">
-                  <td className="px-3 py-1.5 text-zinc-400">{r.label}</td>
-                  {out && <td className={`px-3 py-1.5 text-right tabular-nums ${r.label === "Grundrolle" || r.label === "Thema" ? "" : "whitespace-nowrap"} ${tone("out", r)}`}>{r.out}</td>}
-                  <td className={`px-3 py-1.5 text-right tabular-nums ${r.label === "Grundrolle" || r.label === "Thema" ? "" : "whitespace-nowrap"} ${tone("in", r)}`}>{r.in}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <section className="rounded-xl bg-emerald-500/[0.07] border border-emerald-400/20 p-3 space-y-1.5">
-          <h4 className="text-sm font-semibold text-emerald-300">Warum {add.name} rein</h4>
-          <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-emerald-400/70">
-            {explainIn(add, out, health, { commander, numDecks, themes, pairsIn: ready(pIn), pairsOut: ready(pOut) }).map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </section>
-        {out && (
-          <section className="rounded-xl bg-red-500/[0.06] border border-red-400/20 p-3 space-y-1.5">
-            <h4 className="text-sm font-semibold text-red-300">Warum {out.name} raus</h4>
-            <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-red-400/70">
-              {explainOut(out, { commander, themes, pairsOut: ready(pOut) }).map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <section className="rounded-xl bg-white/[0.04] p-3 space-y-2">
-          <h4 className="text-sm font-semibold">Zusammenspiel mit deinem Deck</h4>
-          <PairList label={add.name} tone="in" p={pIn} />
-          {out && <PairList label={out.name} tone="out" p={pOut} />}
-          <p className="text-[11px] text-zinc-500">
-            Laut EDHREC werden diese Karten deines Decks auffällig oft zusammen mit ihr gespielt (×-Wert = wie viel häufiger als zufällig).
-          </p>
-        </section>
-        <p className="text-[11px] text-zinc-500">
-          „Spielen es“ = Anteil der EDHREC-Decks mit {commander}, die die Karte enthalten. Synergie = wie viel häufiger sie dort ist als in anderen Decks derselben Farben.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <SourceBadge add={add} onTrade={onTrade} />
-        </div>
-
-        <div className="flex flex-wrap gap-2 text-xs">
-          {slug && (
-            <a href={`https://edhrec.com/commanders/${slug}`} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
-              EDHREC: {commander} ↗
-            </a>
-          )}
-          <a href={`https://edhrec.com/cards/${edhrecSlug(add.name)}`} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
-            EDHREC: {add.name} ↗
-          </a>
-          {out && (
-            <a href={scry(out.name)} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
-              Scryfall: {out.name} ↗
-            </a>
-          )}
-          <a href={scry(add.name)} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
-            Scryfall: {add.name} ↗
-          </a>
-        </div>
-      </div>
-    </SwipeSheet>
-      {zoom && (
-        <button onClick={() => setZoom(null)} className="fixed inset-0 z-[80] bg-black/85 flex items-center justify-center p-6" aria-label="Großansicht schließen">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={zoom.replace("/normal/", "/large/")} alt="" className="max-h-full max-w-full rounded-[4.75%/3.5%]" />
-        </button>
-      )}
-    </>
-  );
-}
-
-function PairList({ label, tone, p }: { label: string; tone: "in" | "out"; p: PairFit | "loading" | undefined }) {
-  const head = <p className={`text-xs font-medium ${tone === "in" ? "text-emerald-300" : "text-red-300"}`}>{label}</p>;
-  if (p === undefined || p === "loading")
-    return (
-      <div>
-        {head}
-        <p className="text-xs text-zinc-500 animate-pulse">Frage EDHREC …</p>
-      </div>
-    );
-  if (!p.known)
-    return (
-      <div>
-        {head}
-        <p className="text-xs text-zinc-500">Keine Daten bei EDHREC – wird zu selten gespielt.</p>
-      </div>
-    );
-  return (
-    <div className="space-y-1">
-      {head}
-      {p.partners.length ? (
-        <div className="flex flex-wrap gap-1">
-          {p.partners.slice(0, 12).map((x) => (
-            <span key={x.name} className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px]">
-              {x.name} <span className="text-zinc-400 tabular-nums">×{x.lift.toFixed(1).replace(".", ",")}</span>
-            </span>
-          ))}
-          {p.partners.length > 12 && <span className="text-[11px] text-zinc-500">+{p.partners.length - 12} weitere</span>}
-        </div>
-      ) : (
-        <p className="text-xs text-zinc-400">Mit keiner deiner Karten auffällig oft zusammen.</p>
-      )}
-    </div>
-  );
-}
-
-function SynergyPanel({ syn, commander, strategy }: { syn: DeckSynergy; commander: string; strategy: string | null }) {
-  const tone = syn.score >= 70 ? "good" : syn.score >= 50 ? "ok" : "bad";
-  const maxTheme = Math.max(1, ...syn.themes.map((t) => t.count));
-  return (
-    <section className="rounded-xl bg-white/[0.04] p-3 space-y-2.5">
-      <div className="flex items-center gap-3">
-        <ScoreRing score={syn.score} tone={tone} />
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Stimmigkeit</h3>
-          <p className="text-xs text-zinc-400">
-            {syn.listed} von {syn.total} Karten sind typisch für {commander}
-            {strategy ? ` (${strategy})` : ""} · Ø Synergie {syn.avgSynergy >= 0 ? "+" : ""}
-            {Math.round(syn.avgSynergy * 100)} % · {syn.highSynergy} Karten gezielt für diesen Commander
-          </p>
-        </div>
-      </div>
-      {syn.themes.some((t) => t.count > 0) && (
-        <div className="space-y-1">
-          <p className="text-[11px] text-zinc-400">Karten je Thema</p>
-          {syn.themes.map((t) => (
-            <div key={t.name} className="grid grid-cols-[6.5rem_1fr_2rem] items-center gap-2 text-xs">
-              <span className="truncate text-zinc-300">{t.name}</span>
-              <span className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                <span className="block h-full rounded-full bg-indigo-400/80" style={{ width: `${(t.count / maxTheme) * 100}%` }} />
-              </span>
-              <span className="text-right tabular-nums text-zinc-400">{t.count}</span>
-            </div>
-          ))}
-          <p className="text-[10px] text-zinc-500">gezählt über Kreaturentyp und Kartentext – abstrakte Themen (z. B. Aggro) erkennt das nicht</p>
-        </div>
-      )}
-      {syn.outliers.length > 0 && (
-        <details>
-          <summary className="cursor-pointer text-xs text-zinc-300">Passen am wenigsten ({syn.outliers.length})</summary>
-          <ul className="mt-1.5 flex flex-wrap gap-1">
-            {syn.outliers.map((o) => (
-              <li key={o.name} className="rounded-full bg-red-500/10 text-red-200 px-2 py-0.5 text-[11px]">
-                {o.name} <span className="text-zinc-400">{o.synergy == null ? "nicht gelistet" : `${Math.round(o.synergy * 100)} %`}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </section>
-  );
-}
-
-function CompareCard({
-  tag,
-  tone,
-  name,
-  image,
-  typeLine,
-  onZoom,
-}: {
-  tag: string;
-  tone: "in" | "out";
-  name: string;
-  image: string | null;
-  typeLine: string | null;
-  onZoom: (src: string) => void;
-}) {
-  return (
-    <figure className="min-w-0 space-y-1.5">
-      <figcaption className={`text-xs font-semibold ${tone === "in" ? "text-emerald-300" : "text-red-300"}`}>
-        {tone === "in" ? "+" : "−"} {tag}
-      </figcaption>
-      <button
-        onClick={() => image && onZoom(image)}
-        className={`block w-full aspect-[488/680] rounded-[4.75%/3.5%] overflow-hidden bg-zinc-800 ring-2 ${tone === "in" ? "ring-emerald-400/50" : "ring-red-400/40 opacity-90"}`}
-        aria-label={`${name} groß anzeigen`}
-      >
-        {image ? (
-          <Image src={image} alt={name} width={488} height={680} className="w-full h-full object-cover" sizes="(max-width: 640px) 45vw, 240px" />
-        ) : (
-          <span className="flex h-full items-center justify-center p-2 text-center text-xs text-zinc-400">{name}</span>
-        )}
-      </button>
-      <p className="text-[11px] text-zinc-500 truncate">{typeLine}</p>
-    </figure>
   );
 }
 
