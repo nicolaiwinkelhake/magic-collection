@@ -12,13 +12,17 @@ import { FolderBar } from "@/components/FolderBar";
 import { ALL, UNSORTED, collectionMeasure, folderStats, inFolder, type FolderFilter } from "@/lib/folders";
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
 import { DEFAULT_FILTERS, filterAndSortCards, setCodes } from "@/lib/cardFilters";
+import type { DeckUse } from "@/lib/deckUsage";
 
 export function CollectionClient({
   initialCards,
   loadError,
   initialFolders = [],
+  deckUses = {},
 }: {
   initialCards: Card[];
+  /** in welchen Decks steckt welche Karte (nach Name) */
+  deckUses?: Record<string, DeckUse[]>;
   loadError?: string;
   /** eigene Ordner (Migration 014) */
   initialFolders?: Folder[];
@@ -264,7 +268,7 @@ export function CollectionClient({
         <Filters state={filters} onChange={setFilters} sets={availableSets} />
       </div>
 
-      <CardGrid cards={filteredCards} groupBy={filters.group} folders={folders} onFoldersChanged={() => router.refresh()} />
+      <CardGrid cards={filteredCards} groupBy={filters.group} folders={folders} deckUses={deckUses} onFoldersChanged={() => router.refresh()} />
     </main>
   );
 }
