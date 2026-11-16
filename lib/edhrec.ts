@@ -118,33 +118,76 @@ async function fetchJson(path: string): Promise<RawPage | "notfound" | null> {
 }
 
 /**
- * Commander-Seite (gecacht). null = EDHREC kennt den Commander nicht oder
- * ist nicht erreichbar (dann wird ein alter Cache-Eintrag genutzt).
+ * EDHREC-Seite gecacht holen (7 Tage). null = unbekannt oder nicht
+ * erreichbar (dann wird ein alter Cache-Eintrag genutzt).
  */
-export async function getCommander(
+async function cachedPage<T>(
   supabase: SupabaseClient,
-  commanderNames: string[],
+  key: string,
+  path: string,
+  compact: (raw: RawPage) => T,
   opts: { cacheOnly?: boolean } = {},
-): Promise<EdhrecCommander | null> {
-  const slug = commanderSlug(commanderNames);
-  if (!slug) return null;
-  const key = `edhrec:commander:${slug}`;
+): Promise<T | null> {
   const { data: row } = await supabase.from("scryfall_cache").select("data, fetched_at").eq("key", key).maybeSingle();
   const fresh = row && Date.now() - new Date(row.fetched_at as string).getTime() < TTL_DAYS * 86400_000;
-  const cached = row ? (row.data as EdhrecCommander | { missing: true }) : null;
-  const fromCache = cached && "missing" in cached ? null : (cached as EdhrecCommander | null);
+  const cached = row ? (row.data as T | { missing: true }) : null;
+  const fromCache = cached && typeof cached === "object" && "missing" in (cached as object) ? null : (cached as T | null);
   if (row && (fresh || opts.cacheOnly)) return fromCache;
   if (opts.cacheOnly) return null;
-  const raw = await fetchJson(`commanders/${slug}`);
+  const raw = await fetchJson(path);
   if (raw === null) return fromCache;
   if (raw === "notfound") {
     // Unbekannt merken, damit wir nicht bei jedem Aufruf erneut fragen
     await supabase.rpc("save_scryfall_cache", { p_key: key, p_data: { missing: true } });
     return null;
   }
-  const page = compactCommanderPage(raw, slug);
+  const page = compact(raw);
   await supabase.rpc("save_scryfall_cache", { p_key: key, p_data: page });
   return page;
+}
+
+/**
+ * Commander-Seite (gecacht), optional für ein Thema/eine Strategie
+ * ("dragons" → nur Decks mit diesem Schwerpunkt).
+ */
+export async function getCommander(
+  supabase: SupabaseClient,
+  commanderNames: string[],
+  opts: { cacheOnly?: boolean; theme?: string } = {},
+): Promise<EdhrecCommander | null> {
+  const slug = commanderSlug(commanderNames);
+  if (!slug) return null;
+  const theme = opts.theme ? edhrecSlug(opts.theme) : "";
+  const path = theme ? `${slug}/${theme}` : slug;
+  return cachedPage(supabase, `edhrec:commander:${path}`, `commanders/${path}`, (raw) => compactCommanderPage(raw, slug), opts);
+}
+
+/** Mit welchen Karten wird eine Karte besonders oft zusammen gespielt? */
+export type EdhrecPairs = {
+  name: string;
+  /** Lift: wie viel häufiger zusammen als zufällig (1 = neutral) */
+  partners: Array<{ name: string; lift: number }>;
+};
+
+/** Rohe Kartenseite → Partnerliste (rein, getestet). */
+export function compactCardPage(raw: RawPage, name: string): EdhrecPairs {
+  const best = new Map<string, number>();
+  for (const list of raw.container?.json_dict?.cardlists ?? []) {
+    const tag = list.tag ?? "";
+    if (tag === "newcards" || tag.endsWith("commanders")) continue;
+    for (const v of list.cardviews ?? []) {
+      if (!v?.name || v.name === name) continue;
+      const lift = Math.round((v.lift ?? 1) * 100) / 100;
+      best.set(v.name, Math.max(best.get(v.name) ?? 0, lift));
+    }
+  }
+  return { name, partners: Array.from(best, ([n, lift]) => ({ name: n, lift })).sort((a, b) => b.lift - a.lift) };
+}
+
+export async function getCardPairs(supabase: SupabaseClient, name: string): Promise<EdhrecPairs | null> {
+  const slug = edhrecSlug(name);
+  if (!slug) return null;
+  return cachedPage(supabase, `edhrec:card:${slug}`, `cards/${slug}`, (raw) => compactCardPage(raw, name));
 }
 
 /** Ist die Seite schon im (frischen) Cache? – für schrittweises Nachladen. */

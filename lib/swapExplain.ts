@@ -3,6 +3,7 @@
 // dahinter, damit man die Einschätzung selbst prüfen kann.
 import { ROLE_LABEL, type CardRole } from "@/lib/cardRoles";
 import type { DeckHealth, SwapIn, SwapOut } from "@/lib/deckDoctor";
+import type { PairFit } from "@/lib/deckSynergy";
 
 /** EDHREC-Kategorien auf der Commander-Seite */
 export const EDHREC_LIST: Record<string, string> = {
@@ -27,7 +28,9 @@ export const BASE_ROLES = "Ramp, Kartenvorteil, Removal, Board Wipe, Tutor, Coun
 const pct = (x: number) => `${Math.round(x * 100)} %`;
 const list = (r: CardRole[]) => r.map((x) => ROLE_LABEL[x]).join(", ");
 
-type Ctx = { commander: string; numDecks?: number | null; themes?: string[] };
+type Ctx = { commander: string; numDecks?: number | null; themes?: string[]; pairsIn?: PairFit | null; pairsOut?: PairFit | null };
+
+const names = (p: PairFit, n = 3) => p.partners.slice(0, n).map((x) => x.name).join(", ") + (p.partners.length > n ? " …" : "");
 
 export function explainIn(add: SwapIn, out: SwapOut | undefined, health: DeckHealth, ctx: Ctx): string[] {
   const why: string[] = [];
@@ -41,6 +44,13 @@ export function explainIn(add: SwapIn, out: SwapOut | undefined, health: DeckHea
     why.push(`Synergie +${pct(add.synergy)}: läuft mit ${ctx.commander} deutlich häufiger als in anderen Decks dieser Farben – sie passt gezielt zur Strategie, nicht nur allgemein.`);
   } else if (add.inclusion >= 0.3) {
     why.push("Eher ein allgemein starker Standard (Staple) als eine Spezialkarte für diesen Commander.");
+  }
+
+  if (ctx.pairsIn?.known) {
+    const n = ctx.pairsIn.partners.length;
+    const o = ctx.pairsOut?.known ? ctx.pairsOut.partners.length : null;
+    if (n) why.push(`Spielt man auffällig oft zusammen mit ${n} deiner Karten (${names(ctx.pairsIn)})${o != null ? ` – ${out?.name} nur mit ${o}` : ""}.`);
+    else why.push("Mit keiner deiner Karten auffällig oft zusammen – passt eher zum Commander als zu deinen übrigen Karten.");
   }
 
   const cat = EDHREC_LIST[add.list];
@@ -77,6 +87,11 @@ export function explainOut(out: SwapOut, ctx: Ctx): string[] {
       : `Nur ${pct(out.inclusion)} der ${ctx.commander}-Decks spielen sie.`,
   );
   if (out.synergy != null && out.synergy < 0) why.push(`Negative Synergie (${pct(out.synergy)}): in anderen Decks dieser Farben sogar häufiger als bei ${ctx.commander}.`);
+  if (ctx.pairsOut) {
+    if (!ctx.pairsOut.known) why.push("Bei EDHREC gibt es keine Daten zum Zusammenspiel – sie wird insgesamt kaum gespielt.");
+    else if (ctx.pairsOut.partners.length >= 5) why.push(`Aber: spielt man oft zusammen mit ${ctx.pairsOut.partners.length} deiner Karten (${names(ctx.pairsOut)}) – womöglich Teil eines Plans; prüfen.`);
+    else why.push(ctx.pairsOut.partners.length ? `Spielt man nur mit ${ctx.pairsOut.partners.length} deiner Karten auffällig oft zusammen (${names(ctx.pairsOut)}).` : "Wird mit keiner deiner Karten auffällig oft zusammen gespielt.");
+  }
   if (out.themes.length) why.push(`Passt aber zum Thema ${out.themes.join(", ")} – prüfe, ob sie für deine Strategie wichtig ist.`);
   else if (ctx.themes?.length) why.push(`Kein Bezug zu den typischen Themen von ${ctx.commander} (${ctx.themes.slice(0, 4).join(", ")}).`);
   if (!out.rolesKnown) why.push("Ihre Rolle ist noch nicht ermittelt (wird nachgeladen) – hier selbst prüfen.");

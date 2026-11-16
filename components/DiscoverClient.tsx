@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
@@ -13,6 +13,7 @@ import { ROLE_LABEL, type CardRole } from "@/lib/cardRoles";
 import { edhrecSlug } from "@/lib/edhrec";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
 import { EDHREC_LIST, explainIn, explainOut } from "@/lib/swapExplain";
+import type { DeckSynergy, PairFit, StrategyFit } from "@/lib/deckSynergy";
 
 // Entdecken – entlang der Fragen, die Spieler wirklich haben:
 // 1) Deck-Check: Wo hakt mein Deck, welcher Tausch lohnt sich?
@@ -248,23 +249,73 @@ type DeckDetailData = {
   deck: { id: string; name: string; commander: string };
   health: DeckHealth;
   edhrec: { numDecks: number; themes: Array<{ name: string }>; avgLands: number | null; slug: string } | null;
+  strategy: { slug: string; name: string; auto: boolean; autoSlug: string } | null;
+  strategies: StrategyFit[];
+  synergy: DeckSynergy | null;
   swaps: Swap[];
   more: SwapIn[];
   sharing: number;
 };
+
+type Pairs = Record<string, PairFit | "loading">;
 
 function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => void }) {
   const [data, setData] = useState<DeckDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   // geöffneter Vergleich: Index in [...swaps, ...more]
   const [compare, setCompare] = useState<number | null>(null);
+  // gewählte Strategie (null = automatisch), je Deck auf dem Gerät gemerkt
+  const strategyKey = `deck-strategy:${id}`;
+  const [theme, setTheme] = useState<string | null | undefined>(undefined);
+  const [pairs, setPairs] = useState<Pairs>({});
 
   useEffect(() => {
-    getJson<DeckDetailData>(`/api/discover/decks/${id}`).then((r) => {
+    let t: string | null = null;
+    try {
+      t = window.localStorage.getItem(strategyKey);
+    } catch {
+      // ignorieren
+    }
+    setTheme(t);
+  }, [strategyKey]);
+
+  useEffect(() => {
+    if (theme === undefined) return;
+    setData(null);
+    const q = theme === null ? "" : `?theme=${encodeURIComponent(theme)}`;
+    getJson<DeckDetailData>(`/api/discover/decks/${id}${q}`).then((r) => {
       setError(r.error);
       setData(r.data);
     });
-  }, [id]);
+  }, [id, theme]);
+
+  function chooseStrategy(slug: string | null) {
+    setCompare(null);
+    setTheme(slug);
+    try {
+      if (slug === null) window.localStorage.removeItem(strategyKey);
+      else window.localStorage.setItem(strategyKey, slug);
+    } catch {
+      // ignorieren
+    }
+  }
+
+  // Zusammenspiel Karte↔Karte nachladen (nur für geöffnete Vergleiche)
+  const asked = useRef(new Set<string>());
+  const loadPairs = useCallback(
+    (names: string[]) => {
+      const todo = names.filter((n) => !asked.current.has(n));
+      if (!todo.length) return;
+      for (const n of todo) asked.current.add(n);
+      setPairs((cur) => ({ ...cur, ...Object.fromEntries(todo.map((n) => [n, "loading" as const])) }));
+      const qs = todo.map((n) => `card=${encodeURIComponent(n)}`).join("&");
+      getJson<{ cards: Record<string, PairFit> }>(`/api/discover/pairs?deck=${id}&${qs}`).then((r) => {
+        if (!r.data) for (const n of todo) asked.current.delete(n); // später erneut versuchen
+        setPairs((cur) => ({ ...cur, ...Object.fromEntries(todo.map((n) => [n, r.data?.cards[n] ?? { known: false, partners: [] }])) }));
+      });
+    },
+    [id],
+  );
 
   if (error) return <p className="px-3 pb-3 text-sm text-red-400">{error}</p>;
   if (!data) return <p className="px-3 pb-4 text-sm text-zinc-400 animate-pulse">Vergleiche mit tausenden Decks dieses Commanders …</p>;
@@ -308,10 +359,43 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
       {health.unknownRoles > 5 && <p className="text-[11px] text-zinc-500">Rollen für {health.unknownRoles} Karten werden noch ermittelt – Werte können steigen.</p>}
 
       {data.edhrec ? (
-        <p className="text-xs text-zinc-400">
-          Typisch für {data.deck.commander} ({data.edhrec.numDecks.toLocaleString("de-DE")} Decks auf EDHREC): {data.edhrec.themes.map((t) => t.name).join(", ")}
-          {data.edhrec.avgLands != null && ` · Ø ${data.edhrec.avgLands} Länder`}
-        </p>
+        <>
+          {data.strategies.length > 1 && data.strategy && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-zinc-400">
+                Strategie{" "}
+                <span className="text-zinc-500">
+                  {data.strategy.auto ? "· automatisch erkannt" : "· von dir gewählt"} – Vorschläge richten sich nach Decks mit diesem Schwerpunkt
+                </span>
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {data.strategies.map((f) => {
+                  const active = f.slug === data.strategy!.slug;
+                  return (
+                    <button
+                      key={f.slug || "general"}
+                      onClick={() => chooseStrategy(f.slug === data.strategy!.autoSlug ? null : f.slug)}
+                      className={`chip ${active ? "chip-active" : ""}`}
+                      aria-pressed={active}
+                      title={`${f.numDecks.toLocaleString("de-DE")} Decks · dein Deck passt zu ${Math.round(f.fit * 100)} %`}
+                    >
+                      {f.name}
+                      <span className="opacity-60 tabular-nums">{Math.round(f.fit * 100)} %</span>
+                      {f.slug === data.strategy!.autoSlug && <span aria-label="automatisch">✦</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-zinc-500">% = wie typisch dein Deck für Decks mit diesem Schwerpunkt ist (Ø Anteil der Decks, die deine Karten auch spielen). ✦ = beste Übereinstimmung.</p>
+            </div>
+          )}
+          {data.synergy && <SynergyPanel syn={data.synergy} commander={data.deck.commander} strategy={data.strategy?.slug ? data.strategy.name : null} />}
+          <p className="text-xs text-zinc-400">
+            Grundlage: {data.edhrec.numDecks.toLocaleString("de-DE")} Decks mit {data.deck.commander} auf EDHREC
+            {data.strategy?.slug ? ` (Schwerpunkt ${data.strategy.name})` : ""} · typische Themen: {data.edhrec.themes.map((t) => t.name).join(", ")}
+            {data.edhrec.avgLands != null && ` · Ø ${data.edhrec.avgLands} Länder`}
+          </p>
+        </>
       ) : (
         <p className="text-xs text-zinc-500">Für diesen Commander gibt es (noch) keine EDHREC-Statistik – Tauschvorschläge fehlen daher.</p>
       )}
@@ -385,6 +469,8 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
           commander={data.deck.commander}
           numDecks={data.edhrec?.numDecks ?? null}
           themes={(data.edhrec?.themes ?? []).map((t) => t.name)}
+          pairs={pairs}
+          loadPairs={loadPairs}
           health={data.health}
           edhrecSlug={data.edhrec?.slug ?? null}
           onTrade={onTrade}
@@ -409,10 +495,14 @@ function SwapCompare({
   commander,
   numDecks,
   themes,
+  pairs,
+  loadPairs,
   health,
   edhrecSlug: slug,
   onTrade,
 }: {
+  pairs: Pairs;
+  loadPairs: (names: string[]) => void;
   items: Array<{ out?: SwapOut; in: SwapIn }>;
   numDecks: number | null;
   themes: string[];
@@ -426,8 +516,17 @@ function SwapCompare({
 }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const item = items[index];
+  const outName = item?.out?.name;
+  const inName = item?.in.name;
+  useEffect(() => {
+    if (inName) loadPairs(outName ? [inName, outName] : [inName]);
+  }, [inName, outName, loadPairs]);
   if (!item) return null;
   const { out, in: add } = item;
+  const pIn = pairs[add.name];
+  const pOut = out ? pairs[out.name] : undefined;
+  const ready = (p: PairFit | "loading" | undefined): PairFit | null => (p && p !== "loading" ? p : null);
+  const pairLabel = (p: PairFit | "loading" | undefined) => (p === undefined || p === "loading" ? "…" : !p.known ? "–" : `${p.partners.length} ${p.partners.length === 1 ? "Karte" : "Karten"}`);
   const roles = (r: CardRole[]) => (r.length ? r.map((x) => ROLE_LABEL[x]).join(", ") : "–");
   type Row = { label: string; out?: string; in: string; better?: "in" | "out" | null };
   const cmp = (a: number | null | undefined, b: number | null | undefined, higherIsBetter = true): "in" | "out" | null => {
@@ -445,6 +544,12 @@ function SwapCompare({
     { label: "Grundrolle", out: out ? (out.rolesKnown ? roles(out.roles) : "noch offen") : undefined, in: roles(add.roles) },
     { label: "Thema", out: out ? (out.themes.join(", ") || "–") : undefined, in: add.themes.join(", ") || (EDHREC_LIST[add.list] ? `EDHREC: ${EDHREC_LIST[add.list]}` : "–") },
     { label: "Mana", out: out ? String(out.cmc) : undefined, in: String(add.cmc), better: out ? cmp(out.cmc, add.cmc, false) : null },
+    {
+      label: "Zusammenspiel",
+      out: out ? pairLabel(pOut) : undefined,
+      in: pairLabel(pIn),
+      better: out && ready(pIn) && ready(pOut) ? cmp(ready(pOut)!.partners.length, ready(pIn)!.partners.length) : null,
+    },
     { label: "Preis", out: out ? "im Deck" : undefined, in: add.eur != null ? `≈ ${formatEur(add.eur)}` : "–" },
   ];
   const tone = (side: "in" | "out", r: Row) => (r.better === side ? "text-emerald-300 font-semibold" : "text-zinc-200");
@@ -481,8 +586,8 @@ function SwapCompare({
               {rows.map((r) => (
                 <tr key={r.label} className="border-t border-white/[0.05]">
                   <td className="px-3 py-1.5 text-zinc-400">{r.label}</td>
-                  {out && <td className={`px-3 py-1.5 text-right tabular-nums ${tone("out", r)}`}>{r.out}</td>}
-                  <td className={`px-3 py-1.5 text-right tabular-nums ${tone("in", r)}`}>{r.in}</td>
+                  {out && <td className={`px-3 py-1.5 text-right tabular-nums ${r.label === "Grundrolle" || r.label === "Thema" ? "" : "whitespace-nowrap"} ${tone("out", r)}`}>{r.out}</td>}
+                  <td className={`px-3 py-1.5 text-right tabular-nums ${r.label === "Grundrolle" || r.label === "Thema" ? "" : "whitespace-nowrap"} ${tone("in", r)}`}>{r.in}</td>
                 </tr>
               ))}
             </tbody>
@@ -492,7 +597,7 @@ function SwapCompare({
         <section className="rounded-xl bg-emerald-500/[0.07] border border-emerald-400/20 p-3 space-y-1.5">
           <h4 className="text-sm font-semibold text-emerald-300">Warum {add.name} rein</h4>
           <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-emerald-400/70">
-            {explainIn(add, out, health, { commander, numDecks, themes }).map((w) => (
+            {explainIn(add, out, health, { commander, numDecks, themes, pairsIn: ready(pIn), pairsOut: ready(pOut) }).map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
@@ -501,12 +606,20 @@ function SwapCompare({
           <section className="rounded-xl bg-red-500/[0.06] border border-red-400/20 p-3 space-y-1.5">
             <h4 className="text-sm font-semibold text-red-300">Warum {out.name} raus</h4>
             <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-red-400/70">
-              {explainOut(out, { commander, themes }).map((w) => (
+              {explainOut(out, { commander, themes, pairsOut: ready(pOut) }).map((w) => (
                 <li key={w}>{w}</li>
               ))}
             </ul>
           </section>
         )}
+        <section className="rounded-xl bg-white/[0.04] p-3 space-y-2">
+          <h4 className="text-sm font-semibold">Zusammenspiel mit deinem Deck</h4>
+          <PairList label={add.name} tone="in" p={pIn} />
+          {out && <PairList label={out.name} tone="out" p={pOut} />}
+          <p className="text-[11px] text-zinc-500">
+            Laut EDHREC werden diese Karten deines Decks auffällig oft zusammen mit ihr gespielt (×-Wert = wie viel häufiger als zufällig).
+          </p>
+        </section>
         <p className="text-[11px] text-zinc-500">
           „Spielen es“ = Anteil der EDHREC-Decks mit {commander}, die die Karte enthalten. Synergie = wie viel häufiger sie dort ist als in anderen Decks derselben Farben.
         </p>
@@ -542,6 +655,88 @@ function SwapCompare({
         </button>
       )}
     </>
+  );
+}
+
+function PairList({ label, tone, p }: { label: string; tone: "in" | "out"; p: PairFit | "loading" | undefined }) {
+  const head = <p className={`text-xs font-medium ${tone === "in" ? "text-emerald-300" : "text-red-300"}`}>{label}</p>;
+  if (p === undefined || p === "loading")
+    return (
+      <div>
+        {head}
+        <p className="text-xs text-zinc-500 animate-pulse">Frage EDHREC …</p>
+      </div>
+    );
+  if (!p.known)
+    return (
+      <div>
+        {head}
+        <p className="text-xs text-zinc-500">Keine Daten bei EDHREC – wird zu selten gespielt.</p>
+      </div>
+    );
+  return (
+    <div className="space-y-1">
+      {head}
+      {p.partners.length ? (
+        <div className="flex flex-wrap gap-1">
+          {p.partners.slice(0, 12).map((x) => (
+            <span key={x.name} className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px]">
+              {x.name} <span className="text-zinc-400 tabular-nums">×{x.lift.toFixed(1).replace(".", ",")}</span>
+            </span>
+          ))}
+          {p.partners.length > 12 && <span className="text-[11px] text-zinc-500">+{p.partners.length - 12} weitere</span>}
+        </div>
+      ) : (
+        <p className="text-xs text-zinc-400">Mit keiner deiner Karten auffällig oft zusammen.</p>
+      )}
+    </div>
+  );
+}
+
+function SynergyPanel({ syn, commander, strategy }: { syn: DeckSynergy; commander: string; strategy: string | null }) {
+  const tone = syn.score >= 70 ? "good" : syn.score >= 50 ? "ok" : "bad";
+  const maxTheme = Math.max(1, ...syn.themes.map((t) => t.count));
+  return (
+    <section className="rounded-xl bg-white/[0.04] p-3 space-y-2.5">
+      <div className="flex items-center gap-3">
+        <ScoreRing score={syn.score} tone={tone} />
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Stimmigkeit</h3>
+          <p className="text-xs text-zinc-400">
+            {syn.listed} von {syn.total} Karten sind typisch für {commander}
+            {strategy ? ` (${strategy})` : ""} · Ø Synergie {syn.avgSynergy >= 0 ? "+" : ""}
+            {Math.round(syn.avgSynergy * 100)} % · {syn.highSynergy} Karten gezielt für diesen Commander
+          </p>
+        </div>
+      </div>
+      {syn.themes.some((t) => t.count > 0) && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-zinc-400">Karten je Thema</p>
+          {syn.themes.map((t) => (
+            <div key={t.name} className="grid grid-cols-[6.5rem_1fr_2rem] items-center gap-2 text-xs">
+              <span className="truncate text-zinc-300">{t.name}</span>
+              <span className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                <span className="block h-full rounded-full bg-indigo-400/80" style={{ width: `${(t.count / maxTheme) * 100}%` }} />
+              </span>
+              <span className="text-right tabular-nums text-zinc-400">{t.count}</span>
+            </div>
+          ))}
+          <p className="text-[10px] text-zinc-500">gezählt über Kreaturentyp und Kartentext – abstrakte Themen (z. B. Aggro) erkennt das nicht</p>
+        </div>
+      )}
+      {syn.outliers.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-xs text-zinc-300">Passen am wenigsten ({syn.outliers.length})</summary>
+          <ul className="mt-1.5 flex flex-wrap gap-1">
+            {syn.outliers.map((o) => (
+              <li key={o.name} className="rounded-full bg-red-500/10 text-red-200 px-2 py-0.5 text-[11px]">
+                {o.name} <span className="text-zinc-400">{o.synergy == null ? "nicht gelistet" : `${Math.round(o.synergy * 100)} %`}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 }
 
