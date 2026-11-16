@@ -20,6 +20,8 @@ export type NameRead = {
   sure: NameMatch | null;
   /** per Wörterbuch korrigierte Namen (für die Suche im Netz) */
   corrected: string[];
+  /** Lesarten mit deutschem Modell – nur wenn kein englischer Name passte */
+  german?: string[];
 };
 
 export type FrameRead = {
@@ -95,12 +97,15 @@ export function recognizeFrame(
       read = judge(Array.from(new Set([...first.names, ...second.names])), dictionary, new Set([...first.late, ...second.late]));
       if (read.sure) return read;
     }
-    // Deutsche Karte (laut Infozeile): mit deutschem Modell nachlesen;
-    // das Wörterbuch kennt nur englische Namen → der Server löst den Namen auf
-    const i = await info;
-    if (i?.lang === "DE") {
+    // Vermutlich keine englische Karte: Es wurde etwas gelesen, aber kein
+    // englischer Kartenname passt auch nur annähernd. Dann mit dem deutschen
+    // Modell nachlesen (Umlaute, deutsche Wörter); der Server löst deutsche
+    // Namen auf. Auf die Sprachangabe der Infozeile ist kein Verlass – auf
+    // vielen Karten steht keine.
+    const foreign = (await info.catch(() => null))?.lang;
+    if ((read.names.length && !bestGuess(read, dictionary)) || (foreign && foreign !== "EN")) {
       const german = await readName(source, w, h, quad, await getGermanWorker()).catch(() => null);
-      return { names: Array.from(new Set([...(german?.names ?? []), ...read.names])), sure: null, corrected: read.corrected };
+      if (german?.names.length) return { ...read, german: german.names };
     }
     return read;
   })();
