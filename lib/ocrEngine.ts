@@ -1,15 +1,19 @@
 // Texterkennung im Browser (tesseract.js), selbst ausgeliefert unter
 // /ocr/<version>/ (siehe scripts/copy-ocr-assets.mjs).
-// Zwei Worker laufen parallel: einer für den Kartennamen (Deutsch +
-// Englisch), einer für die Infozeile (Set-Kürzel/Nummer, nur Großbuchstaben
-// und Ziffern) – das halbiert die Lesezeit je Karte.
+// Zwei Worker laufen parallel: einer für den Kartennamen (Englisch – das
+// ist fast doppelt so schnell wie Englisch + Deutsch), einer für die
+// Infozeile (Set-Kürzel/Nummer, nur Großbuchstaben und Ziffern). Ein dritter
+// (Deutsch + Englisch) wird nur geladen, wenn eine deutsche Karte auftaucht.
 import type { Worker } from "tesseract.js";
 import tesseractPkg from "tesseract.js/package.json";
 
 const BASE = `/ocr/${tesseractPkg.version}`;
 
+export const NAME_PSM = "6";
+
 let nameWorker: Promise<Worker> | null = null;
 let infoWorker: Promise<Worker> | null = null;
+let germanWorker: Promise<Worker> | null = null;
 
 async function create(langs: string[], params: Record<string, string>): Promise<Worker> {
   const { createWorker, OEM } = await import("tesseract.js");
@@ -24,12 +28,22 @@ async function create(langs: string[], params: Record<string, string>): Promise<
 }
 
 export function getNameWorker(): Promise<Worker> {
-  // Seitenmodus 7 = eine einzelne Textzeile (spart die Layout-Analyse)
-  nameWorker ??= create(["eng", "deu"], { tessedit_pageseg_mode: "7" }).catch((e) => {
+  // Seitenmodus 6 = ein Textblock: kommt mit den Rahmenstreifen über und
+  // unter dem Namen zurecht (Modus 7 "eine Zeile" verliest sich daran)
+  nameWorker ??= create(["eng"], { tessedit_pageseg_mode: NAME_PSM }).catch((e) => {
     nameWorker = null; // beim nächsten Versuch neu laden
     throw e;
   });
   return nameWorker;
+}
+
+/** Für deutsche Karten (Umlaute, deutsche Wörter) – erst bei Bedarf geladen. */
+export function getGermanWorker(): Promise<Worker> {
+  germanWorker ??= create(["deu", "eng"], { tessedit_pageseg_mode: NAME_PSM }).catch((e) => {
+    germanWorker = null;
+    throw e;
+  });
+  return germanWorker;
 }
 
 export function getInfoWorker(): Promise<Worker> {
@@ -49,7 +63,7 @@ export function warmUp(): Promise<unknown> {
 }
 
 export async function terminateAll() {
-  const ws = [nameWorker, infoWorker];
-  nameWorker = infoWorker = null;
+  const ws = [nameWorker, infoWorker, germanWorker];
+  nameWorker = infoWorker = germanWorker = null;
   await Promise.all(ws.map((w) => w?.then((x) => x.terminate()).catch(() => {})));
 }

@@ -49,7 +49,7 @@ describe("preprocessPixels", () => {
   });
 });
 
-import { parseCardInfo } from "@/lib/ocr";
+import { parseCardInfo, snapSet } from "@/lib/ocr";
 
 describe("parseCardInfo", () => {
   it("liest Set, Nummer und Sprache aus der Infozeile", () => {
@@ -65,5 +65,24 @@ describe("parseCardInfo", () => {
 
   it("liefert null, wenn nichts erkennbar ist (ältere Karten)", () => {
     expect(parseCardInfo("Illus. Christopher Rush")).toEqual({ set: null, number: null, lang: null });
+  });
+});
+
+describe("parseCardInfo – robuste Lesung", () => {
+  const sets = new Map([["tdm", 262], ["fdn", 233], ["clb", 38], ["mom", 25], ["tom", 0]]);
+  it("nimmt die Nummer aus der Zeile über dem Set, nicht aus Müll darüber", () => {
+    expect(parseCardInfo("EET 1.\nM0167\nTDM EN JSHUA CAROS", sets)).toEqual({ set: "tdm", number: "167", lang: "EN" });
+    expect(parseCardInfo("EEE 4 -\nM 0110  S S OF\nFRA EN BRYAN SOA")).toEqual({ set: "fra", number: "110", lang: "EN" });
+    expect(parseCardInfo("1\n133/264 M C4 3\nWAR * EN FIL BUBURAN")).toEqual({ set: "war", number: "133", lang: "EN" });
+    expect(parseCardInfo("RATE\nM0125 W\nMOM * EN 5 RYAN PANCOAST", sets)).toEqual({ set: "mom", number: "125", lang: "EN" });
+  });
+  it("korrigiert verwechselte Zeichen im Set-Kürzel anhand bekannter Sets", () => {
+    expect(snapSet("FON", sets)).toBe("fdn");
+    expect(snapSet("CLE", sets)).toBe("clb");
+    // existierendes Set bleibt, auch wenn ein ähnliches häufiger ist
+    expect(snapSet("TOM", sets)).toBe("tom");
+    expect(snapSet("TOM", new Map([["tdm", 5]]))).toBe("tdm");
+    expect(snapSet("XYZ", sets)).toBe("xyz");
+    expect(parseCardInfo("U 0148\nFON EN J METZ", sets).set).toBe("fdn");
   });
 });

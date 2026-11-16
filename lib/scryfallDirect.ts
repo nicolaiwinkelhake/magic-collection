@@ -3,7 +3,8 @@
 // Login-Prüfung. Ist Set + Nummer gelesen, genügt eine Anfrage. Klappt der
 // schnelle Weg nicht (verlesen, deutscher Name …), übernimmt der Server.
 import type { ScanMatch } from "@/lib/scanStack";
-import { nameSimilarity } from "@/lib/textSimilarity";
+import { nameSimilarity, normalizeName } from "@/lib/textSimilarity";
+import { readScore } from "@/lib/nameIndex";
 
 const API = "https://api.scryfall.com";
 
@@ -54,15 +55,19 @@ function toMatch(c: Raw, exact: boolean): ScanMatch {
  * Namen gilt Set + Nummer allein. Vergleicht englischen und gedruckten
  * (z. B. deutschen) Namen, auch nur die Vorderseite.
  */
-export function printMatchesRead(names: string[], printNames: Array<string | undefined | null>, min = 0.5): boolean {
+export function printMatchesRead(names: string[], printNames: Array<string | undefined | null>, min = 0.5, strict = false): boolean {
   const usable = names.filter((n) => n.replace(/[^a-zA-ZÀ-ÿ]/g, "").length >= 3);
-  if (!usable.length) return true;
+  // ohne lesbaren Namen: Set + Nummer allein – in der Automatik (strict) zu riskant,
+  // eine verlesene Nummer ergäbe unbemerkt eine falsche Karte
+  if (!usable.length) return !strict;
   const targets = printNames.flatMap((p) => (p ? [p, p.split(" // ")[0]] : []));
-  return usable.some((n) => targets.some((t) => nameSimilarity(n, t) >= min));
+  // auch Teil-Lesungen zählen ("EEE Dragon" passt zu "Sparktongue Dragon")
+  const sim = (n: string, t: string) => Math.max(nameSimilarity(n, t), readScore(normalizeName(n), normalizeName(t)));
+  return usable.some((n) => targets.some((t) => sim(n, t) >= min));
 }
 
 /** Genauer Druck über Set + Nummer (englischer Druck wegen der Preise). */
-export async function directPrint(set: string, number: string, lang: string | null, names: string[]): Promise<ScanMatch | null> {
+export async function directPrint(set: string, number: string, lang: string | null, names: string[], strict = false): Promise<ScanMatch | null> {
   const base = `${API}/cards/${encodeURIComponent(set.toLowerCase())}/${encodeURIComponent(number)}`;
   // Sprachkürzel der Karte → Scryfall (Chinesisch hat eigene Kürzel)
   const LANG: Record<string, string> = { ZH: "zhs", CS: "zhs", CT: "zht" };
@@ -72,13 +77,19 @@ export async function directPrint(set: string, number: string, lang: string | nu
   const [en, local] = await Promise.all([get(base), foreign ? get(`${base}/${foreign}`) : Promise.resolve(null)]);
   if (!en) return null;
   const printed = [en.name, local?.printed_name, ...(local?.card_faces?.map((f) => f.printed_name) ?? [])];
-  return printMatchesRead(names, printed) ? toMatch(en, true) : null;
+  return printMatchesRead(names, printed, 0.5, strict) ? toMatch(en, true) : null;
 }
 
-/** Karte über den (englischen) Namen, unscharf – Druck noch unbekannt. */
-export async function directByName(name: string): Promise<ScanMatch | null> {
+/**
+ * Karte über den (englischen) Namen, unscharf – Druck noch unbekannt.
+ * `minSimilarity`: Treffer nur annehmen, wenn er dem gelesenen Text so
+ * ähnlich ist (Automatik: keine weit hergeholten Treffer).
+ */
+export async function directByName(name: string, minSimilarity = 0): Promise<ScanMatch | null> {
   const c = await get(`${API}/cards/named?fuzzy=${encodeURIComponent(name)}`);
-  return c ? toMatch(c, false) : null;
+  if (!c) return null;
+  if (minSimilarity > 0 && Math.max(nameSimilarity(name, c.name), nameSimilarity(name, c.name.split(" // ")[0])) < minSimilarity) return null;
+  return toMatch(c, false);
 }
 
 /** Karte über den exakten (vom Wörterbuch korrigierten) englischen Namen. */

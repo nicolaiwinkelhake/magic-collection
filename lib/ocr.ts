@@ -14,7 +14,18 @@ export function cleanOcrLine(text: string): string {
     .trim();
 }
 
-export type OcrLine = { text: string; confidence: number };
+/** `x0`: linker Rand der Zeile im gelesenen Bild (0–1), falls bekannt */
+export type OcrLine = { text: string; confidence: number; x0?: number };
+
+// Ein Kartenname beginnt links im Namensbalken. Fängt die Lesung deutlich
+// weiter rechts an, fehlt vermutlich der Anfang ("Tainted Remedy" → "Remedy",
+// das es als eigene Karte gibt) – solche Lesungen dürfen nicht sofort gelten.
+export const LATE_START = 0.2;
+
+/** Gesäuberte Lesungen (klein geschrieben), deren Zeile zu weit rechts beginnt. */
+export function lateStarts(lines: OcrLine[], limit = LATE_START): Set<string> {
+  return new Set(lines.filter((l) => (l.x0 ?? 0) > limit).map((l) => cleanOcrLine(l.text).toLowerCase()));
+}
 
 // Kandidaten für den Kartennamen aus mehreren OCR-Zeilen: gesäubert, mit
 // mindestens 3 Buchstaben, sinnvoller Länge, sortiert nach Konfidenz.
@@ -72,16 +83,75 @@ const LANGS = ["EN", "DE", "FR", "IT", "ES", "PT", "JA", "JP", "RU", "KO", "ZH",
 
 export type CardInfo = { set: string | null; number: string | null; lang: string | null };
 
-export function parseCardInfo(text: string): CardInfo {
-  const flat = text.replace(/\s+/g, " ");
+/** Bekannte Set-Kürzel mit Gewicht (höher = wahrscheinlicher: eigene Sammlung, neue Sets). */
+export type SetPrior = Map<string, number>;
+
+// Zeichen, die die Texterkennung in der kleinen Infozeile gern verwechselt
+const CONFUSABLE = ["OD0Q", "IL1T", "S5", "B8ER", "G6C", "Z2", "MN", "UV", "FP"];
+const confusable = (a: string, b: string) => CONFUSABLE.some((g) => g.includes(a) && g.includes(b));
+
+/**
+ * Gelesenes Set-Kürzel auf ein bekanntes Set bringen: unverändert, wenn es
+ * existiert; sonst das wahrscheinlichste Set, das sich nur in einem leicht
+ * verwechselbaren Zeichen unterscheidet ("TOM" → "TDM").
+ */
+export function snapSet(read: string, sets: SetPrior | undefined): string {
+  const code = read.toLowerCase();
+  if (!sets || sets.has(code)) return code;
+  let best: string | null = null;
+  let bestW = -1;
+  for (const [cand, weight] of sets) {
+    if (cand.length !== code.length) continue;
+    let diff = 0;
+    let ok = true;
+    for (let i = 0; i < code.length && ok; i++) {
+      if (cand[i] === code[i]) continue;
+      diff++;
+      if (diff > 1 || !confusable(cand[i].toUpperCase(), code[i].toUpperCase())) ok = false;
+    }
+    if (ok && diff === 1 && weight > bestW) {
+      best = cand;
+      bestW = weight;
+    }
+  }
+  return best ?? code;
+}
+
+/** Sammlernummer aus einer Zeile: "123/280", "U 0055", "M0167". */
+function numberIn(line: string): string | null {
+  const frac = line.match(/\b0*(\d{1,4})\s*\/\s*\d{1,4}\b/);
+  if (frac) return frac[1];
+  // moderne Karten: vierstellig mit führenden Nullen, davor oft die Seltenheit
+  const padded = line.match(/(?:^|[^0-9])(\d{4})(?!\d)/);
+  if (padded) return String(Number(padded[1]));
+  const plain = line.match(/(?:^|[^0-9])(\d{1,3})(?!\d)/);
+  return plain ? String(Number(plain[1])) : null;
+}
+
+export function parseCardInfo(text: string, sets?: SetPrior): CardInfo {
+  const lines = text
+    .split(/\n|\|/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
   // Set-Kürzel steht direkt vor der Sprache, getrennt durch •, +, «, - o. Ä.
-  const setMatch = flat.match(new RegExp(String.raw`\b([A-Z0-9]{3,5})\s*[^A-Za-z0-9\s]?\s*(${LANGS.join("|")})\b`));
-  // Sammlernummer: erste Zahl mit 1–4 Ziffern (optional "/Gesamtzahl").
-  const numMatch = flat.match(/\b0*(\d{1,4})(?:\s*\/\s*\d{1,4})?\b/);
+  const setRe = new RegExp(String.raw`\b([A-Z0-9]{3,5})\s*[^A-Za-z0-9\s]?\s*(${LANGS.join("|")})\b`);
+  let setLine = -1;
+  let setMatch: RegExpMatchArray | null = null;
+  for (let i = lines.length - 1; i >= 0 && !setMatch; i--) {
+    setMatch = lines[i].match(setRe);
+    if (setMatch) setLine = i;
+  }
+  // Sammlernummer: bevorzugt die Zeile direkt über dem Set (dort steht sie
+  // auf modernen Karten), dann die Set-Zeile selbst, dann irgendeine –
+  // darüber liegt oft noch Müll vom unteren Rand der Textbox.
+  let number: string | null = null;
+  const order = setLine >= 0 ? [setLine - 1, setLine, ...lines.map((_, i) => i).filter((i) => i < setLine - 1).reverse()] : lines.map((_, i) => i).reverse();
+  for (const i of order) {
+    if (i < 0 || number) continue;
+    // in der Set-Zeile nur den Teil vor dem Set-Kürzel (dahinter: Künstler, Jahr)
+    const part = i === setLine && setMatch ? lines[i].slice(0, setMatch.index) : lines[i];
+    number = numberIn(part);
+  }
   const lang = setMatch?.[2] === "JP" ? "JA" : setMatch?.[2] ?? null;
-  return {
-    set: setMatch ? setMatch[1].toLowerCase() : null,
-    number: numMatch ? numMatch[1] : null,
-    lang,
-  };
+  return { set: setMatch ? snapSet(setMatch[1], sets) : null, number, lang };
 }
