@@ -11,6 +11,7 @@ import { ManaCost, RarityDot } from "@/components/ui/Mana";
 import type { Card, Folder } from "@/lib/types";
 import { FolderPicker } from "@/components/ui/FolderPicker";
 import { withFolder } from "@/lib/folders";
+import { copiesInDecks, type DeckUse } from "@/lib/deckUsage";
 import { groupCards, type GroupKey } from "@/lib/collectionGroups";
 import { SwipeSheet } from "@/components/ui/SwipeSheet";
 import { SelectionBar } from "@/components/ui/SelectionBar";
@@ -25,8 +26,11 @@ export function CardGrid({
   readOnly = false,
   detailActions,
   selectAction,
+  deckUses = {},
 }: {
   cards: Card[];
+  /** in welchen eigenen Decks steckt die Karte (nach Name) */
+  deckUses?: Record<string, DeckUse[]>;
   groupBy?: GroupKey;
   /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
   readOnly?: boolean;
@@ -227,6 +231,11 @@ export function CardGrid({
                       {card.foil && <span className="text-fuchsia-300">Foil</span>}
                       {card.condition && card.condition !== "NM" && <span className="text-amber-400">{card.condition}</span>}
                       {card.language && card.language !== "EN" && <span>{card.language}</span>}
+                      {deckUses[card.name]?.length ? (
+                        <span className="text-indigo-300 truncate" title={deckUses[card.name].map((u) => u.deckName).join(", ")}>
+                          · {deckUses[card.name].length === 1 ? deckUses[card.name][0].deckName : `${deckUses[card.name].length} Decks`}
+                        </span>
+                      ) : null}
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
@@ -276,6 +285,7 @@ export function CardGrid({
                   <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/20 via-transparent to-cyan-300/25 mix-blend-screen" aria-hidden />
                 )}
                 <QuantityBadge count={card.quantity} />
+                {deckUses[card.name]?.length ? <DeckBadge uses={deckUses[card.name]} /> : null}
               </span>
               {selectMode && (
                 <span
@@ -346,7 +356,7 @@ export function CardGrid({
           ))}
         </div>
       )
-  ), [groups, groupBy, view, selectMode, selected]);
+  ), [groups, groupBy, view, selectMode, selected, deckUses]);
 
   if (!local.length) {
     return (
@@ -607,6 +617,29 @@ export function CardGrid({
                   </>
                 )}
 
+                {deckUses[editing.name]?.length ? (
+                  <div className="rounded-xl bg-indigo-500/10 border border-indigo-400/20 px-3 py-2.5 space-y-1.5">
+                    <p className="text-sm text-indigo-200">In deinen Decks</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {deckUses[editing.name].map((u) => (
+                        <a
+                          key={u.deckId}
+                          href={`/decks/${u.deckId}`}
+                          className="rounded-full bg-white/[0.08] border border-white/10 px-2.5 py-1 text-xs hover:border-white/25"
+                        >
+                          {u.deckName}
+                          {u.count > 1 && <span className="text-zinc-400"> ×{u.count}</span>}
+                        </a>
+                      ))}
+                    </div>
+                    {!readOnly && copiesInDecks(deckUses[editing.name]) > editing.quantity && (
+                      <p className="text-[11px] text-amber-300">
+                        {copiesInDecks(deckUses[editing.name])}× in Decks verbaut, aber nur {editing.quantity}× in diesem Eintrag – evtl. weitere Drucke/Foil oder Karte fehlt.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
                 {detailActions && <div className="flex flex-wrap gap-2">{detailActions(editing)}</div>}
 
                 {/* Links */}
@@ -715,5 +748,22 @@ function PriceTile({ label, value, active }: { label: string; value: number | nu
       </p>
       <p className="text-[11px] text-zinc-500">{label}</p>
     </div>
+  );
+}
+
+/** Kleines Deck-Abzeichen auf der Kachel: in wie vielen Decks die Karte steckt. */
+function DeckBadge({ uses }: { uses: DeckUse[] }) {
+  const title = `In ${uses.length === 1 ? "Deck" : "Decks"}: ${uses.map((u) => u.deckName).join(", ")}`;
+  return (
+    <span
+      className="absolute bottom-1.5 left-1.5 flex items-center gap-0.5 rounded-md bg-indigo-600/90 px-1 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/20"
+      title={title}
+      aria-label={title}
+    >
+      <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2zM9 2h8a2 2 0 012 2" />
+      </svg>
+      {uses.length}
+    </span>
   );
 }

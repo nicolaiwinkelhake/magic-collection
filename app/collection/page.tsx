@@ -5,6 +5,7 @@ import { selectAll } from "@/lib/supabase/selectAll";
 import type { Card } from "@/lib/types";
 import { attachFolders } from "@/lib/folders";
 import { loadFolderEntries } from "@/lib/folderEntries";
+import { deckUsage } from "@/lib/deckUsage";
 
 export default async function CollectionPage() {
   const supabase = createClient();
@@ -27,17 +28,24 @@ export default async function CollectionPage() {
 
   // Eigene Ordner + Zuordnungen (eine Karte kann in mehreren Ordnern
   // stehen). Fehlen die Tabellen noch, bleibt alles leer.
-  const [{ data: folders }, entries] = await Promise.all([
+  const [{ data: folders }, entries, { data: decks }, deckCards] = await Promise.all([
     supabase.from("folders").select("id, name, created_at").order("name"),
     loadFolderEntries(supabase, "card"),
+    supabase.from("decks").select("id, name").eq("user_id", user.id),
+    // In welchen Decks steckt welche Karte? (Anzeige in der Sammlung)
+    selectAll<{ deck_id: string; name: string }>(() =>
+      supabase.from("deck_cards").select("deck_id, name").eq("user_id", user.id).order("id"),
+    ).catch(() => [] as Array<{ deck_id: string; name: string }>),
   ]);
   cards = attachFolders(cards, entries);
+  const uses = deckUsage(deckCards, decks ?? []);
 
   return (
     <CollectionClient
       initialCards={cards ?? []}
       loadError={error?.message}
       initialFolders={folders ?? []}
+      deckUses={uses}
     />
   );
 }
