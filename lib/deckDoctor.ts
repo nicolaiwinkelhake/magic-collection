@@ -7,7 +7,7 @@
 import { ALL_ROLES, ROLE_LABEL, ROLE_TARGETS, isLand, type CardRole } from "@/lib/cardRoles";
 import type { EdhrecCard } from "@/lib/edhrec";
 
-export type DoctorDeckCard = { name: string; type_line: string | null; cmc: number | null; is_commander: boolean };
+export type DoctorDeckCard = { name: string; type_line: string | null; cmc: number | null; is_commander: boolean; image_url?: string | null };
 
 export type RoleCheck = { key: CardRole | "lands"; label: string; have: number; target: number; min: number; ok: boolean };
 
@@ -125,9 +125,21 @@ export type SwapIn = {
   friend?: FriendCopy;
   reason: string;
   score: number;
+  typeLine: string;
+  cmc: number;
 };
 
-export type SwapOut = { name: string; inclusion: number | null; roles: CardRole[]; cmc: number; reason: string; weakness: number };
+export type SwapOut = {
+  name: string;
+  inclusion: number | null;
+  synergy: number | null;
+  roles: CardRole[];
+  cmc: number;
+  reason: string;
+  weakness: number;
+  image: string | null;
+  typeLine: string | null;
+};
 
 export type Swap = { out: SwapOut; in: SwapIn };
 
@@ -216,6 +228,8 @@ export function planSwaps(input: {
       friend: source === "friend" ? av.friends[0] : undefined,
       reason: why.join(" · "),
       score: Math.round(score * 1000) / 1000,
+      typeLine: meta.typeLine,
+      cmc: meta.cmc,
     });
   }
   adds.sort((a, b) => b.score - a.score);
@@ -230,10 +244,13 @@ export function planSwaps(input: {
       return {
         name: c.name,
         inclusion: e ? e.inclusion : null,
+        synergy: e ? e.synergy : null,
         roles: r,
         cmc: c.cmc ?? 0,
         reason: outReason(e, r, c.cmc ?? 0),
         weakness: weakness(c, e, r),
+        image: c.image_url ?? null,
+        typeLine: c.type_line,
       };
     })
     .sort((a, b) => b.weakness - a.weakness);
