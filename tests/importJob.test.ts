@@ -104,3 +104,15 @@ describe("summarizeJob / notImportedCsv", () => {
     expect(summarizeJob(job).error.items).toBe(2);
   });
 });
+
+describe("groupEntries – Drucke", () => {
+  it("hält verschiedene Drucke derselben Karte getrennt", async () => {
+    const { groupEntries } = await import("@/lib/importJob");
+    const g = groupEntries([
+      { name: "Sol Ring", quantity: 1, foil: false, set: "c21", collectorNumber: "263", line: 1 },
+      { name: "Sol Ring", quantity: 1, foil: false, set: "cmr", collectorNumber: "472", line: 2 },
+      { name: "Sol Ring", quantity: 2, foil: false, set: "c21", collectorNumber: "263", line: 3 },
+    ]);
+    expect(g.map((x) => [x.set, x.quantity])).toEqual([["c21", 3], ["cmr", 1]]);
+  });
+});

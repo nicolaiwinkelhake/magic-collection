@@ -62,7 +62,12 @@ export type SourceEntry = {
 export function groupEntries(entries: SourceEntry[]): Omit<ImportItem, "i">[] {
   const byKey = new Map<string, Omit<ImportItem, "i">>();
   for (const e of entries) {
-    const ident = e.scryfallId ? `id:${e.scryfallId.toLowerCase()}` : `name:${e.name.trim().toLowerCase()}`;
+    // Verschiedene Drucke derselben Karte bleiben getrennt
+    const ident = e.scryfallId
+      ? `id:${e.scryfallId.toLowerCase()}`
+      : e.set
+        ? `print:${e.set.toLowerCase()}|${(e.collectorNumber ?? "").toLowerCase()}|${e.name.trim().toLowerCase()}`
+        : `name:${e.name.trim().toLowerCase()}`;
     const key = `${ident}|${e.foil ? 1 : 0}`;
     const existing = byKey.get(key);
     if (existing) {

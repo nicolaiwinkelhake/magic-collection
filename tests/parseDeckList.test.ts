@@ -43,3 +43,28 @@ describe("parseDeckList", () => {
     expect(res[0].quantity).toBe(1);
   });
 });
+
+describe("parseDeckList – Druck (Set + Nummer)", () => {
+  it("übernimmt Set und Sammlernummer aus Moxfield/Archidekt/Arena-Zeilen", () => {
+    expect(parseDeckList("1 Sol Ring (C21) 263")[0]).toEqual({ name: "Sol Ring", quantity: 1, foil: false, set: "c21", collectorNumber: "263" });
+    expect(parseDeckList("1x Arcane Signet (cmr) 297 [Ramp] *F*")[0]).toEqual({
+      name: "Arcane Signet",
+      quantity: 1,
+      foil: true,
+      set: "cmr",
+      collectorNumber: "297",
+    });
+    expect(parseDeckList("1 Opt (PLST) XLN-65")[0]).toMatchObject({ name: "Opt", set: "plst", collectorNumber: "XLN-65" });
+    expect(parseDeckList("1 Forest (UNF) 239★")[0]).toMatchObject({ name: "Forest", set: "unf", collectorNumber: "239★" });
+    expect(parseDeckList("2 Island (LTR)")[0]).toEqual({ name: "Island", quantity: 2, foil: false, set: "ltr" });
+    expect(parseDeckList("1 Delver of Secrets // Insectile Aberration (ISD) 51")[0]).toMatchObject({
+      name: "Delver of Secrets // Insectile Aberration",
+      set: "isd",
+      collectorNumber: "51",
+    });
+  });
+
+  it("verwechselt Foil-Marker nicht mit einem Set", () => {
+    expect(parseDeckList("3 Island (foil)")[0]).toEqual({ name: "Island", quantity: 3, foil: true });
+  });
+});

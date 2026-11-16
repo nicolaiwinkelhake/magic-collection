@@ -24,6 +24,10 @@ export type DeckCard = {
   produced_mana?: string[] | null;
   oracle_text: string | null;
   is_commander: boolean;
+  /** genauer Druck (Migration 017) */
+  set_code?: string | null;
+  collector_number?: string | null;
+  foil?: boolean;
   price_eur: number | null;
   price_eur_foil: number | null;
   created_at: string;
