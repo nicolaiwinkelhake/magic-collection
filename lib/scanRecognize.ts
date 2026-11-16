@@ -70,6 +70,8 @@ export function recognizeFrame(
   fallback: Rect,
   dictionary: NameIndex | null,
   sets?: SetPrior,
+  /** Schalter "Deutsch": gleich mit dem deutschen Modell lesen (liest auch Englisch, nur langsamer) */
+  germanFirst = false,
 ): FrameRead {
   const qw = QUAD_W;
   const qh = Math.max(24, Math.round((qw * region.h * h) / (region.w * w)));
@@ -88,11 +90,12 @@ export function recognizeFrame(
   })();
 
   const name = (async () => {
-    const first = await readName(source, w, h, quad);
+    const worker = germanFirst ? await getGermanWorker() : undefined;
+    const first = await readName(source, w, h, quad, worker);
     let read = judge(first.names, dictionary, first.late);
     if (read.sure) return read;
     if (alt) {
-      const second = await readName(source, w, h, alt);
+      const second = await readName(source, w, h, alt, worker);
       // beide Lesarten gemeinsam bewerten (eine kann den Anfang verloren haben)
       read = judge(Array.from(new Set([...first.names, ...second.names])), dictionary, new Set([...first.late, ...second.late]));
       if (read.sure) return read;
@@ -102,6 +105,8 @@ export function recognizeFrame(
     // Modell nachlesen (Umlaute, deutsche Wörter); der Server löst deutsche
     // Namen auf. Auf die Sprachangabe der Infozeile ist kein Verlass – auf
     // vielen Karten steht keine.
+    // Schalter "Deutsch": Die Lesung stammt schon vom deutschen Modell
+    if (germanFirst) return read.names.length ? { ...read, german: read.names } : read;
     const foreign = (await info.catch(() => null))?.lang;
     if ((read.names.length && !bestGuess(read, dictionary)) || (foreign && foreign !== "EN")) {
       const german = await readName(source, w, h, quad, await getGermanWorker()).catch(() => null);

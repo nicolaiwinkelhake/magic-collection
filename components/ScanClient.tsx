@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Worker } from "tesseract.js";
-import { getNameWorker, NAME_PSM, terminateAll, warmUp } from "@/lib/ocrEngine";
+import { getGermanWorker, getNameWorker, NAME_PSM, terminateAll, warmUp } from "@/lib/ocrEngine";
 import { detectCard } from "@/lib/cardDetect";
 import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, regionToCanvas } from "@/lib/scanRead";
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
@@ -62,8 +62,8 @@ const STACK_KEY = "scan-stack-v1";
 const PREFS_KEY = "scan-prefs-v1";
 
 type Target = { kind: "collection"; folderId?: string | null } | { kind: "wishlist" } | { kind: "deck"; deckId: string };
-type Prefs = { auto: boolean; foil: boolean; sound: boolean; target: Target };
-const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, target: { kind: "collection" } };
+type Prefs = { auto: boolean; foil: boolean; sound: boolean; german: boolean; target: Target };
+const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, german: false, target: { kind: "collection" } };
 
 // Zeitmessung für die Optimierung: nur aktiv mit localStorage "scan-debug" = "1"
 let debugT0 = 0;
@@ -252,6 +252,7 @@ export function ScanClient({
     setStatus("Lade Texterkennung (nur beim ersten Mal)…");
     try {
       await warmUp();
+      if (prefsRef.current.german) await getGermanWorker();
       setStatus(null);
     } catch {
       setStatus("Texterkennung konnte nicht geladen werden – Verbindung prüfen. Namen eintippen geht weiterhin.");
@@ -443,7 +444,7 @@ export function ScanClient({
       const dict = nameIndexIfReady();
       scanLog("scan_start");
       // Karte als Viereck finden, entzerren, Name + Infozeile lesen
-      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady());
+      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady(), prefsRef.current.german);
       // Bild der Karte festhalten (für den Bildvergleich der Drucke)
       const card = read.quad ? quadBounds(read.quad, 1, 1) : detectedRef.current?.video ?? guide.video;
       const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
@@ -615,7 +616,7 @@ export function ScanClient({
       let result;
       const card: Rect | null = found ?? (ratio > 0.62 && ratio < 0.82 ? { x: 0, y: 0, w: 1, h: 1 } : null);
       const whole = { x: 0, y: 0, w: 1, h: 1 };
-      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady());
+      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady(), prefsRef.current.german);
       if (card || photo.quad) {
         const name = await photo.name;
         const info = await photo.info;
@@ -1017,6 +1018,17 @@ export function ScanClient({
                 <Toggle on={prefs.auto} onClick={() => setPrefs((p) => ({ ...p, auto: !p.auto }))} label="Auto" />
                 <Toggle on={prefs.foil} onClick={() => setPrefs((p) => ({ ...p, foil: !p.foil }))} label="Foil" />
                 <Toggle on={prefs.sound} onClick={() => setPrefs((p) => ({ ...p, sound: !p.sound }))} label="Ton" />
+                <Toggle
+                  on={prefs.german}
+                  onClick={() =>
+                    setPrefs((p) => {
+                      // deutsches Lesemodell gleich laden, nicht erst bei der ersten Karte
+                      if (!p.german) void getGermanWorker().catch(() => {});
+                      return { ...p, german: !p.german };
+                    })
+                  }
+                  label="Deutsch"
+                />
               </div>
             </div>
           </div>
