@@ -27,7 +27,7 @@ export async function loadMyDecks(supabase: SupabaseClient, userId: string): Pro
   const rows = await selectAll<DoctorDeckCard & { deck_id: string }>(() =>
     supabase
       .from("deck_cards")
-      .select("deck_id, name, type_line, cmc, is_commander")
+      .select("deck_id, name, type_line, cmc, is_commander, image_url, oracle_text")
       .eq("user_id", userId)
       .order("id"),
   ).catch(() => []);

@@ -44,6 +44,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     info,
     availability: availabilityFor(candNames, own, friends.byName),
     health,
+    themes: (edh?.themes ?? []).map((t) => t.name),
     limit: 8,
   });
 

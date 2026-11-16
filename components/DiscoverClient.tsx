@@ -8,7 +8,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ColorIdentity } from "@/components/ui/Mana";
 import { TradeComposer } from "@/components/TradeComposer";
 import { addToBasket, type Basket } from "@/lib/tradeBasket";
-import type { DeckHealth, FriendCopy, Swap, SwapIn } from "@/lib/deckDoctor";
+import type { DeckHealth, FriendCopy, Swap, SwapIn, SwapOut } from "@/lib/deckDoctor";
+import { ROLE_LABEL, type CardRole } from "@/lib/cardRoles";
+import { edhrecSlug } from "@/lib/edhrec";
+import { SwipeSheet } from "@/components/ui/SwipeSheet";
+import { EDHREC_LIST, explainIn, explainOut } from "@/lib/swapExplain";
 
 // Entdecken – entlang der Fragen, die Spieler wirklich haben:
 // 1) Deck-Check: Wo hakt mein Deck, welcher Tausch lohnt sich?
@@ -150,18 +154,29 @@ function Thumb({ src, alt, w = 40 }: { src: string | null | undefined; alt: stri
 }
 
 function SourceBadge({ add, onTrade }: { add: SwapIn; onTrade: (c: FriendCopy) => void }) {
-  if (add.source === "collection") return <span className="rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium">In deiner Sammlung</span>;
-  if (add.source === "friend" && add.friend)
-    return (
-      <button onClick={() => onTrade(add.friend!)} className="press rounded-full bg-indigo-500/20 text-indigo-200 px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ring-indigo-400/40">
-        {add.friend.ownerName} hat sie · Trade
-      </button>
-    );
-  return (
-    <a href={cardmarket(add.name)} target="_blank" rel="noopener noreferrer" className="rounded-full bg-white/[0.06] text-zinc-300 px-2 py-0.5 text-[11px]">
-      {add.eur != null ? `≈ ${formatEur(add.eur)}` : "kaufen"} ↗
+  // Preis + Cardmarket immer zeigen – auch wenn man (oder ein Freund) die Karte hat
+  const price = (
+    <a href={cardmarket(add.name)} target="_blank" rel="noopener noreferrer" className="rounded-full bg-white/[0.06] text-zinc-300 px-2 py-0.5 text-[11px] whitespace-nowrap">
+      {add.eur != null ? `≈ ${formatEur(add.eur)}` : "Cardmarket"} ↗
     </a>
   );
+  if (add.source === "collection")
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+        <span className="rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">In deiner Sammlung</span>
+        {price}
+      </span>
+    );
+  if (add.source === "friend" && add.friend)
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+        <button onClick={() => onTrade(add.friend!)} className="press rounded-full bg-indigo-500/20 text-indigo-200 px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ring-indigo-400/40 whitespace-nowrap">
+          {add.friend.ownerName} hat sie · Trade
+        </button>
+        {price}
+      </span>
+    );
+  return price;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +256,8 @@ type DeckDetailData = {
 function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => void }) {
   const [data, setData] = useState<DeckDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // geöffneter Vergleich: Index in [...swaps, ...more]
+  const [compare, setCompare] = useState<number | null>(null);
 
   useEffect(() => {
     getJson<DeckDetailData>(`/api/discover/decks/${id}`).then((r) => {
@@ -306,16 +323,26 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
           <ul className="space-y-2">
             {data.swaps.map((s) => (
               <li key={s.in.name} className="rounded-xl bg-white/[0.04] p-2.5">
-                <div className="flex items-center gap-3">
-                  <Thumb src={s.in.image} alt={s.in.name} />
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="text-xs text-red-300/90 truncate">
+                <button
+                  onClick={() => setCompare(data.swaps.indexOf(s))}
+                  className="w-full flex items-center gap-3 text-left"
+                  aria-label={`Tausch ansehen: ${s.out.name} gegen ${s.in.name}`}
+                >
+                  <span className="relative shrink-0 flex">
+                    <Thumb src={s.out.image} alt={s.out.name} w={30} />
+                    <span className="flex -ml-3 mt-2 ring-2 ring-zinc-900 rounded-[5px]">
+                      <Thumb src={s.in.image} alt={s.in.name} />
+                    </span>
+                  </span>
+                  <span className="min-w-0 flex-1 space-y-0.5">
+                    <span className="block text-xs text-red-300/90 truncate">
                       − {s.out.name} <span className="text-zinc-500">({s.out.reason})</span>
-                    </p>
-                    <p className="text-sm font-medium truncate">+ {s.in.name}</p>
-                    <p className="text-[11px] text-zinc-400 truncate">{s.in.reason}</p>
-                  </div>
-                </div>
+                    </span>
+                    <span className="block text-sm font-medium truncate">+ {s.in.name}</span>
+                    <span className="block text-[11px] text-zinc-400 truncate">{s.in.reason}</span>
+                  </span>
+                  <span className="text-zinc-500 text-lg" aria-hidden>›</span>
+                </button>
                 <div className="mt-1.5 flex justify-end">
                   <SourceBadge add={s.in} onTrade={onTrade} />
                 </div>
@@ -332,10 +359,13 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
           <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
             {data.more.map((a) => (
               <li key={a.name} className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-2 py-1.5 min-w-0">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm truncate">{a.name}</span>
-                  <span className="block text-[11px] text-zinc-500 truncate">{a.reason}</span>
-                </span>
+                <button onClick={() => setCompare(data.swaps.length + data.more.indexOf(a))} className="min-w-0 flex-1 flex items-center gap-2 text-left">
+                  <Thumb src={a.image} alt={a.name} w={28} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm truncate">{a.name}</span>
+                    <span className="block text-[11px] text-zinc-500 truncate">{a.reason}</span>
+                  </span>
+                </button>
                 <SourceBadge add={a} onTrade={onTrade} />
               </li>
             ))}
@@ -346,7 +376,208 @@ function DeckDetail({ id, onTrade }: { id: string; onTrade: (c: FriendCopy) => v
       <Link href={`/decks/${data.deck.id}`} className="btn-secondary w-full h-10">
         Deck öffnen
       </Link>
+      {compare != null && (
+        <SwapCompare
+          items={[...data.swaps, ...data.more.map((a) => ({ in: a }))]}
+          index={compare}
+          onIndexChange={setCompare}
+          onClose={() => setCompare(null)}
+          commander={data.deck.commander}
+          numDecks={data.edhrec?.numDecks ?? null}
+          themes={(data.edhrec?.themes ?? []).map((t) => t.name)}
+          health={data.health}
+          edhrecSlug={data.edhrec?.slug ?? null}
+          onTrade={onTrade}
+        />
+      )}
     </div>
+  );
+}
+
+const pctLabel = (x: number | null | undefined) => (x == null ? "–" : `${Math.round(x * 100)} %`);
+
+/**
+ * Vergleich zum Nachprüfen: raus- und reinkommende Karte groß nebeneinander,
+ * darunter die Zahlen, auf denen der Vorschlag beruht (EDHREC-Anteil,
+ * Synergie, Rollen, Mana, Preis) plus Links zu EDHREC und Scryfall.
+ */
+function SwapCompare({
+  items,
+  index,
+  onIndexChange,
+  onClose,
+  commander,
+  numDecks,
+  themes,
+  health,
+  edhrecSlug: slug,
+  onTrade,
+}: {
+  items: Array<{ out?: SwapOut; in: SwapIn }>;
+  numDecks: number | null;
+  themes: string[];
+  health: DeckHealth;
+  index: number;
+  onIndexChange: (i: number) => void;
+  onClose: () => void;
+  commander: string;
+  edhrecSlug: string | null;
+  onTrade: (c: FriendCopy) => void;
+}) {
+  const [zoom, setZoom] = useState<string | null>(null);
+  const item = items[index];
+  if (!item) return null;
+  const { out, in: add } = item;
+  const roles = (r: CardRole[]) => (r.length ? r.map((x) => ROLE_LABEL[x]).join(", ") : "–");
+  type Row = { label: string; out?: string; in: string; better?: "in" | "out" | null };
+  const cmp = (a: number | null | undefined, b: number | null | undefined, higherIsBetter = true): "in" | "out" | null => {
+    if (a == null || b == null || a === b) return null;
+    return (b > a) === higherIsBetter ? "in" : "out";
+  };
+  const rows: Row[] = [
+    { label: "Spielen es", out: out ? (out.inclusion == null ? "kaum" : pctLabel(out.inclusion)) : undefined, in: pctLabel(add.inclusion), better: out ? cmp(out.inclusion ?? 0, add.inclusion) : null },
+    {
+      label: "Synergie",
+      out: out ? (out.synergy == null ? "–" : `${out.synergy >= 0 ? "+" : ""}${Math.round(out.synergy * 100)} %`) : undefined,
+      in: `${add.synergy >= 0 ? "+" : ""}${Math.round(add.synergy * 100)} %`,
+      better: out ? cmp(out.synergy ?? 0, add.synergy) : null,
+    },
+    { label: "Grundrolle", out: out ? (out.rolesKnown ? roles(out.roles) : "noch offen") : undefined, in: roles(add.roles) },
+    { label: "Thema", out: out ? (out.themes.join(", ") || "–") : undefined, in: add.themes.join(", ") || (EDHREC_LIST[add.list] ? `EDHREC: ${EDHREC_LIST[add.list]}` : "–") },
+    { label: "Mana", out: out ? String(out.cmc) : undefined, in: String(add.cmc), better: out ? cmp(out.cmc, add.cmc, false) : null },
+    { label: "Preis", out: out ? "im Deck" : undefined, in: add.eur != null ? `≈ ${formatEur(add.eur)}` : "–" },
+  ];
+  const tone = (side: "in" | "out", r: Row) => (r.better === side ? "text-emerald-300 font-semibold" : "text-zinc-200");
+  const scry = (n: string) => `https://scryfall.com/search?q=${encodeURIComponent(`!"${n}"`)}`;
+
+  return (
+    <>
+    <SwipeSheet
+      index={index}
+      count={items.length}
+      onIndexChange={onIndexChange}
+      onClose={onClose}
+      title={out ? "Tausch prüfen" : add.name}
+      subtitle={out ? `${out.name} → ${add.name}` : "passt zu deinem Deck"}
+      label="Tauschvorschlag"
+      keyboardDisabled={zoom != null}
+    >
+      <div className="px-4 pt-3 pb-6 space-y-4">
+        <div className={`grid gap-3 ${out ? "grid-cols-2" : "grid-cols-1 max-w-[16rem] mx-auto"}`}>
+          {out && <CompareCard tag="Raus" tone="out" name={out.name} image={out.image} typeLine={out.typeLine} onZoom={setZoom} />}
+          <CompareCard tag={out ? "Rein" : "Vorschlag"} tone="in" name={add.name} image={add.image} typeLine={add.typeLine} onZoom={setZoom} />
+        </div>
+
+        <div className="rounded-xl bg-white/[0.04] overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] text-zinc-500">
+                <th className="text-left font-normal px-3 pt-2">mit {commander}</th>
+                {out && <th className="text-right font-normal px-3 pt-2">Raus</th>}
+                <th className="text-right font-normal px-3 pt-2">Rein</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.label} className="border-t border-white/[0.05]">
+                  <td className="px-3 py-1.5 text-zinc-400">{r.label}</td>
+                  {out && <td className={`px-3 py-1.5 text-right tabular-nums ${tone("out", r)}`}>{r.out}</td>}
+                  <td className={`px-3 py-1.5 text-right tabular-nums ${tone("in", r)}`}>{r.in}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <section className="rounded-xl bg-emerald-500/[0.07] border border-emerald-400/20 p-3 space-y-1.5">
+          <h4 className="text-sm font-semibold text-emerald-300">Warum {add.name} rein</h4>
+          <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-emerald-400/70">
+            {explainIn(add, out, health, { commander, numDecks, themes }).map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </section>
+        {out && (
+          <section className="rounded-xl bg-red-500/[0.06] border border-red-400/20 p-3 space-y-1.5">
+            <h4 className="text-sm font-semibold text-red-300">Warum {out.name} raus</h4>
+            <ul className="space-y-1 text-[13px] text-zinc-200 list-disc pl-4 marker:text-red-400/70">
+              {explainOut(out, { commander, themes }).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+        <p className="text-[11px] text-zinc-500">
+          „Spielen es“ = Anteil der EDHREC-Decks mit {commander}, die die Karte enthalten. Synergie = wie viel häufiger sie dort ist als in anderen Decks derselben Farben.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <SourceBadge add={add} onTrade={onTrade} />
+        </div>
+
+        <div className="flex flex-wrap gap-2 text-xs">
+          {slug && (
+            <a href={`https://edhrec.com/commanders/${slug}`} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
+              EDHREC: {commander} ↗
+            </a>
+          )}
+          <a href={`https://edhrec.com/cards/${edhrecSlug(add.name)}`} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
+            EDHREC: {add.name} ↗
+          </a>
+          {out && (
+            <a href={scry(out.name)} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
+              Scryfall: {out.name} ↗
+            </a>
+          )}
+          <a href={scry(add.name)} target="_blank" rel="noopener noreferrer" className="btn-secondary h-9 px-3">
+            Scryfall: {add.name} ↗
+          </a>
+        </div>
+      </div>
+    </SwipeSheet>
+      {zoom && (
+        <button onClick={() => setZoom(null)} className="fixed inset-0 z-[80] bg-black/85 flex items-center justify-center p-6" aria-label="Großansicht schließen">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom.replace("/normal/", "/large/")} alt="" className="max-h-full max-w-full rounded-[4.75%/3.5%]" />
+        </button>
+      )}
+    </>
+  );
+}
+
+function CompareCard({
+  tag,
+  tone,
+  name,
+  image,
+  typeLine,
+  onZoom,
+}: {
+  tag: string;
+  tone: "in" | "out";
+  name: string;
+  image: string | null;
+  typeLine: string | null;
+  onZoom: (src: string) => void;
+}) {
+  return (
+    <figure className="min-w-0 space-y-1.5">
+      <figcaption className={`text-xs font-semibold ${tone === "in" ? "text-emerald-300" : "text-red-300"}`}>
+        {tone === "in" ? "+" : "−"} {tag}
+      </figcaption>
+      <button
+        onClick={() => image && onZoom(image)}
+        className={`block w-full aspect-[488/680] rounded-[4.75%/3.5%] overflow-hidden bg-zinc-800 ring-2 ${tone === "in" ? "ring-emerald-400/50" : "ring-red-400/40 opacity-90"}`}
+        aria-label={`${name} groß anzeigen`}
+      >
+        {image ? (
+          <Image src={image} alt={name} width={488} height={680} className="w-full h-full object-cover" sizes="(max-width: 640px) 45vw, 240px" />
+        ) : (
+          <span className="flex h-full items-center justify-center p-2 text-center text-xs text-zinc-400">{name}</span>
+        )}
+      </button>
+      <p className="text-[11px] text-zinc-500 truncate">{typeLine}</p>
+    </figure>
   );
 }
 
