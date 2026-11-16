@@ -27,3 +27,11 @@ describe("judge – wann ist ein gelesener Name sofort sicher?", () => {
     expect(r.sure).toBeNull();
   });
 });
+
+describe("deutsche Karten", () => {
+  it("ein deutscher Name passt zu keinem englischen – Auslöser für das deutsche Modell", async () => {
+    const { bestGuess } = await import("@/lib/scanRecognize");
+    expect(bestGuess(judge(["Blitzschlag"], dict), dict)).toBeNull();
+    expect(bestGuess(judge(["Lightnmg Bolt"], dict), dict)?.name).toBe("Lightning Bolt");
+  });
+});

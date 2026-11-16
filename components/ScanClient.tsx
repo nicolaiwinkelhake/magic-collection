@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Worker } from "tesseract.js";
-import { getNameWorker, NAME_PSM, terminateAll, warmUp } from "@/lib/ocrEngine";
+import { getGermanWorker, getNameWorker, NAME_PSM, terminateAll, warmUp } from "@/lib/ocrEngine";
 import { detectCard } from "@/lib/cardDetect";
 import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, regionToCanvas } from "@/lib/scanRead";
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
+import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
 import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
 import { pickBest, type CardHash } from "@/lib/imageHash";
@@ -62,8 +63,8 @@ const STACK_KEY = "scan-stack-v1";
 const PREFS_KEY = "scan-prefs-v1";
 
 type Target = { kind: "collection"; folderId?: string | null } | { kind: "wishlist" } | { kind: "deck"; deckId: string };
-type Prefs = { auto: boolean; foil: boolean; sound: boolean; target: Target };
-const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, target: { kind: "collection" } };
+type Prefs = { auto: boolean; foil: boolean; sound: boolean; german: boolean; target: Target };
+const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, german: false, target: { kind: "collection" } };
 
 // Zeitmessung für die Optimierung: nur aktiv mit localStorage "scan-debug" = "1"
 let debugT0 = 0;
@@ -252,6 +253,7 @@ export function ScanClient({
     setStatus("Lade Texterkennung (nur beim ersten Mal)…");
     try {
       await warmUp();
+      if (prefsRef.current.german) await getGermanWorker();
       setStatus(null);
     } catch {
       setStatus("Texterkennung konnte nicht geladen werden – Verbindung prüfen. Namen eintippen geht weiterhin.");
@@ -310,9 +312,9 @@ export function ScanClient({
     const direct =
       info?.set && info.number
         ? await directPrint(info.set, info.number, info.lang, name ? [name] : [])
-        : name
+        : name && info?.lang !== "DE"
           ? await directByName(name)
-          : null;
+          : null; // deutscher Name: nicht unscharf unter den englischen suchen
     if (direct) {
       resolveCache.set(cacheKey, direct);
       if (suggest) setSuggestions([]);
@@ -353,7 +355,7 @@ export function ScanClient({
     setFlash("ok");
     setTimeout(() => setFlash(null), 450);
     if (prefsRef.current.sound) beep(true);
-    navigator.vibrate?.(40);
+    buzz(40);
   }
 
   // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
@@ -392,7 +394,7 @@ export function ScanClient({
     setFlash("ok");
     setTimeout(() => setFlash(null), 450);
     if (prefsRef.current.sound) beep(true);
-    navigator.vibrate?.(40);
+    buzz(40);
   }
 
   // Druck per Bildvergleich bestimmen, wenn Set/Nummer nicht lesbar waren:
@@ -443,11 +445,11 @@ export function ScanClient({
       const dict = nameIndexIfReady();
       scanLog("scan_start");
       // Karte als Viereck finden, entzerren, Name + Infozeile lesen
-      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady());
+      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady(), prefsRef.current.german);
       // Bild der Karte festhalten (für den Bildvergleich der Drucke)
       const card = read.quad ? quadBounds(read.quad, 1, 1) : detectedRef.current?.video ?? guide.video;
       const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
-      const { names, sure, corrected } = await read.name;
+      const { names, sure, corrected, german } = await read.name;
       scanLog(`name_done names=${JSON.stringify(names)} sure=${sure?.name ?? "-"}`);
       if (sure) {
         acceptPending(sure.name, read.info, names, camHash);
@@ -455,6 +457,19 @@ export function ScanClient({
       }
       const info = await read.info;
       scanLog(`info_done ${JSON.stringify(info)}`);
+      if (auto && german?.length && (!info?.lang || info.lang === "EN" || info.lang === "DE")) {
+        // Vermutlich deutsche Karte: über Set + Nummer mit dem gedruckten
+        // deutschen Namen abgleichen, sonst den deutschen Namen nachschlagen.
+        let match: ScanMatch | null = null;
+        if (info?.set && info.number) match = await directPrint(info.set, info.number, "DE", german, true).catch(() => null);
+        for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
+        scanLog(`resolved_de ${match ? match.name : "-"}`);
+        if (match) {
+          accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          return true;
+        }
+      }
       if (auto && (!info?.lang || info.lang === "EN")) {
         // Automatik, Name nicht sicher: Nur annehmen, wenn zwei Dinge
         // zusammenpassen – Set + Nummer ergeben eine Karte, deren Name zum
@@ -471,7 +486,7 @@ export function ScanClient({
         if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
         return true;
       }
-      const tryNames = Array.from(new Set([...corrected, ...names]));
+      const tryNames = Array.from(new Set([...(german ?? []), ...corrected, ...names]));
       const { match, read: readName } = await resolveCandidates(tryNames, info, !auto);
       scanLog(`resolved ${match ? match.name : "-"}`);
       if (match) {
@@ -602,7 +617,7 @@ export function ScanClient({
       let result;
       const card: Rect | null = found ?? (ratio > 0.62 && ratio < 0.82 ? { x: 0, y: 0, w: 1, h: 1 } : null);
       const whole = { x: 0, y: 0, w: 1, h: 1 };
-      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady());
+      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady(), prefsRef.current.german);
       if (card || photo.quad) {
         const name = await photo.name;
         const info = await photo.info;
@@ -1004,6 +1019,17 @@ export function ScanClient({
                 <Toggle on={prefs.auto} onClick={() => setPrefs((p) => ({ ...p, auto: !p.auto }))} label="Auto" />
                 <Toggle on={prefs.foil} onClick={() => setPrefs((p) => ({ ...p, foil: !p.foil }))} label="Foil" />
                 <Toggle on={prefs.sound} onClick={() => setPrefs((p) => ({ ...p, sound: !p.sound }))} label="Ton" />
+                <Toggle
+                  on={prefs.german}
+                  onClick={() =>
+                    setPrefs((p) => {
+                      // deutsches Lesemodell gleich laden, nicht erst bei der ersten Karte
+                      if (!p.german) void getGermanWorker().catch(() => {});
+                      return { ...p, german: !p.german };
+                    })
+                  }
+                  label="Deutsch"
+                />
               </div>
             </div>
           </div>
