@@ -31,13 +31,13 @@ export default async function CollectionPage() {
     loadFolderEntries(supabase, "card"),
     supabase.from("decks").select("id, name").eq("user_id", user.id),
     // In welchen Decks steckt welche Karte? (Anzeige in der Sammlung)
-    selectAll<{ deck_id: string; name: string }>(() =>
-      supabase.from("deck_cards").select("deck_id, name").eq("user_id", user.id).order("id"),
-    ).catch(() => [] as Array<{ deck_id: string; name: string }>),
+    selectAll<{ deck_id: string; name: string; scryfall_id: string | null; foil: boolean | null }>(() =>
+      supabase.from("deck_cards").select("deck_id, name, scryfall_id, foil").eq("user_id", user.id).order("id"),
+    ).catch(() => [] as Array<{ deck_id: string; name: string; scryfall_id: string | null; foil: boolean | null }>),
   ]);
   cards = loaded;
   cards = attachFolders(cards, entries);
-  const uses = deckUsage(deckCards, decks ?? []);
+  const uses = deckUsage(deckCards, decks ?? [], cards);
 
   return (
     <CollectionClient
