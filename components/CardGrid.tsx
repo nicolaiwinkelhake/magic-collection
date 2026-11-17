@@ -37,7 +37,7 @@ export function CardGrid({
   cards: Card[];
   /** eigene Decks – Karten lassen sich hineinlegen */
   decks?: DeckOption[];
-  /** in welchen eigenen Decks steckt die Karte (nach Name) */
+  /** in welchen eigenen Decks steckt der Eintrag (nach card.id) */
   deckUses?: Record<string, DeckUse[]>;
   groupBy?: GroupKey;
   /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
@@ -242,9 +242,9 @@ export function CardGrid({
                       {card.foil && <span className="text-fuchsia-300">Foil</span>}
                       {card.condition && card.condition !== "NM" && <span className="text-amber-400">{card.condition}</span>}
                       {card.language && card.language !== "EN" && <span>{card.language}</span>}
-                      {deckUses[card.name]?.length ? (
-                        <span className="text-indigo-300 truncate" title={deckUses[card.name].map((u) => u.deckName).join(", ")}>
-                          · {deckUses[card.name].length === 1 ? deckUses[card.name][0].deckName : `${deckUses[card.name].length} Decks`}
+                      {deckUses[card.id]?.length ? (
+                        <span className="text-indigo-300 truncate" title={deckUses[card.id].map((u) => u.deckName).join(", ")}>
+                          · {deckUses[card.id].length === 1 ? deckUses[card.id][0].deckName : `${deckUses[card.id].length} Decks`}
                         </span>
                       ) : null}
                     </span>
@@ -296,7 +296,7 @@ export function CardGrid({
                   <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/20 via-transparent to-cyan-300/25 mix-blend-screen" aria-hidden />
                 )}
                 <QuantityBadge count={card.quantity} />
-                {deckUses[card.name]?.length ? <DeckBadge uses={deckUses[card.name]} /> : null}
+                {deckUses[card.id]?.length ? <DeckBadge uses={deckUses[card.id]} /> : null}
               </span>
               {selectMode && (
                 <span
@@ -670,11 +670,11 @@ export function CardGrid({
                   </>
                 )}
 
-                {deckUses[editing.name]?.length ? (
+                {deckUses[editing.id]?.length ? (
                   <div className="rounded-xl bg-indigo-500/10 border border-indigo-400/20 px-3 py-2.5 space-y-1.5">
                     <p className="text-sm text-indigo-200">In deinen Decks</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {deckUses[editing.name].map((u) => (
+                      {deckUses[editing.id].map((u) => (
                         <a
                           key={u.deckId}
                           href={`/decks/${u.deckId}`}
@@ -685,9 +685,9 @@ export function CardGrid({
                         </a>
                       ))}
                     </div>
-                    {!readOnly && copiesInDecks(deckUses[editing.name]) > editing.quantity && (
+                    {!readOnly && copiesInDecks(deckUses[editing.id]) > editing.quantity && (
                       <p className="text-[11px] text-amber-300">
-                        {copiesInDecks(deckUses[editing.name])}× in Decks verbaut, aber nur {editing.quantity}× in diesem Eintrag – evtl. weitere Drucke/Foil oder Karte fehlt.
+                        {copiesInDecks(deckUses[editing.id])}× in Decks verbaut, aber nur {editing.quantity}× in diesem Eintrag – es fehlen Exemplare in der Sammlung.
                       </p>
                     )}
                   </div>
@@ -767,7 +767,7 @@ export function CardGrid({
           cards={local.filter((c) => deckFor.includes(c.id))}
           inDecks={
             deckFor.length === 1
-              ? new Set((deckUses[local.find((c) => c.id === deckFor[0])?.name ?? ""] ?? []).map((u) => u.deckId))
+              ? new Set((deckUses[deckFor[0]] ?? []).map((u) => u.deckId))
               : undefined
           }
           onDone={(deck, added) => {
