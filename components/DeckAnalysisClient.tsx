@@ -155,8 +155,22 @@ export function DeckAnalysisClient({ id }: { id: string }) {
   // nur ins Deck legen – die Sammlung bleibt unverändert
   const addToDeck = (entries: Array<{ name: string; quantity: number }>) => post(`/api/decks/${id}/cards`, { nameEntries: entries, addToCollection: false });
 
+  // Übernehmen geht nur mit einer Karte, die man hat (frei in der Sammlung).
+  // Alles andere: auf die Wunschliste (oder beim Freund per Trade anfragen).
+  const owned = (add: SwapIn) => add.source === "collection";
+  const [wished, setWished] = useState<Set<string>>(new Set());
+  async function wish(add: SwapIn) {
+    if (busy) return;
+    setBusy(add.name);
+    const r = await post("/api/wishlist", { names: add.name });
+    setBusy(null);
+    if (r.ok) setWished((w) => new Set(w).add(add.name));
+    say(r.ok ? `${add.name} steht auf deiner Wunschliste` : r.error, !r.ok);
+  }
+
   async function applySwap(out: SwapOut | undefined, add: SwapIn) {
     if (busy) return;
+    if (!owned(add) && !isBasic(add.name)) return say(`${add.name} ist nicht in deiner Sammlung – erst besorgen, dann tauschen.`, true);
     setBusy(add.name);
     const added = await addToDeck([{ name: add.name, quantity: 1 }]);
     if (!added.ok) {
@@ -361,7 +375,7 @@ export function DeckAnalysisClient({ id }: { id: string }) {
                     <p className="text-xs text-zinc-400">Typische Länder für {data.deck.commander}</p>
                     <ul className="space-y-1.5">
                       {lands.suggestions.slice(0, 8).map((a) => (
-                        <AddRow key={a.name} add={a} onOpen={() => openItem(a.name)} onAdd={() => applySwap(undefined, a)} busy={busy} onTrade={requestTrade} />
+                        <AddRow key={a.name} add={a} onOpen={() => openItem(a.name)} onAdd={() => applySwap(undefined, a)} onWish={() => wish(a)} owned={owned(a)} wished={wished.has(a.name)} busy={busy} onTrade={requestTrade} />
                       ))}
                     </ul>
                   </div>
@@ -418,7 +432,7 @@ export function DeckAnalysisClient({ id }: { id: string }) {
               </h2>
               <ul className="space-y-1.5">
                 {[...data.swaps.map((x) => x.in), ...data.more].map((a) => (
-                  <AddRow key={a.name} add={a} onOpen={() => openItem(a.name)} onAdd={() => applySwap(undefined, a)} busy={busy} onTrade={requestTrade} />
+                  <AddRow key={a.name} add={a} onOpen={() => openItem(a.name)} onAdd={() => applySwap(undefined, a)} onWish={() => wish(a)} owned={owned(a)} wished={wished.has(a.name)} busy={busy} onTrade={requestTrade} />
                 ))}
               </ul>
               {data.edhrec && data.swaps.length + data.more.length === 0 && <p className="text-xs text-zinc-400">{budget ? "Mit diesem Budget gibt es keine Vorschläge." : "Keine Vorschläge."}</p>}
@@ -452,9 +466,7 @@ export function DeckAnalysisClient({ id }: { id: string }) {
                       <button onClick={() => setKeep(s.out.id, s.out.name, true)} disabled={!!busy || !s.out.id} className="btn-ghost h-8 px-2.5 text-xs" title={`${s.out.name} nicht mehr zum Rausnehmen vorschlagen`}>
                         Behalten
                       </button>
-                      <button onClick={() => applySwap(s.out, s.in)} disabled={!!busy} className="btn-primary h-8 px-3 text-xs">
-                        {busy === s.in.name ? "…" : "Tauschen"}
-                      </button>
+                      <ActionButton add={s.in} owned={owned(s.in)} wished={wished.has(s.in.name)} busy={busy} onUse={() => applySwap(s.out, s.in)} onWish={() => wish(s.in)} label="Tauschen" />
                     </span>
                   </div>
                 </li>
@@ -572,11 +584,21 @@ export function DeckAnalysisClient({ id }: { id: string }) {
           onTrade={requestTrade}
           actions={(item) => (
             <>
-              {(item.out || !full || item.in.typeLine.includes("Land")) && (
-                <button onClick={() => applySwap(item.out, item.in)} disabled={!!busy} className="btn-primary h-10 text-sm">
-                  {busy === item.in.name ? "Wird übernommen …" : item.out ? "Tausch ins Deck übernehmen" : `${item.in.name} ins Deck`}
-                </button>
-              )}
+              {(item.out || !full || item.in.typeLine.includes("Land")) &&
+                (owned(item.in) ? (
+                  <button onClick={() => applySwap(item.out, item.in)} disabled={!!busy} className="btn-primary h-10 text-sm">
+                    {busy === item.in.name ? "Wird übernommen …" : item.out ? "Tausch ins Deck übernehmen" : `${item.in.name} ins Deck`}
+                  </button>
+                ) : (
+                  <>
+                    <p className="text-xs text-zinc-400">
+                      {item.in.name} ist nicht frei in deiner Sammlung – {item.in.source === "friend" && item.in.friend ? `${item.in.friend.ownerName} hat sie (Trade anfragen) oder ` : ""}auf die Wunschliste setzen und tauschen, sobald du sie hast.
+                    </p>
+                    <button onClick={() => wish(item.in)} disabled={!!busy || wished.has(item.in.name)} className="btn-primary h-10 text-sm">
+                      {wished.has(item.in.name) ? "Auf der Wunschliste ✓" : busy === item.in.name ? "…" : "Auf die Wunschliste"}
+                    </button>
+                  </>
+                ))}
               {item.out?.id && (
                 <button onClick={() => setKeep(item.out!.id, item.out!.name, true)} disabled={!!busy} className="btn-secondary h-10 text-sm">
                   {item.out.name} behalten
@@ -621,8 +643,41 @@ export function DeckAnalysisClient({ id }: { id: string }) {
   );
 }
 
-/** Eine vorgeschlagene Karte mit Quelle/Preis und "ins Deck". */
-function AddRow({ add, onOpen, onAdd, busy, onTrade }: { add: SwapIn; onOpen: () => void; onAdd?: () => void; busy: string | null; onTrade: (c: FriendCopy) => void }) {
+/** Knopf je Vorschlag: übernehmen (Karte in der Sammlung) oder auf die Wunschliste. */
+function ActionButton({ add, owned, wished, busy, onUse, onWish, label }: { add: SwapIn; owned: boolean; wished: boolean; busy: string | null; onUse: () => void; onWish: () => void; label: string }) {
+  if (owned)
+    return (
+      <button onClick={onUse} disabled={!!busy} className="btn-primary h-8 px-3 text-xs">
+        {busy === add.name ? "…" : label}
+      </button>
+    );
+  return (
+    <button onClick={onWish} disabled={!!busy || wished} className="btn-secondary h-8 px-3 text-xs" title="Nicht in deiner Sammlung – vormerken">
+      {wished ? "Gemerkt ✓" : busy === add.name ? "…" : "★ Merken"}
+    </button>
+  );
+}
+
+/** Eine vorgeschlagene Karte mit Quelle/Preis und "ins Deck" (nur aus der Sammlung) bzw. "merken". */
+function AddRow({
+  add,
+  onOpen,
+  onAdd,
+  onWish,
+  owned,
+  wished,
+  busy,
+  onTrade,
+}: {
+  add: SwapIn;
+  onOpen: () => void;
+  onAdd?: () => void;
+  onWish?: () => void;
+  owned?: boolean;
+  wished?: boolean;
+  busy: string | null;
+  onTrade: (c: FriendCopy) => void;
+}) {
   return (
     <li className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-2 py-1.5 min-w-0">
       <button onClick={onOpen} className="min-w-0 flex-1 flex items-center gap-2 text-left">
@@ -633,11 +688,18 @@ function AddRow({ add, onOpen, onAdd, busy, onTrade }: { add: SwapIn; onOpen: ()
         </span>
       </button>
       <SourceBadge add={add} onTrade={onTrade} />
-      {onAdd && (
+      {onAdd && owned && (
         <button onClick={onAdd} disabled={!!busy} className="icon-btn w-8 h-8 shrink-0" aria-label={`${add.name} ins Deck`} title="Ins Deck">
           {busy === add.name ? "…" : "+"}
+        </button>
+      )}
+      {onAdd && !owned && onWish && (
+        <button onClick={onWish} disabled={!!busy || wished} className="icon-btn w-8 h-8 shrink-0" aria-label={`${add.name} auf die Wunschliste`} title="Nicht in deiner Sammlung – auf die Wunschliste">
+          {wished ? "✓" : busy === add.name ? "…" : "★"}
         </button>
       )}
     </li>
   );
 }
+
+const isBasic = (name: string) => /^(Plains|Island|Swamp|Mountain|Forest|Wastes)$/.test(name);
