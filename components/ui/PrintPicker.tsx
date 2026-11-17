@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import type { ScanMatch } from "@/lib/scanStack";
@@ -142,6 +142,30 @@ export function PrintPicker({
     };
   }, [stableRef, prints]);
 
+  // Sichtbarer Bereich über der Bildschirmtastatur: Das Fenster wird darin
+  // eingepasst, sonst liegen die Treffer hinter der Tastatur und man muss
+  // erst nach unten scrollen.
+  const [view, setView] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setView({ top: vv.offsetTop, height: vv.height });
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  const keyboardOpen = view != null && typeof window !== "undefined" && window.innerHeight - view.height > 120;
+
+  // Nach jeder Sucheingabe die Trefferliste wieder von oben zeigen
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 });
+  }, [filter]);
+
   // Escape schließt
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
@@ -176,14 +200,17 @@ export function PrintPicker({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/75"
+      className={`fixed inset-x-0 z-[70] flex ${keyboardOpen ? "items-start" : "items-end"} sm:items-center justify-center bg-black/75`}
+      style={view ? { top: view.top, height: view.height } : { top: 0, bottom: 0 }}
       onClick={() => !busy && onClose()}
       role="dialog"
       aria-modal="true"
       aria-label={`Druck von ${name} wählen`}
     >
       <div
-        className="w-full sm:max-w-2xl max-h-[88dvh] flex flex-col rounded-t-[2rem] sm:rounded-3xl bg-zinc-900 border border-white/10 pb-[env(safe-area-inset-bottom)] animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] sm:animate-none"
+        className={`w-full sm:max-w-2xl flex flex-col sm:rounded-3xl bg-zinc-900 border border-white/10 ${
+          keyboardOpen ? "h-full rounded-none" : "max-h-[88%] rounded-t-[2rem] pb-[env(safe-area-inset-bottom)] animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] sm:animate-none"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 pb-3 space-y-3 border-b border-white/5">
@@ -204,13 +231,24 @@ export function PrintPicker({
               ✕
             </button>
           </div>
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Set, Kürzel, Nummer oder Jahr …"
-            aria-label="Drucke filtern"
-            className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm outline-none focus:border-indigo-400/70"
-          />
+          <div className="relative">
+            <input
+              type="search"
+              enterKeyHint="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              // "Suchen" auf der Tastatur schließt sie – dann ist die ganze Liste frei
+              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              placeholder="Set, Kürzel, Nummer oder Jahr …"
+              aria-label="Drucke filtern"
+              className="w-full h-10 rounded-xl bg-white/5 border border-white/10 pl-3 pr-20 text-sm outline-none focus:border-indigo-400/70"
+            />
+            {prints && filter.trim() && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 tabular-nums" aria-live="polite">
+                {shown.length} Treffer
+              </span>
+            )}
+          </div>
           {reference && prints && prints.length > 1 && (
             <p className="text-xs text-sky-300">
               Nach Ähnlichkeit zu deinem Foto sortiert
@@ -222,7 +260,7 @@ export function PrintPicker({
           {busy && <p className="text-sm text-indigo-300">Speichere …</p>}
         </div>
 
-        <div className="overflow-y-auto p-4 pt-3">
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pt-3">
           {loadError ? (
             <div className="space-y-2 text-sm">
               <p className="text-red-400">{loadError}</p>
