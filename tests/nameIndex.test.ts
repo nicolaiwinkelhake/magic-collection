@@ -40,3 +40,14 @@ describe("nameIndex", () => {
     expect(readScore("bolt", "lightningbolt")).toBeLessThan(0.5);
   });
 });
+
+describe("Randzeichen vom Kartenrahmen", () => {
+  const index = buildNameIndex(["Cylian Elf", "Dröhnender Donner", "Go for the Throat", "Sol Ring"]);
+  it("werden vor dem Abgleich entfernt", () => {
+    expect(matchName(index, "f Cylian Elf i")).toMatchObject({ name: "Cylian Elf", score: 1, confident: true });
+    expect(matchName(index, "ll Drohnender Donner")).toMatchObject({ name: "Dröhnender Donner", confident: true });
+  });
+  it("echte kurze Wörter am Anfang bleiben erhalten", () => {
+    expect(matchName(index, "Go for the Throat")).toMatchObject({ name: "Go for the Throat", score: 1 });
+  });
+});

@@ -11,6 +11,7 @@ import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
 import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
 import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
+import { germanIndexIfReady, loadGermanIndex } from "@/lib/germanIndexClient";
 import { pickBest, type CardHash } from "@/lib/imageHash";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
 import { loadPrints } from "@/components/ui/PrintPicker";
@@ -205,6 +206,7 @@ export function ScanClient({
     const d = setTimeout(() => {
       void loadNameIndex();
       void loadSetPrior();
+      void loadGermanIndex();
     }, 1500);
     // Verbindung zu Scryfall schon aufbauen – spart beim ersten Scan den Handshake
     for (const href of ["https://api.scryfall.com", "https://cards.scryfall.io"]) {
@@ -445,7 +447,7 @@ export function ScanClient({
       const dict = nameIndexIfReady();
       scanLog("scan_start");
       // Karte als Viereck finden, entzerren, Name + Infozeile lesen
-      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady(), prefsRef.current.german);
+      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady(), prefsRef.current.german, germanIndexIfReady());
       // Bild der Karte festhalten (für den Bildvergleich der Drucke)
       const card = read.quad ? quadBounds(read.quad, 1, 1) : detectedRef.current?.video ?? guide.video;
       const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
@@ -620,7 +622,7 @@ export function ScanClient({
       let result;
       const card: Rect | null = found ?? (ratio > 0.62 && ratio < 0.82 ? { x: 0, y: 0, w: 1, h: 1 } : null);
       const whole = { x: 0, y: 0, w: 1, h: 1 };
-      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady(), prefsRef.current.german);
+      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady(), prefsRef.current.german, germanIndexIfReady());
       if (card || photo.quad) {
         const name = await photo.name;
         const info = await photo.info;
