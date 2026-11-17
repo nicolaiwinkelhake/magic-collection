@@ -19,10 +19,13 @@ export function CollectionClient({
   loadError,
   initialFolders = [],
   deckUses = {},
+  decks = [],
 }: {
   initialCards: Card[];
   /** in welchen Decks steckt welche Karte (nach Name) */
   deckUses?: Record<string, DeckUse[]>;
+  /** eigene Decks (zum Hineinlegen von Karten) */
+  decks?: Array<{ id: string; name: string }>;
   loadError?: string;
   /** eigene Ordner (Migration 014) */
   initialFolders?: Folder[];
@@ -268,7 +271,7 @@ export function CollectionClient({
         <Filters state={filters} onChange={setFilters} sets={availableSets} />
       </div>
 
-      <CardGrid cards={filteredCards} groupBy={filters.group} folders={folders} deckUses={deckUses} onFoldersChanged={() => router.refresh()} />
+      <CardGrid cards={filteredCards} groupBy={filters.group} folders={folders} deckUses={deckUses} decks={decks} onFoldersChanged={() => router.refresh()} />
     </main>
   );
 }
