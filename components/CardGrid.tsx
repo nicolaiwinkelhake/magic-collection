@@ -21,6 +21,7 @@ import { SwipeSheet } from "@/components/ui/SwipeSheet";
 import { SelectionBar } from "@/components/ui/SelectionBar";
 import { prune, toggleAll } from "@/lib/selection";
 import { PrintPicker } from "@/components/ui/PrintPicker";
+import { DeckPicker, type DeckOption } from "@/components/ui/DeckPicker";
 
 export function CardGrid({
   cards,
@@ -31,8 +32,11 @@ export function CardGrid({
   detailActions,
   selectAction,
   deckUses = {},
+  decks = [],
 }: {
   cards: Card[];
+  /** eigene Decks – Karten lassen sich hineinlegen */
+  decks?: DeckOption[];
   /** in welchen eigenen Decks steckt die Karte (nach Name) */
   deckUses?: Record<string, DeckUse[]>;
   groupBy?: GroupKey;
@@ -61,6 +65,9 @@ export function CardGrid({
   const [printFor, setPrintFor] = useState<Card | null>(null);
   // Ordner zuordnen: ausgewählte Karten bzw. eine Karte aus der Detailansicht
   const [folderIds, setFolderIds] = useState<string[] | null>(null);
+  // In ein Deck legen: ausgewählte Karten bzw. eine Karte aus der Detailansicht
+  const [deckFor, setDeckFor] = useState<string[] | null>(null);
+  const [deckMsg, setDeckMsg] = useState<string | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
 
@@ -463,7 +470,10 @@ export function CardGrid({
                 onConfirm: () => void removeCards([...selected]),
                 actionLabel: "Entfernen",
                 confirmText: "{n} Einträge wirklich aus der Sammlung entfernen?",
-                secondary: { label: "Ordner", onClick: () => setFolderIds([...selected]) },
+                secondary: [
+                  { label: "Ordner", onClick: () => setFolderIds([...selected]) },
+                  ...(decks.length ? [{ label: "Deck", onClick: () => setDeckFor([...selected]) }] : []),
+                ],
               })}
           busy={busy}
         />
@@ -683,6 +693,12 @@ export function CardGrid({
                   </div>
                 ) : null}
 
+                {!readOnly && decks.length > 0 && (
+                  <button onClick={() => setDeckFor([editing.id])} className="btn-secondary w-full h-10 text-sm">
+                    In ein Deck legen
+                  </button>
+                )}
+
                 {detailActions && <div className="flex flex-wrap gap-2">{detailActions(editing)}</div>}
 
                 {/* Links */}
@@ -743,6 +759,34 @@ export function CardGrid({
             setFolderIds(null);
           }}
         />
+      )}
+
+      {deckFor && (
+        <DeckPicker
+          decks={decks}
+          cards={local.filter((c) => deckFor.includes(c.id))}
+          inDecks={
+            deckFor.length === 1
+              ? new Set((deckUses[local.find((c) => c.id === deckFor[0])?.name ?? ""] ?? []).map((u) => u.deckId))
+              : undefined
+          }
+          onDone={(deck, added) => {
+            setDeckMsg(`${added === 1 ? "1 Karte" : `${added} Karten`} in „${deck.name}“ gelegt`);
+            setTimeout(() => setDeckMsg(null), 3500);
+            setDeckFor(null);
+            if (selectMode) {
+              setSelected(new Set());
+              setSelectMode(false);
+            }
+            router.refresh(); // Deck-Abzeichen aktualisieren
+          }}
+          onClose={() => setDeckFor(null)}
+        />
+      )}
+      {deckMsg && (
+        <div role="status" className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-[75] mx-auto max-w-md rounded-2xl bg-emerald-950 text-emerald-100 ring-1 ring-inset ring-emerald-400/30 px-4 py-3 text-sm shadow-card">
+          {deckMsg}
+        </div>
       )}
 
       {printFor && (

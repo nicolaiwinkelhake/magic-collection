@@ -45,6 +45,7 @@ export default async function CollectionPage() {
       loadError={(error as { message: string } | null)?.message}
       initialFolders={folders ?? []}
       deckUses={uses}
+      decks={(decks ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "de"))}
     />
   );
 }

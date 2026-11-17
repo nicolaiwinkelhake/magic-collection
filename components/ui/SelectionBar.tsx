@@ -31,10 +31,13 @@ export function SelectionBar({
   busy?: boolean;
   /** über einem Vollbild-Fenster (z. B. Scanner) statt über der Tab-Leiste */
   overlay?: boolean;
-  /** zusätzliche Aktion ohne Rückfrage, z. B. "Verschieben" */
-  secondary?: { label: string; onClick: () => void };
+  /** zusätzliche Aktion(en) ohne Rückfrage, z. B. "Ordner", "Deck" */
+  secondary?: { label: string; onClick: () => void } | Array<{ label: string; onClick: () => void }>;
 }) {
   const allSelected = total > 0 && count === total;
+  const extras = Array.isArray(secondary) ? secondary : secondary ? [secondary] : [];
+  // Viele Knöpfe: kompakter, die Anzahl steht ohnehin links
+  const compact = extras.length >= 2;
   return (
     <div
       className={`fixed inset-x-0 px-3 animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)] ${
@@ -45,37 +48,38 @@ export function SelectionBar({
       role="toolbar"
       aria-label="Auswahl"
     >
-      <div className="mx-auto max-w-xl flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900 px-3 py-2.5 shadow-2xl shadow-black/60">
+      <div className="mx-auto max-w-xl flex items-center gap-1.5 sm:gap-2 rounded-2xl border border-white/10 bg-zinc-900 px-3 py-2.5 shadow-2xl shadow-black/60">
         <button onClick={onCancel} aria-label="Auswahl beenden" className="shrink-0 grid place-items-center w-9 h-9 rounded-full bg-white/10">
           ✕
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold tabular-nums" aria-live="polite">
-            {count} ausgewählt
+          <p className="text-sm font-semibold tabular-nums whitespace-nowrap truncate" aria-live="polite">
+            {count} {compact ? "gewählt" : "ausgewählt"}
           </p>
-          <button onClick={onToggleAll} className="text-xs text-indigo-300 hover:text-indigo-200">
-            {allSelected ? "Keine auswählen" : `Alle ${total} auswählen`}
+          <button onClick={onToggleAll} className="text-xs text-indigo-300 hover:text-indigo-200 whitespace-nowrap">
+            {allSelected ? (compact ? "Keine" : "Keine auswählen") : compact ? `Alle ${total}` : `Alle ${total} auswählen`}
           </button>
         </div>
-        {secondary && (
+        {extras.map((a) => (
           <button
-            onClick={secondary.onClick}
+            key={a.label}
+            onClick={a.onClick}
             disabled={!count || busy}
-            className="shrink-0 rounded-xl bg-white/10 hover:bg-white/15 px-3 h-10 text-sm font-medium disabled:opacity-40"
+            className={`shrink-0 rounded-xl bg-white/10 hover:bg-white/15 h-10 text-sm font-medium disabled:opacity-40 ${compact ? "px-2.5" : "px-3"}`}
           >
-            {secondary.label}
+            {a.label}
           </button>
-        )}
+        ))}
         <button
           onClick={() => {
             if (count && (!confirmText || confirm(withCount(confirmText, count)))) onConfirm();
           }}
           disabled={!count || busy}
-          className={`shrink-0 rounded-xl px-4 h-10 text-sm font-semibold disabled:opacity-40 ${
+          className={`shrink-0 rounded-xl h-10 text-sm font-semibold disabled:opacity-40 ${compact ? "px-3" : "px-4"} ${
             tone === "primary" ? "bg-gradient-to-b from-indigo-400 to-indigo-600 shadow-glow" : "bg-red-600 hover:bg-red-500"
           }`}
         >
-          {busy ? "…" : `${actionLabel}${count ? ` (${count})` : ""}`}
+          {busy ? "…" : `${actionLabel}${count && !compact ? ` (${count})` : ""}`}
         </button>
       </div>
     </div>
