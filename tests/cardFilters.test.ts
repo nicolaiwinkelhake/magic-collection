@@ -44,3 +44,21 @@ describe("filterAndSortCards", () => {
     expect(setCodes(cards)).toEqual(["abc", "c21"]);
   });
 });
+
+describe("Suche im Kartentext", () => {
+  const list = [
+    c("Serra Angel", { type_line: "Creature — Angel", oracle_text: "Flying, vigilance" } as never),
+    c("Divination", { type_line: "Sorcery", oracle_text: "Draw two cards." } as never),
+    c("Flying Men", { type_line: "Creature — Human", oracle_text: "Flying" } as never),
+  ];
+  it("ohne Schalter nur im Namen", () => {
+    expect(filterAndSortCards(list, { ...DEFAULT_FILTERS, sort: "name", search: "flying" }).map((x) => x.name)).toEqual(["Flying Men"]);
+  });
+  it("mit Schalter auch in Typzeile und Regeltext, alle Wörter", () => {
+    const f = { ...DEFAULT_FILTERS, sort: "name" as const, inText: true };
+    expect(filterAndSortCards(list, { ...f, search: "flying" }).map((x) => x.name)).toEqual(["Flying Men", "Serra Angel"]);
+    expect(filterAndSortCards(list, { ...f, search: "draw cards" }).map((x) => x.name)).toEqual(["Divination"]);
+    expect(filterAndSortCards(list, { ...f, search: "angel vigilance" }).map((x) => x.name)).toEqual(["Serra Angel"]);
+    expect(filterAndSortCards(list, { ...f, search: "trample" })).toEqual([]);
+  });
+});

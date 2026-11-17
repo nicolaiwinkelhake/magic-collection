@@ -13,6 +13,9 @@ import { grayOf } from "@/lib/printHashClient";
 import type { Rect } from "@/lib/scanGeometry";
 import { QUAD_W, readInfo, readName, rectToQuad } from "@/lib/scanRead";
 
+/** unterhalb dieser Ähnlichkeit zum besten englischen Namen wird zusätzlich deutsch gelesen */
+export const GERMAN_BELOW = 0.85;
+
 export type NameRead = {
   /** Lesarten des Namensbalkens (beste zuerst) */
   names: string[];
@@ -101,14 +104,17 @@ export function recognizeFrame(
       if (read.sure) return read;
     }
     // Vermutlich keine englische Karte: Es wurde etwas gelesen, aber kein
-    // englischer Kartenname passt auch nur annähernd. Dann mit dem deutschen
+    // englischer Kartenname passt gut. Dann mit dem deutschen
     // Modell nachlesen (Umlaute, deutsche Wörter); der Server löst deutsche
     // Namen auf. Auf die Sprachangabe der Infozeile ist kein Verlass – auf
     // vielen Karten steht keine.
     // Schalter "Deutsch": Die Lesung stammt schon vom deutschen Modell
     if (germanFirst) return read.names.length ? { ...read, german: read.names } : read;
     const foreign = (await info.catch(() => null))?.lang;
-    if ((read.names.length && !bestGuess(read, dictionary)) || (foreign && foreign !== "EN")) {
+    // Auch bei nur mäßig passendem englischem Namen: Deutsche Wörter ähneln
+    // manchmal zufällig einem englischen Kartennamen.
+    const guess = bestGuess(read, dictionary);
+    if ((read.names.length && (!guess || guess.score < GERMAN_BELOW)) || (foreign && foreign !== "EN")) {
       const german = await readName(source, w, h, quad, await getGermanWorker()).catch(() => null);
       if (german?.names.length) return { ...read, german: german.names };
     }

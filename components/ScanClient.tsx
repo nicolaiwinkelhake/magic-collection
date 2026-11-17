@@ -457,19 +457,6 @@ export function ScanClient({
       }
       const info = await read.info;
       scanLog(`info_done ${JSON.stringify(info)}`);
-      if (auto && german?.length && (!info?.lang || info.lang === "EN" || info.lang === "DE")) {
-        // Vermutlich deutsche Karte: über Set + Nummer mit dem gedruckten
-        // deutschen Namen abgleichen, sonst den deutschen Namen nachschlagen.
-        let match: ScanMatch | null = null;
-        if (info?.set && info.number) match = await directPrint(info.set, info.number, "DE", german, true).catch(() => null);
-        for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
-        scanLog(`resolved_de ${match ? match.name : "-"}`);
-        if (match) {
-          accept(match, prefsRef.current.foil, camHash);
-          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
-          return true;
-        }
-      }
       if (auto && (!info?.lang || info.lang === "EN")) {
         // Automatik, Name nicht sicher: Nur annehmen, wenn zwei Dinge
         // zusammenpassen – Set + Nummer ergeben eine Karte, deren Name zum
@@ -481,10 +468,26 @@ export function ScanClient({
         if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [...names, ...(guess ? [guess.name] : [])], true).catch(() => null);
         for (const raw of names.slice(0, 2)) match ??= await directByName(raw, 0.8).catch(() => null);
         scanLog(`resolved ${match ? match.name : "-"}`);
-        if (!match) return false;
-        accept(match, prefsRef.current.foil, camHash);
-        if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
-        return true;
+        if (match) {
+          accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          return true;
+        }
+        if (!german?.length) return false;
+      }
+      if (auto && german?.length && (!info?.lang || info.lang === "EN" || info.lang === "DE")) {
+        // Englisch hat nichts ergeben – vermutlich deutsche Karte: über Set + Nummer mit dem gedruckten
+        // deutschen Namen abgleichen, sonst den deutschen Namen nachschlagen.
+        let match: ScanMatch | null = null;
+        if (info?.set && info.number) match = await directPrint(info.set, info.number, "DE", german, true).catch(() => null);
+        for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
+        scanLog(`resolved_de ${match ? match.name : "-"}`);
+        if (match) {
+          accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          return true;
+        }
+        return false;
       }
       const tryNames = Array.from(new Set([...(german ?? []), ...corrected, ...names]));
       const { match, read: readName } = await resolveCandidates(tryNames, info, !auto);
