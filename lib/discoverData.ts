@@ -24,13 +24,11 @@ export async function loadMyDecks(supabase: SupabaseClient, userId: string): Pro
     .eq("user_id", userId)
     .order("created_at");
   if (!decks?.length) return [];
-  const rows = await selectAll<DoctorDeckCard & { deck_id: string }>(() =>
-    supabase
-      .from("deck_cards")
-      .select("deck_id, name, type_line, cmc, is_commander, image_url, oracle_text")
-      .eq("user_id", userId)
-      .order("id"),
-  ).catch(() => []);
+  const load = (columns: string) =>
+    selectAll<DoctorDeckCard & { deck_id: string }>(() => supabase.from("deck_cards").select(columns).eq("user_id", userId).order("id") as never);
+  const BASE = "id, deck_id, name, type_line, cmc, is_commander, image_url, oracle_text, mana_cost, produced_mana";
+  // "keep" gibt es erst ab Migration 018 – ohne sie trotzdem laden
+  const rows = await load(`${BASE}, keep`).catch(() => load(BASE).catch(() => []));
   return decks.map((d) => ({
     ...(d as Omit<MyDeck, "cards">),
     color_identity: (d.color_identity as string[] | null) ?? [],
