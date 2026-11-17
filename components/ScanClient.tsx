@@ -754,7 +754,10 @@ export function ScanClient({
   const last = stack[0];
   const targetLabel =
     prefs.target.kind === "collection"
-      ? folders.find((f) => f.id === (prefs.target as { folderId?: string }).folderId)?.name ?? "Sammlung"
+      ? (() => {
+          const folder = folders.find((f) => f.id === (prefs.target as { folderId?: string }).folderId)?.name;
+          return folder ? `Sammlung · Ordner ${folder}` : "Sammlung";
+        })()
       : prefs.target.kind === "wishlist"
         ? "Wunschliste"
         : `Deck: ${decks.find((d) => d.id === (prefs.target as { deckId: string }).deckId)?.name ?? "?"}`;
@@ -774,28 +777,71 @@ export function ScanClient({
           : { kind: v as "collection" | "wishlist" },
     }));
 
+  const targetOptions = (
+    <>
+      <option value="collection">Sammlung</option>
+      {folders.length > 0 && (
+        <optgroup label="Sammlung + Ordner">
+          {folders.map((f) => (
+            <option key={f.id} value={`folder:${f.id}`}>
+              Ordner: {f.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      <option value="wishlist">Wunschliste</option>
+      {decks.length > 0 && (
+        <optgroup label="Decks">
+          {decks.map((d) => (
+            <option key={d.id} value={`deck:${d.id}`}>
+              Deck: {d.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </>
+  );
+  const targetIcon = prefs.target.kind === "deck" ? "🃏" : prefs.target.kind === "wishlist" ? "★" : "📚";
+
+  // Kamera-Ansicht: gut sichtbares Ziel oben in der Mitte
   const targetSelect = (
-    <label className="relative inline-flex">
+    <label className="relative inline-flex min-w-0">
       <span className="sr-only">Speichern in</span>
       <select
         value={targetValue}
         onChange={(e) => setTarget(e.target.value)}
-        className="appearance-none rounded-full bg-black/50 backdrop-blur border border-white/15 pl-3 pr-7 h-9 text-sm text-white outline-none max-w-[13rem] truncate"
+        className="appearance-none rounded-full bg-white text-zinc-900 font-semibold shadow-lg pl-8 pr-7 h-10 text-sm outline-none max-w-[14rem] truncate"
       >
-        <option value="collection">→ Sammlung</option>
-        {folders.map((f) => (
-          <option key={f.id} value={`folder:${f.id}`}>
-            → Sammlung + Ordner: {f.name}
-          </option>
-        ))}
-        <option value="wishlist">→ Wunschliste</option>
-        {decks.map((d) => (
-          <option key={d.id} value={`deck:${d.id}`}>
-            → Deck: {d.name}
-          </option>
-        ))}
+        {targetOptions}
       </select>
-      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400">▼</span>
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm" aria-hidden>
+        {targetIcon}
+      </span>
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500" aria-hidden>
+        ▼
+      </span>
+    </label>
+  );
+
+  // Startseite: großes Feld "Gescannte Karten landen in …"
+  const targetCard = (
+    <label className="surface-strong press relative flex items-center gap-3 p-4 cursor-pointer">
+      <span className="grid place-items-center w-12 h-12 shrink-0 rounded-2xl bg-indigo-500/20 ring-1 ring-inset ring-indigo-400/40 text-xl" aria-hidden>
+        {targetIcon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-300">Gescannte Karten landen in</span>
+        <span className="block text-lg font-semibold truncate">{targetLabel}</span>
+      </span>
+      <span className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-zinc-200">Ändern ▾</span>
+      <select
+        value={targetValue}
+        onChange={(e) => setTarget(e.target.value)}
+        aria-label="Speichern in"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+      >
+        {targetOptions}
+      </select>
     </label>
   );
 
@@ -879,6 +925,8 @@ export function ScanClient({
         subtitle="Karte ins Bild legen und kurz ruhig halten – Name, Set, Nummer und Druck werden automatisch erkannt. Deutsche und englische Karten."
       />
 
+      {targetCard}
+
       <button
         onClick={startCamera}
         className="group relative w-full overflow-hidden rounded-3xl p-5 text-left bg-gradient-to-br from-indigo-500 via-indigo-600 to-fuchsia-600 shadow-glow ring-1 ring-inset ring-white/20"
@@ -902,10 +950,6 @@ export function ScanClient({
       </label>
       {cameraError && <p className="text-sm text-amber-400">{cameraError}</p>}
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-zinc-400">Speichern in</span>
-        {targetSelect}
-      </div>
 
       {!cameraOn && status && (
         <p className="text-sm text-zinc-300" aria-live="polite">
