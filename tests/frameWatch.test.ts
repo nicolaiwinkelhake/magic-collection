@@ -12,12 +12,10 @@ describe("frameWatch", () => {
     expect(contrast(pattern())).toBeGreaterThan(50);
   });
 
-  it("liest erst bei ruhigem Bild mit Karte", () => {
-    let st = initialWatch();
+  it("liest, sobald zwei Bilder hintereinander ruhig sind", () => {
+    const st = initialWatch();
     let r = watchFrame(st, pattern());
-    expect(r.shouldScan).toBe(false);
-    r = watchFrame(r.state, pattern());
-    expect(r.shouldScan).toBe(false);
+    expect(r.shouldScan).toBe(false); // erstes Bild: noch kein Vergleich
     r = watchFrame(r.state, pattern());
     expect(r.shouldScan).toBe(true);
   });

@@ -53,6 +53,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 // - Speichern in Sammlung, Wunschliste oder ein Deck – in Paketen, mit
 //   Ladebalken und Wiederholung
 
+// Automatik: so oft wird das Kamerabild geprüft, und so viele Leseversuche
+// gibt es je Karte, bevor der Scanner bis zum Kartenwechsel pausiert.
+// Schnell auslösen: lieber ein Versuch mehr als warten.
+const TICK_MS = 40;
+const MAX_MISSES = 4;
 const THUMB_W = 32;
 const THUMB_H = 45;
 const MAX_HASH_PRINTS = 40;
@@ -577,8 +582,8 @@ export function ScanClient({
           if (ok) {
             misses = 0;
             watchRef.current = markScanned(watchRef.current, frame);
-          } else if (++misses >= 2) {
-            // Zweimal nichts erkannt: nicht endlos weiterlesen – Hinweis zeigen
+          } else if (++misses >= MAX_MISSES) {
+            // Mehrmals nichts erkannt: nicht endlos weiterlesen – Hinweis zeigen
             // und erst nach Kartenwechsel wieder versuchen.
             misses = 0;
             watchRef.current = markScanned(watchRef.current, frame);
@@ -587,7 +592,7 @@ export function ScanClient({
           }
         }
       }
-      if (!stopped) setTimeout(tick, 100);
+      if (!stopped) setTimeout(tick, TICK_MS);
     }
     const t = setTimeout(tick, 200);
     return () => {

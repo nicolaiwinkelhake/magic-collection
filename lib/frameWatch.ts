@@ -33,10 +33,11 @@ export function contrast(a: Float32Array): number {
 }
 
 export const WATCH = {
-  /** darunter gilt das Bild als ruhig */
-  stillDiff: 6,
-  /** so viele ruhige Bilder hintereinander, bevor gelesen wird */
-  stillFrames: 2,
+  /** darunter gilt das Bild als ruhig (etwas großzügig: leichtes Zittern der Hand ist ok) */
+  stillDiff: 8,
+  /** so viele ruhige Bilder hintereinander, bevor gelesen wird – eines reicht:
+   *  Ein verwackeltes Bild liest sich nur nicht sicher, dann folgt das nächste */
+  stillFrames: 1,
   /** mindestens so viel Kontrast, sonst liegt keine Karte im Rahmen */
   minContrast: 22,
   /** so stark muss sich das Bild seit dem letzten Scan verändert haben */
