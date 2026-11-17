@@ -11,6 +11,7 @@ import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
 import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
 import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
+import { germanIndexIfReady, loadGermanIndex } from "@/lib/germanIndexClient";
 import { pickBest, type CardHash } from "@/lib/imageHash";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
 import { loadPrints } from "@/components/ui/PrintPicker";
@@ -205,6 +206,7 @@ export function ScanClient({
     const d = setTimeout(() => {
       void loadNameIndex();
       void loadSetPrior();
+      void loadGermanIndex();
     }, 1500);
     // Verbindung zu Scryfall schon aufbauen – spart beim ersten Scan den Handshake
     for (const href of ["https://api.scryfall.com", "https://cards.scryfall.io"]) {
@@ -445,7 +447,7 @@ export function ScanClient({
       const dict = nameIndexIfReady();
       scanLog("scan_start");
       // Karte als Viereck finden, entzerren, Name + Infozeile lesen
-      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady(), prefsRef.current.german);
+      const read = recognizeFrame(snap, W, H, vis, detectedRef.current?.video ?? guide.video, dict, setPriorIfReady(), prefsRef.current.german, germanIndexIfReady());
       // Bild der Karte festhalten (für den Bildvergleich der Drucke)
       const card = read.quad ? quadBounds(read.quad, 1, 1) : detectedRef.current?.video ?? guide.video;
       const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
@@ -457,19 +459,6 @@ export function ScanClient({
       }
       const info = await read.info;
       scanLog(`info_done ${JSON.stringify(info)}`);
-      if (auto && german?.length && (!info?.lang || info.lang === "EN" || info.lang === "DE")) {
-        // Vermutlich deutsche Karte: über Set + Nummer mit dem gedruckten
-        // deutschen Namen abgleichen, sonst den deutschen Namen nachschlagen.
-        let match: ScanMatch | null = null;
-        if (info?.set && info.number) match = await directPrint(info.set, info.number, "DE", german, true).catch(() => null);
-        for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
-        scanLog(`resolved_de ${match ? match.name : "-"}`);
-        if (match) {
-          accept(match, prefsRef.current.foil, camHash);
-          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
-          return true;
-        }
-      }
       if (auto && (!info?.lang || info.lang === "EN")) {
         // Automatik, Name nicht sicher: Nur annehmen, wenn zwei Dinge
         // zusammenpassen – Set + Nummer ergeben eine Karte, deren Name zum
@@ -481,10 +470,26 @@ export function ScanClient({
         if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [...names, ...(guess ? [guess.name] : [])], true).catch(() => null);
         for (const raw of names.slice(0, 2)) match ??= await directByName(raw, 0.8).catch(() => null);
         scanLog(`resolved ${match ? match.name : "-"}`);
-        if (!match) return false;
-        accept(match, prefsRef.current.foil, camHash);
-        if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
-        return true;
+        if (match) {
+          accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          return true;
+        }
+        if (!german?.length) return false;
+      }
+      if (auto && german?.length && (!info?.lang || info.lang === "EN" || info.lang === "DE")) {
+        // Englisch hat nichts ergeben – vermutlich deutsche Karte: über Set + Nummer mit dem gedruckten
+        // deutschen Namen abgleichen, sonst den deutschen Namen nachschlagen.
+        let match: ScanMatch | null = null;
+        if (info?.set && info.number) match = await directPrint(info.set, info.number, "DE", german, true).catch(() => null);
+        for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
+        scanLog(`resolved_de ${match ? match.name : "-"}`);
+        if (match) {
+          accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          return true;
+        }
+        return false;
       }
       const tryNames = Array.from(new Set([...(german ?? []), ...corrected, ...names]));
       const { match, read: readName } = await resolveCandidates(tryNames, info, !auto);
@@ -617,7 +622,7 @@ export function ScanClient({
       let result;
       const card: Rect | null = found ?? (ratio > 0.62 && ratio < 0.82 ? { x: 0, y: 0, w: 1, h: 1 } : null);
       const whole = { x: 0, y: 0, w: 1, h: 1 };
-      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady(), prefsRef.current.german);
+      const photo = recognizeFrame(full, w, h, whole, card ?? whole, nameIndexIfReady(), setPriorIfReady(), prefsRef.current.german, germanIndexIfReady());
       if (card || photo.quad) {
         const name = await photo.name;
         const info = await photo.info;

@@ -118,31 +118,79 @@ async function findByGermanName(
 ): Promise<ScryfallCard | null> {
   const words = read.split(" ").filter((w) => w.replace(/[^a-zA-ZÀ-ÿ]/g, "").length >= 3);
   if (!words.length) return null;
+  // Verglichen wird ohne Randzeichen der Texterkennung ("N Cerodon-Bulle Au")
+  const clean = words.join(" ");
+  const match = <T,>(items: T[], nameOf: (t: T) => string | null | undefined) => bestNameMatch(clean, items, nameOf) ?? bestNameMatch(read, items, nameOf);
+  const english = async (name: string) => (await fetchCardByName(name).catch(() => null))?.card ?? null;
+  // Englischer Druck aus demselben Set wie die deutsche Karte – der Druck
+  // bestimmt den Preis; nur wenn es ihn nicht gibt, der Standarddruck.
+  const englishIn = async (name: string, set: string | undefined) => {
+    if (set && /^[a-z0-9]{2,6}$/i.test(set)) {
+      const q = new URLSearchParams({ q: `!"${name.replace(/"/g, "")}" e:${set} lang:en`, unique: "prints" });
+      const found = await getJson<{ data?: ScryfallCard[] }>(`${SCRYFALL}/cards/search?${q}`);
+      if (found?.data?.[0]) return found.data[0];
+    }
+    return english(name);
+  };
 
   // 1) Eigene Sammlung: Kandidaten über das längste Wort vorfiltern
   const longest = [...words].sort((a, b) => b.length - a.length)[0].replace(/[%_,]/g, "");
-  const { data: own } = await supabase
-    .from("cards")
-    .select("name, name_de")
-    .ilike("name_de", `%${longest}%`)
-    .limit(50);
-  const ownHit = bestNameMatch(read, own ?? [], (r) => r.name_de as string);
+  const { data: own } = await supabase.from("cards").select("name, name_de").ilike("name_de", `%${longest}%`).limit(50);
+  const ownHit = match(own ?? [], (r) => r.name_de as string);
   if (ownHit) {
-    const r = await fetchCardByName(ownHit.item.name as string).catch(() => null);
-    if (r?.card) return r.card;
+    const card = await english(ownHit.item.name as string);
+    if (card) return card;
   }
 
-  // 2) Scryfall: deutsche Drucke, deren Name die gelesenen Wörter enthält
-  for (const query of [words.join(" "), longest]) {
+  // 2) Deutsche Namen bereits gescannter Sets (gespeichert): verzeiht
+  //    Lesefehler, weil unscharf verglichen wird ("Nawratisieren").
+  const known = await germanSetNames(supabase);
+  const knownHit = match(known, (r) => r.de);
+  if (knownHit) {
+    const card = await englishIn(knownHit.item.en, knownHit.item.set);
+    if (card) return card;
+  }
+
+  // 3) Scryfall: deutsche Drucke, deren Name die gelesenen Wörter enthält
+  for (const query of Array.from(new Set([clean, longest]))) {
     const q = new URLSearchParams({ q: `lang:de ${query}`, unique: "prints" });
     const found = await getJson<{ data?: GermanHit[] }>(`${SCRYFALL}/cards/search?${q}`);
-    const hit = bestNameMatch(read, found?.data ?? [], (c) => germanNameFromCard(c) ?? c.printed_name);
+    const hit = match(found?.data ?? [], (c) => germanNameFromCard(c) ?? c.printed_name);
     if (hit) {
+      // Das Set merken: Wer eine deutsche Karte daraus scannt, scannt meist mehr davon
+      await rememberGermanSet(supabase, hit.item.set).catch(() => {});
       // Englischen Standarddruck holen (Preise gibt es vor allem dort)
-      const r = await fetchCardByName(hit.item.name).catch(() => null);
-      return r?.card ?? hit.item;
+      return (await englishIn(hit.item.name, hit.item.set)) ?? hit.item;
     }
     await sleep(100);
   }
   return null;
+}
+
+// Deutsche Namen je Set im Cache (scryfall_cache, Schlüssel "denames:<set>").
+type GermanName = { de: string; en: string; set?: string };
+const DE_PREFIX = "denames:";
+
+async function germanSetNames(supabase: Awaited<ReturnType<typeof requireUser>>["supabase"]): Promise<GermanName[]> {
+  const { data } = await supabase.from("scryfall_cache").select("data").like("key", `${DE_PREFIX}%`).limit(40);
+  return (data ?? []).flatMap((r) => ((r.data as { names?: GermanName[] } | null)?.names ?? []));
+}
+
+async function rememberGermanSet(supabase: Awaited<ReturnType<typeof requireUser>>["supabase"], set: string | undefined) {
+  if (!set || !/^[a-z0-9]{2,6}$/i.test(set)) return;
+  const key = `${DE_PREFIX}${set.toLowerCase()}`;
+  const { data: have } = await supabase.from("scryfall_cache").select("key").eq("key", key).maybeSingle();
+  if (have) return;
+  const names: GermanName[] = [];
+  let url: string | null = `${SCRYFALL}/cards/search?${new URLSearchParams({ q: `e:${set} lang:de`, unique: "prints" })}`;
+  for (let page = 0; url && page < 4; page++) {
+    const res: { data?: GermanHit[]; has_more?: boolean; next_page?: string } | null = await getJson(url);
+    for (const c of res?.data ?? []) {
+      const de = germanNameFromCard(c) ?? c.printed_name;
+      if (de) names.push({ de, en: c.name, set: set.toLowerCase() });
+    }
+    url = res?.has_more ? res.next_page ?? null : null;
+    if (url) await sleep(100);
+  }
+  if (names.length) await supabase.rpc("save_scryfall_cache", { p_key: key, p_data: { names } });
 }

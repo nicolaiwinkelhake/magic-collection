@@ -12,6 +12,7 @@ import { getInfoWorker } from "@/lib/ocrEngine";
 import type { Worker } from "tesseract.js";
 import { buildNameIndex, type NameIndex } from "@/lib/nameIndex";
 import { warmUp } from "@/lib/ocrEngine";
+import { buildGermanIndex, type GermanIndex } from "@/lib/germanIndex";
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
 import { printMatchesRead } from "@/lib/scryfallDirect";
 import { nameSimilarity } from "@/lib/textSimilarity";
@@ -36,6 +37,7 @@ const H = 1920;
 let index: NameIndex | null = null;
 const xw: Record<string, Promise<Worker>> = {};
 let prior: Map<string, number> = new Map();
+let german: GermanIndex | null = null;
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -189,8 +191,9 @@ function iou(a: Rect, b: Rect) {
 }
 
 const api = {
-  async init(names: string[], sets: Array<[string, number]> = []) {
+  async init(names: string[], sets: Array<[string, number]> = [], de: Array<[string, string]> = []) {
     prior = new Map(sets);
+    german = de.length ? buildGermanIndex(de) : null;
     index = buildNameIndex(names);
     await warmUp();
   },
@@ -203,7 +206,7 @@ const api = {
     // wie in der App: die einfache Rechtecksuche läuft im Takt mit und dient als Ersatz
     const rect = detectCard(grayOf(frame, 0, 0, W, H, DETECT_W, dh), DETECT_W, dh);
     const t0 = performance.now();
-    const read = recognizeFrame(frame, W, H, { x: 0, y: 0, w: 1, h: 1 }, rect ?? guide, index, prior);
+    const read = recognizeFrame(frame, W, H, { x: 0, y: 0, w: 1, h: 1 }, rect ?? guide, index, prior, false, german);
     const t1 = performance.now();
     const name = await read.name;
     const t2 = performance.now();

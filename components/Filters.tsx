@@ -23,6 +23,8 @@ export type SortKey = "name" | "cmc" | "price" | "set" | "color";
 
 export type FilterState = {
   search: string;
+  /** auch Typzeile und Regeltext durchsuchen (z. B. "flying", "draw a card") */
+  inText?: boolean;
   colors: string[];
   rarity: string;
   type: string;
@@ -79,12 +81,23 @@ export function Filters({
         </svg>
         <input
           type="search"
-          placeholder="Karte suchen (deutsch oder englisch)"
-          aria-label="Kartenname suchen"
+          placeholder={state.inText ? "Name oder Kartentext, z. B. flying" : "Karte suchen (deutsch oder englisch)"}
+          aria-label={state.inText ? "Name oder Kartentext suchen" : "Kartenname suchen"}
           value={state.search}
           onChange={(e) => onChange({ ...state, search: e.target.value })}
-          className="w-full h-11 rounded-xl bg-white/5 border border-white/10 pl-10 pr-3 outline-none placeholder:text-zinc-500 focus:border-indigo-400/70 focus:bg-white/[0.07] transition"
+          className="w-full h-11 rounded-xl bg-white/5 border border-white/10 pl-10 pr-[5.5rem] outline-none placeholder:text-zinc-500 focus:border-indigo-400/70 focus:bg-white/[0.07] transition"
         />
+        <button
+          type="button"
+          onClick={() => onChange({ ...state, inText: !state.inText })}
+          aria-pressed={!!state.inText}
+          title="Auch im Kartentext (Typ und Regeltext, englisch) suchen"
+          className={`absolute right-1.5 top-1/2 -translate-y-1/2 h-8 rounded-lg px-2.5 text-xs font-medium border transition ${
+            state.inText ? "bg-indigo-500/30 border-indigo-400/60 text-indigo-100" : "bg-white/5 border-white/10 text-zinc-400"
+          }`}
+        >
+          Im Text
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

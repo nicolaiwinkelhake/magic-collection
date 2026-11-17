@@ -83,16 +83,29 @@ export const PROBABLE = 0.72;
  * Scanner sofort bestätigen darf (deutlicher Abstand zum Zweitbesten).
  */
 export function matchName(index: NameIndex, read: string, opts: { candidates?: number } = {}): NameMatch | null {
-  const raw = normalizeName(read);
-  // Typische OCR-Verwechslungen (Ziffer statt Buchstabe) – Kartennamen
-  // enthalten fast nie Ziffern
-  const fixed = raw.replace(/1/g, "l").replace(/0/g, "o").replace(/5/g, "s").replace(/8/g, "b");
-  if (fixed !== raw) {
-    const a = matchOne(index, raw, opts);
-    const b = matchOne(index, fixed, opts);
-    return !a || (b && b.score > a.score) ? b : a;
+  // Lesarten: wie gelesen, und ohne kurze Randzeichen – der Rahmen des
+  // Namensbalkens wird oft als "l", "ll", "f" oder "HN" mitgelesen
+  // ("ll Drohnender Donner", "f Cylian Elf i").
+  const tokens = read.trim().split(/\s+/).filter(Boolean);
+  const edge = (t: string | undefined) => !!t && t.replace(/[^a-zA-ZÀ-ÿ0-9]/g, "").length <= 2;
+  const variants = new Set<string>([tokens.join(" ")]);
+  if (tokens.length > 1) {
+    if (edge(tokens[0])) variants.add(tokens.slice(1).join(" "));
+    if (edge(tokens[tokens.length - 1])) variants.add(tokens.slice(0, -1).join(" "));
+    if (tokens.length > 2 && edge(tokens[0]) && edge(tokens[tokens.length - 1])) variants.add(tokens.slice(1, -1).join(" "));
   }
-  return matchOne(index, raw, opts);
+  let best: NameMatch | null = null;
+  for (const v of variants) {
+    const raw = normalizeName(v);
+    // Typische OCR-Verwechslungen (Ziffer statt Buchstabe) – Kartennamen
+    // enthalten fast nie Ziffern
+    const fixed = raw.replace(/1/g, "l").replace(/0/g, "o").replace(/5/g, "s").replace(/8/g, "b");
+    for (const q of new Set([raw, fixed])) {
+      const m = matchOne(index, q, opts);
+      if (m && (!best || m.score > best.score)) best = m;
+    }
+  }
+  return best;
 }
 
 function matchOne(index: NameIndex, q: string, opts: { candidates?: number }): NameMatch | null {

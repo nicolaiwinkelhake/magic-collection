@@ -58,7 +58,10 @@ await page.goto(base);
 await page.waitForFunction(() => window.bench);
 const own = Object.fromEntries((fs.existsSync(path.join(data, "own-sets.txt")) ? fs.readFileSync(path.join(data, "own-sets.txt"), "utf8") : "").split(/\s+/).filter(Boolean).map((x) => x.split(":")));
 const sets = JSON.parse(fs.readFileSync(path.join(data, "sets.json"), "utf8")).data.map((s) => [s.code, Number(own[s.code] ?? 0) + (s.released_at > "2023" ? 0.5 : 0)]);
-await page.evaluate(([n, st]) => window.bench.init(n, st), [names, sets]);
+// deutsches Wörterbuch wie in der App (public/data/de-names.json)
+const dePath = path.join(repo, "public/data/de-names.json");
+const de = fs.existsSync(dePath) ? JSON.parse(fs.readFileSync(dePath, "utf8")).names : [];
+await page.evaluate(([n, st, d]) => window.bench.init(n, st, d), [names, sets, de]);
 if (throttle > 1) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: throttle });

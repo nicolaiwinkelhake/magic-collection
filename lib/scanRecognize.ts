@@ -9,9 +9,13 @@ import { detectQuadBoth, type Quad } from "@/lib/cardQuad";
 import type { CardInfo, SetPrior } from "@/lib/ocr";
 import { matchName, PROBABLE, type NameIndex, type NameMatch } from "@/lib/nameIndex";
 import { getGermanWorker } from "@/lib/ocrEngine";
+import { englishFor, type GermanIndex } from "@/lib/germanIndex";
 import { grayOf } from "@/lib/printHashClient";
 import type { Rect } from "@/lib/scanGeometry";
 import { QUAD_W, readInfo, readName, rectToQuad } from "@/lib/scanRead";
+
+/** unterhalb dieser Ähnlichkeit zum besten englischen Namen wird zusätzlich deutsch gelesen */
+export const GERMAN_BELOW = 0.85;
 
 export type NameRead = {
   /** Lesarten des Namensbalkens (beste zuerst) */
@@ -22,6 +26,8 @@ export type NameRead = {
   corrected: string[];
   /** Lesarten mit deutschem Modell – nur wenn kein englischer Name passte */
   german?: string[];
+  /** erkannt über das deutsche Wörterbuch: der gedruckte deutsche Name */
+  germanName?: string;
 };
 
 export type FrameRead = {
@@ -72,6 +78,8 @@ export function recognizeFrame(
   sets?: SetPrior,
   /** Schalter "Deutsch": gleich mit dem deutschen Modell lesen (liest auch Englisch, nur langsamer) */
   germanFirst = false,
+  /** deutsches Wörterbuch (falls geladen): deutsche Namen ohne Netz erkennen */
+  german: GermanIndex | null = null,
 ): FrameRead {
   const qw = QUAD_W;
   const qh = Math.max(24, Math.round((qw * region.h * h) / (region.w * w)));
@@ -101,16 +109,32 @@ export function recognizeFrame(
       if (read.sure) return read;
     }
     // Vermutlich keine englische Karte: Es wurde etwas gelesen, aber kein
-    // englischer Kartenname passt auch nur annähernd. Dann mit dem deutschen
+    // englischer Kartenname passt gut. Dann mit dem deutschen
     // Modell nachlesen (Umlaute, deutsche Wörter); der Server löst deutsche
     // Namen auf. Auf die Sprachangabe der Infozeile ist kein Verlass – auf
     // vielen Karten steht keine.
+    // Deutsches Wörterbuch auf dem Gerät: Auch das englische Lesemodell
+    // liest deutsche Namen oft gut genug ("Schildkrotenformation").
+    const lateAll = new Set(first.late);
+    const viaGerman = (names: string[], late: Set<string>): NameRead | null => {
+      if (!german) return null;
+      const de = judge(names, german.index, late).sure;
+      const en = de ? englishFor(german, de.name) : null;
+      // nur, wenn der deutsche Name klar besser passt als jeder englische
+      const guess = bestGuess(read, dictionary);
+      return de && en && (!guess || de.score > guess.score) ? { ...read, sure: { name: en, score: de.score, confident: true }, germanName: de.name } : null;
+    };
+    const direct = viaGerman(read.names, lateAll);
+    if (direct) return direct;
     // Schalter "Deutsch": Die Lesung stammt schon vom deutschen Modell
     if (germanFirst) return read.names.length ? { ...read, german: read.names } : read;
     const foreign = (await info.catch(() => null))?.lang;
-    if ((read.names.length && !bestGuess(read, dictionary)) || (foreign && foreign !== "EN")) {
-      const german = await readName(source, w, h, quad, await getGermanWorker()).catch(() => null);
-      if (german?.names.length) return { ...read, german: german.names };
+    // Auch bei nur mäßig passendem englischem Namen: Deutsche Wörter ähneln
+    // manchmal zufällig einem englischen Kartennamen.
+    const guess = bestGuess(read, dictionary);
+    if ((read.names.length && (!guess || guess.score < GERMAN_BELOW)) || (foreign && foreign !== "EN")) {
+      const reread = await readName(source, w, h, quad, await getGermanWorker()).catch(() => null);
+      if (reread?.names.length) return viaGerman(reread.names, reread.late) ?? { ...read, german: reread.names };
     }
     return read;
   })();

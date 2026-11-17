@@ -13,6 +13,7 @@ type FilterableCard = {
   foil: boolean;
   price_eur: number | null;
   price_eur_foil: number | null;
+  oracle_text?: string | null;
 };
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -38,9 +39,15 @@ const priceOf = (c: FilterableCard) => (c.foil ? c.price_eur_foil : c.price_eur)
 
 export function filterAndSortCards<T extends FilterableCard>(cards: T[], filters: FilterState): T[] {
   const search = filters.search.trim().toLowerCase();
+  const words = search.split(/\s+/).filter(Boolean);
   const type = filters.type.toLowerCase();
   const result = cards.filter((card) => {
-    if (search && !card.name.toLowerCase().includes(search) && !card.name_de?.toLowerCase().includes(search)) return false;
+    if (search && !card.name.toLowerCase().includes(search) && !card.name_de?.toLowerCase().includes(search)) {
+      // Suche im Kartentext: alle Wörter müssen in Typzeile oder Regeltext vorkommen
+      if (!filters.inText) return false;
+      const text = `${card.type_line ?? ""}\n${card.oracle_text ?? ""}`.toLowerCase();
+      if (!words.every((w) => text.includes(w))) return false;
+    }
     if (filters.rarity && card.rarity !== filters.rarity) return false;
     if (filters.set && card.set_code !== filters.set) return false;
     if (type && !card.type_line?.toLowerCase().includes(type)) return false;
