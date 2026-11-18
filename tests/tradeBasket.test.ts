@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addToBasket, basketCount, basketPayload, basketValue, setBasketQty, type BasketCard } from "@/lib/tradeBasket";
+import { parseDrafts, withDraft } from "@/lib/tradeBasket";
 
 const card = (id: string, quantity: number, price: number | null, foil = false, foilPrice: number | null = null): BasketCard => ({
   id,
@@ -37,5 +38,21 @@ describe("tradeBasket", () => {
       { id: "f", quantity: 1 },
       { id: "n", quantity: 1 },
     ]);
+  });
+});
+
+describe("angefangene Trades", () => {
+  const card = { id: "c1", name: "Sol Ring", image_url: null, foil: false, quantity: 2, price_eur: 1, price_eur_foil: null };
+  it("merkt den Korb je Freund und entfernt leere", () => {
+    const a = withDraft({}, "f1", "nico", [{ card, qty: 1 }], "2026-11-18T23:00:00Z");
+    expect(Object.keys(a)).toEqual(["f1"]);
+    expect(withDraft(a, "f1", "nico", [], "x")).toEqual({});
+  });
+  it("liest nur gültige Einträge", () => {
+    expect(parseDrafts(null)).toEqual({});
+    expect(parseDrafts("kaputt")).toEqual({});
+    expect(parseDrafts(JSON.stringify({ f1: { name: "nico", basket: [], updated: "x" } }))).toEqual({});
+    const ok = { f1: { name: "nico", basket: [{ card, qty: 1 }], updated: "x" } };
+    expect(parseDrafts(JSON.stringify(ok))).toEqual(ok);
   });
 });

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatEur, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type TradeDrafts } from "@/lib/tradeBasket";
 
 type TradeItem = {
   name: string;
@@ -107,6 +108,7 @@ export function TradesClient({
   return (
     <main className="page max-w-3xl">
       <PageHeader title="Trades" subtitle="Karten mit Freunden tauschen" />
+      <TradeDraftList />
 
       {/* Neuer Trade */}
       <div className="surface p-4">
@@ -328,5 +330,49 @@ function TradeCard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Angefangene Trades: Karten, die in „Geteilt“ für einen Trade angefragt,
+ * aber noch nicht abgeschickt wurden (im Browser gemerkt).
+ */
+function TradeDraftList() {
+  const [drafts, setDrafts] = useState<TradeDrafts>({});
+  useEffect(() => setDrafts(loadDrafts()), []);
+  const entries = Object.entries(drafts).sort((a, b) => b[1].updated.localeCompare(a[1].updated));
+  if (!entries.length) return null;
+
+  const discard = (id: string) => {
+    if (!confirm(`Angefangenen Trade mit ${drafts[id].name} verwerfen?`)) return;
+    const next = withDraft(drafts, id, drafts[id].name, [], new Date().toISOString());
+    saveDrafts(next);
+    setDrafts(next);
+  };
+
+  return (
+    <section className="space-y-2" aria-labelledby="drafts-title">
+      <h2 id="drafts-title" className="font-medium text-zinc-300">Noch nicht abgeschickt</h2>
+      {entries.map(([id, d]) => {
+        const n = basketCount(d.basket);
+        return (
+          <div key={id} className="surface p-3 flex items-center gap-3 ring-1 ring-inset ring-amber-400/30">
+            <span className="text-xl" aria-hidden>🔁</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold truncate">Trade mit {d.name}</p>
+              <p className="text-xs text-zinc-400 truncate">
+                {n} {n === 1 ? "Karte" : "Karten"} · {formatEur(basketValue(d.basket))} · {d.basket.map((b) => b.card.name).join(", ")}
+              </p>
+            </div>
+            <button onClick={() => discard(id)} aria-label={`Trade mit ${d.name} verwerfen`} className="shrink-0 w-9 h-9 rounded-full bg-white/5 text-zinc-400 hover:text-white">
+              ✕
+            </button>
+            <Link href={`/shared?trade=${encodeURIComponent(id)}`} className="btn-primary shrink-0 h-9 px-3 text-sm">
+              Weiter ›
+            </Link>
+          </div>
+        );
+      })}
+    </section>
   );
 }
