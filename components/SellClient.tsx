@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CardViewer, type ViewerCard } from "@/components/ui/CardViewer";
 import { formatEur } from "@/lib/format";
@@ -183,6 +184,8 @@ export function SellClient() {
     <main className="page max-w-3xl space-y-4">
       <PageHeader title="Extern verkaufen" subtitle="Karten für Cardmarket und Kleinanzeigen vorbereiten" />
 
+      <AccountLinks />
+
       <nav className="segmented" aria-label="Verkaufskanäle">
         {([
           ["cardmarket", `Cardmarket${cmEntries.length ? ` · ${cmEntries.length}` : ""}`],
@@ -297,6 +300,87 @@ function toViewer(e: Entry): ViewerCard {
 }
 
 /* ---------------------------------------------------------------- */
+
+const KA_MY_ADS = "https://www.kleinanzeigen.de/m-meine-anzeigen.html";
+const cmOffers = (user: string) => `https://www.cardmarket.com/de/Magic/Users/${encodeURIComponent(user)}/Offers/Singles`;
+const CM_USER_RE = /^[\w.-]{2,40}$/;
+
+/**
+ * Abkürzungen in die eigenen Konten. Die App speichert nur den
+ * Cardmarket-Benutzernamen (im Nutzerprofil, kein Passwort) – angemeldet ist
+ * man bei Cardmarket/Kleinanzeigen im Browser.
+ */
+function AccountLinks() {
+  const supabase = useMemo(() => createClient(), []);
+  const [cmUser, setCmUser] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      const u = (data.user?.user_metadata?.cardmarket_user as string | undefined) ?? null;
+      setCmUser(u);
+    });
+  }, [supabase]);
+
+  async function save() {
+    const name = draft.trim();
+    if (name && !CM_USER_RE.test(name)) return setErr("Nur Buchstaben, Zahlen, Punkt, - und _ (2–40 Zeichen).");
+    const { error } = await supabase.auth.updateUser({ data: { cardmarket_user: name || null } });
+    if (error) return setErr("Speichern hat nicht geklappt.");
+    setCmUser(name || null);
+    setEditing(false);
+    setErr(null);
+  }
+
+  return (
+    <div className="surface p-3 space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {cmUser ? (
+          <a href={cmOffers(cmUser)} target="_blank" rel="noreferrer" className="btn-secondary h-10 w-full">
+            Mein Cardmarket-Angebot ↗
+          </a>
+        ) : (
+          <button className="btn-secondary h-10 w-full" onClick={() => { setDraft(""); setEditing(true); }}>
+            Cardmarket-Namen hinterlegen
+          </button>
+        )}
+        <a href={KA_MY_ADS} target="_blank" rel="noreferrer" className="btn-secondary h-10 w-full">
+          Meine Kleinanzeigen ↗
+        </a>
+      </div>
+      {cmUser && !editing && (
+        <p className="text-xs text-zinc-500">
+          Cardmarket: <span className="text-zinc-300">{cmUser}</span> ·{" "}
+          <button className="underline underline-offset-2" onClick={() => { setDraft(cmUser); setEditing(true); }}>ändern</button>
+        </p>
+      )}
+      {editing && (
+        <div className="space-y-2">
+          <label className="block text-xs text-zinc-400" htmlFor="cm-user">
+            Dein Cardmarket-Benutzername – nur der Name, kein Passwort. Angemeldet bist du bei Cardmarket im Browser.
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="cm-user"
+              className="input h-10 min-h-0 py-0"
+              value={draft}
+              autoCapitalize="none"
+              autoCorrect="off"
+              placeholder="z. B. Nicolai_W"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void save()}
+            />
+            <button className="btn-primary h-10" onClick={() => void save()}>Speichern</button>
+            <button className="btn-ghost h-10 px-3" onClick={() => { setEditing(false); setErr(null); }} aria-label="Abbrechen">✕</button>
+          </div>
+          {err && <p className="text-xs text-red-300">{err}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Empty({ folderName, text }: { folderName: string; text: string }) {
   return (
