@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { CardViewer, type ViewerCard } from "@/components/ui/CardViewer";
 import { formatEur } from "@/lib/format";
 import {
   CONDITIONS,
@@ -36,7 +38,28 @@ const TAB_KEY = "sell-tab";
 
 const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
 const qtyOf = (e: Entry) => Math.min(e.sell_quantity ?? e.card.quantity, e.card.quantity);
-const cardmarketLink = (name: string) => `https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(name)}`;
+// Genauer Druck auf Cardmarket (Produkt-ID von Scryfall); sonst Suche nach Namen.
+// Eingeloggt bist du dort im Browser – auf der Produktseite "Verkaufen" antippen.
+const cardmarketLink = (c: { name: string; foil?: boolean }, idProduct?: number | null) =>
+  idProduct
+    ? `https://www.cardmarket.com/de/Magic/Products?idProduct=${idProduct}${c.foil ? "&isFoil=Y" : ""}`
+    : `https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}`;
+
+/** Cardmarket-Produkt-IDs der Drucke direkt bei Scryfall holen (75 je Abfrage). */
+async function fetchCardmarketIds(ids: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  for (let i = 0; i < ids.length; i += 75) {
+    const res = await fetch("https://api.scryfall.com/cards/collection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ identifiers: ids.slice(i, i + 75).map((id) => ({ id })) }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    for (const c of (data?.data ?? []) as Array<{ id: string; cardmarket_id?: number }>) if (c.cardmarket_id) out[c.id] = c.cardmarket_id;
+    if (i + 75 < ids.length) await new Promise((r) => setTimeout(r, 550));
+  }
+  return out;
+}
 const KLEINANZEIGEN_NEW = "https://www.kleinanzeigen.de/p-anzeige-aufgeben.html";
 
 async function api(path: string, method: string, body?: unknown) {
@@ -54,6 +77,8 @@ export function SellClient() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cmIds, setCmIds] = useState<Record<string, number>>({});
+  const [viewer, setViewer] = useState<{ list: Entry[]; index: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +123,25 @@ export function SellClient() {
     return () => clearTimeout(t);
   }, [msg]);
 
+  // Fehlende Cardmarket-IDs nachladen (nur einmal je Druck)
+  useEffect(() => {
+    if (!state) return;
+    const missing = Array.from(new Set(state.entries.map((e) => e.card.scryfall_id).filter((id): id is string => !!id && !(id in cmIds))));
+    if (!missing.length) return;
+    let cancelled = false;
+    void fetchCardmarketIds(missing).then((found) => {
+      if (cancelled) return;
+      setCmIds((prev) => {
+        const next = { ...prev };
+        for (const id of missing) next[id] = found[id] ?? 0;
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [state, cmIds]);
+  const cmLink = (c: Card) => cardmarketLink(c, c.scryfall_id ? cmIds[c.scryfall_id] : null);
+  const open = (list: Entry[], e: Entry) => setViewer({ list, index: Math.max(0, list.findIndex((x) => x.id === e.id)) });
+
   const pick = (t: Tab) => {
     setTab(t);
     try { localStorage.setItem(TAB_KEY, t); } catch {}
@@ -140,6 +184,8 @@ export function SellClient() {
     <main className="page max-w-3xl space-y-4">
       <PageHeader title="Extern verkaufen" subtitle="Karten für Cardmarket und Kleinanzeigen vorbereiten" />
 
+      <AccountLinks />
+
       <nav className="segmented" aria-label="Verkaufskanäle">
         {([
           ["cardmarket", `Cardmarket${cmEntries.length ? ` · ${cmEntries.length}` : ""}`],
@@ -170,6 +216,8 @@ export function SellClient() {
           onRemove={(e) => removeFromSale([e.id])}
           onSell={sell}
           onCopied={() => setMsg("Liste kopiert")}
+          onOpen={open}
+          cmLink={cmLink}
         />
       )}
 
@@ -193,10 +241,37 @@ export function SellClient() {
           onSell={sell}
           onCopied={(what) => setMsg(`${what} kopiert`)}
           onError={setError}
+          onOpen={open}
         />
       )}
 
       {tab === "sold" && <SoldTab sales={sales} />}
+
+      {viewer && (
+        <CardViewer
+          cards={viewer.list.map(toViewer)}
+          index={viewer.index}
+          onIndexChange={(i) => setViewer((v) => v && { ...v, index: i })}
+          onClose={() => setViewer(null)}
+          info={(vc) => {
+            const e = viewer.list.find((x) => x.id === vc.key);
+            if (!e) return null;
+            const m = marketPrice(e.card);
+            return (
+              <p className="text-sm text-zinc-300">
+                {conditionLabel(e.card.condition)} · {languageLabel(e.card.language)}
+                {m != null && <> · Markt <span className="text-emerald-400">{formatEur(m)}</span></>}
+              </p>
+            );
+          }}
+          actions={(vc) => {
+            const e = viewer.list.find((x) => x.id === vc.key);
+            return e ? (
+              <a href={cmLink(e.card)} target="_blank" rel="noreferrer" className="btn-secondary h-10">Auf Cardmarket öffnen ↗</a>
+            ) : null;
+          }}
+        />
+      )}
 
       {msg && (
         <div role="status" className="fixed left-1/2 -translate-x-1/2 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-50 rounded-full bg-zinc-800 border border-white/10 px-4 py-2 text-sm shadow-lg">
@@ -207,7 +282,105 @@ export function SellClient() {
   );
 }
 
+function toViewer(e: Entry): ViewerCard {
+  const c = e.card as Card & { name_de?: string | null; type_line?: string | null; rarity?: string | null };
+  return {
+    key: e.id,
+    name: c.name,
+    name_de: c.name_de ?? null,
+    image_url: c.image_url,
+    set_code: c.set_code,
+    collector_number: c.collector_number,
+    rarity: c.rarity ?? null,
+    price_eur: c.price_eur,
+    price_eur_foil: c.price_eur_foil,
+    foil: c.foil,
+    quantity: qtyOf(e),
+  };
+}
+
 /* ---------------------------------------------------------------- */
+
+const KA_MY_ADS = "https://www.kleinanzeigen.de/m-meine-anzeigen.html";
+const cmOffers = (user: string) => `https://www.cardmarket.com/de/Magic/Users/${encodeURIComponent(user)}/Offers/Singles`;
+const CM_USER_RE = /^[\w.-]{2,40}$/;
+
+/**
+ * Abkürzungen in die eigenen Konten. Die App speichert nur den
+ * Cardmarket-Benutzernamen (im Nutzerprofil, kein Passwort) – angemeldet ist
+ * man bei Cardmarket/Kleinanzeigen im Browser.
+ */
+function AccountLinks() {
+  const supabase = useMemo(() => createClient(), []);
+  const [cmUser, setCmUser] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      const u = (data.user?.user_metadata?.cardmarket_user as string | undefined) ?? null;
+      setCmUser(u);
+    });
+  }, [supabase]);
+
+  async function save() {
+    const name = draft.trim();
+    if (name && !CM_USER_RE.test(name)) return setErr("Nur Buchstaben, Zahlen, Punkt, - und _ (2–40 Zeichen).");
+    const { error } = await supabase.auth.updateUser({ data: { cardmarket_user: name || null } });
+    if (error) return setErr("Speichern hat nicht geklappt.");
+    setCmUser(name || null);
+    setEditing(false);
+    setErr(null);
+  }
+
+  return (
+    <div className="surface p-3 space-y-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {cmUser ? (
+          <a href={cmOffers(cmUser)} target="_blank" rel="noreferrer" className="btn-secondary h-10 w-full">
+            Mein Cardmarket-Angebot ↗
+          </a>
+        ) : (
+          <button className="btn-secondary h-10 w-full" onClick={() => { setDraft(""); setEditing(true); }}>
+            Cardmarket-Namen hinterlegen
+          </button>
+        )}
+        <a href={KA_MY_ADS} target="_blank" rel="noreferrer" className="btn-secondary h-10 w-full">
+          Meine Kleinanzeigen ↗
+        </a>
+      </div>
+      {cmUser && !editing && (
+        <p className="text-xs text-zinc-500">
+          Cardmarket: <span className="text-zinc-300">{cmUser}</span> ·{" "}
+          <button className="underline underline-offset-2" onClick={() => { setDraft(cmUser); setEditing(true); }}>ändern</button>
+        </p>
+      )}
+      {editing && (
+        <div className="space-y-2">
+          <label className="block text-xs text-zinc-400" htmlFor="cm-user">
+            Dein Cardmarket-Benutzername – nur der Name, kein Passwort. Angemeldet bist du bei Cardmarket im Browser.
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="cm-user"
+              className="input h-10 min-h-0 py-0"
+              value={draft}
+              autoCapitalize="none"
+              autoCorrect="off"
+              placeholder="z. B. Nicolai_W"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void save()}
+            />
+            <button className="btn-primary h-10" onClick={() => void save()}>Speichern</button>
+            <button className="btn-ghost h-10 px-3" onClick={() => { setEditing(false); setErr(null); }} aria-label="Abbrechen">✕</button>
+          </div>
+          {err && <p className="text-xs text-red-300">{err}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Empty({ folderName, text }: { folderName: string; text: string }) {
   return (
@@ -228,25 +401,32 @@ function CardRow({
   actions,
   onQty,
   onCondition,
+  onOpen,
 }: {
   e: Entry;
   priceSlot?: React.ReactNode;
   actions: React.ReactNode;
   onQty: (e: Entry, q: number | null) => void;
   onCondition: (e: Entry, c: string) => void;
+  onOpen: (e: Entry) => void;
 }) {
   const c = e.card;
   const q = qtyOf(e);
   const market = marketPrice(c);
   return (
     <li className="flex gap-3 px-3 py-3">
-      <span className="shrink-0 w-12 h-[67px] rounded-[5px] overflow-hidden bg-zinc-800">
+      <button
+        type="button"
+        onClick={() => onOpen(e)}
+        aria-label={`${c.name} groß ansehen`}
+        className="shrink-0 w-12 h-[67px] rounded-[5px] overflow-hidden bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+      >
         {c.image_url && <Image src={c.image_url} alt="" width={48} height={67} className="w-full h-full object-cover" />}
-      </span>
+      </button>
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{c.name}</p>
+            <button type="button" onClick={() => onOpen(e)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{c.name}</button>
             <p className="text-xs text-zinc-500 truncate">
               <span className="uppercase">{c.set_code}</span>
               {c.collector_number && ` #${c.collector_number}`}
@@ -325,6 +505,8 @@ function CardmarketTab({
   onRemove,
   onSell,
   onCopied,
+  onOpen,
+  cmLink,
 }: {
   folder: Folder;
   entries: Entry[];
@@ -335,6 +517,8 @@ function CardmarketTab({
   onRemove: (e: Entry) => void;
   onSell: (items: Array<{ entry_id: string; quantity: number; price: number | null }>, label: string) => void;
   onCopied: () => void;
+  onOpen: (list: Entry[], e: Entry) => void;
+  cmLink: (c: Card) => string;
 }) {
   if (!entries.length)
     return <Empty folderName={folder.name} text="Im Verkaufsordner für Cardmarket liegen noch keine Karten." />;
@@ -389,10 +573,11 @@ function CardmarketTab({
             e={e}
             onQty={onQty}
             onCondition={onCondition}
+            onOpen={(x) => onOpen(entries, x)}
             priceSlot={<PriceInput value={e.asking_price} suggestion={cardmarketSuggestion(e.card)} onSave={(p) => onPrice(e, p)} label={`Preis für ${e.card.name}`} />}
             actions={
               <>
-                <a href={cardmarketLink(e.card.name)} target="_blank" rel="noreferrer" title="Auf Cardmarket öffnen" aria-label={`${e.card.name} auf Cardmarket öffnen`} className="h-8 inline-flex items-center rounded-lg px-2.5 text-xs bg-indigo-500/15 text-indigo-200 border border-indigo-400/30">
+                <a href={cmLink(e.card)} target="_blank" rel="noreferrer" title="Auf Cardmarket öffnen" aria-label={`${e.card.name} auf Cardmarket öffnen`} className="h-8 inline-flex items-center rounded-lg px-2.5 text-xs bg-indigo-500/15 text-indigo-200 border border-indigo-400/30">
                   CM ↗
                 </a>
                 <button
@@ -432,6 +617,7 @@ function KleinanzeigenTab({
   onSell,
   onCopied,
   onError,
+  onOpen,
 }: {
   root: Folder;
   loose: Entry[];
@@ -448,6 +634,7 @@ function KleinanzeigenTab({
   onSell: (items: Array<{ entry_id: string; quantity: number; price: number | null }>, label: string) => void;
   onCopied: (what: string) => void;
   onError: (m: string) => void;
+  onOpen: (list: Entry[], e: Entry) => void;
 }) {
   const newAd = () => {
     const name = window.prompt("Name der Anzeige (z. B. „Elfen-Bundle“ oder „Commander-Staples“):")?.trim();
@@ -474,6 +661,7 @@ function KleinanzeigenTab({
                 e={e}
                 onQty={onQty}
                 onCondition={onCondition}
+                onOpen={(x) => onOpen(loose, x)}
                 actions={
                   <>
                     <select
@@ -516,6 +704,7 @@ function KleinanzeigenTab({
           onSell={onSell}
           onCopied={onCopied}
           onError={onError}
+          onOpen={onOpen}
         />
       ))}
     </div>
@@ -536,6 +725,7 @@ function AdCard({
   onSell,
   onCopied,
   onError,
+  onOpen,
 }: {
   ad: Folder;
   rootName: string;
@@ -550,6 +740,7 @@ function AdCard({
   onSell: (items: Array<{ entry_id: string; quantity: number; price: number | null }>, label: string) => void;
   onCopied: (what: string) => void;
   onError: (m: string) => void;
+  onOpen: (list: Entry[], e: Entry) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -653,6 +844,7 @@ function AdCard({
                     e={e}
                     onQty={onQty}
                     onCondition={onCondition}
+                    onOpen={(x) => onOpen(entries, x)}
                     actions={
                       <>
                         <button className="h-8 rounded-lg px-2.5 text-xs bg-emerald-500/15 text-emerald-300 border border-emerald-400/30" disabled={busy} onClick={() => soldOne(e)}>
