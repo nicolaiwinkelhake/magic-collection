@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import type { Metadata, Viewport } from "next";
 import { PWAProvider } from "@/components/PWAProvider";
 import { IconUpdateHint } from "@/components/IconUpdateHint";
+import { WhatsNew } from "@/components/WhatsNew";
 import { AppNav } from "@/components/AppNav";
 import { createClient } from "@/lib/supabase/server";
 import { cinzel, cinzelDecorative } from "@/lib/brandFonts";
@@ -53,6 +54,7 @@ export default async function RootLayout({
         {children}
         <PWAProvider />
         <IconUpdateHint />
+        {user && <WhatsNew />}
       </body>
     </html>
   );
