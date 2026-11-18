@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { openRequests, uniqueFriends } from "@/lib/friends";
 
 type FriendshipRow = {
   id: string;
@@ -43,13 +44,10 @@ export function FriendsClient({
     router.refresh();
   }
 
-  const accepted = friendships.filter((f) => f.status === "accepted");
-  const incoming = friendships.filter(
-    (f) => f.status === "pending" && f.direction === "incoming"
-  );
-  const outgoing = friendships.filter(
-    (f) => f.status === "pending" && f.direction === "outgoing"
-  );
+  // jede Person nur einmal (Freundschaften stehen in beiden Richtungen)
+  const accepted = uniqueFriends(friendships);
+  const incoming = openRequests(friendships, "incoming");
+  const outgoing = openRequests(friendships, "outgoing");
 
   async function sendRequest(e: React.FormEvent) {
     e.preventDefault();
