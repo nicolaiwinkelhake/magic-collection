@@ -36,6 +36,7 @@ export function BrandMark() {
       <span className="flex flex-col leading-none">
         <span className="font-brand-deco text-[1.15rem] tracking-[0.02em] text-silver">MAGIC</span>
         <span className="font-brand text-[0.5rem] tracking-[0.42em] text-silver mt-[3px]">COLLECTION</span>
+        <span className="font-brand text-[0.4rem] tracking-[0.16em] text-silver opacity-70 mt-[3px] whitespace-nowrap">BY NICOLAI WINKELHAKE</span>
       </span>
     </span>
   );
