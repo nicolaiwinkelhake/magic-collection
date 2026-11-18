@@ -368,18 +368,32 @@ export function DeckDetailClient({
   useEffect(() => {
     if (roleFilter && !categories.some((c) => c.category === roleFilter)) setRoleFilter(null);
   }, [roleFilter, categories]);
+  // Kartenliste direkt unter die festen Leisten (Kopfzeile + Reiter) holen.
+  // Die Höhe der Leisten wird gemessen (iPhone: Notch/Statusleiste), und es
+  // wird sofort statt animiert gesprungen – eine Animation wurde auf dem
+  // iPhone durch nachladende Bilder unterbrochen und landete zu weit oben.
+  function scrollToList() {
+    const run = () => {
+      const el = listRef.current;
+      if (!el) return;
+      const bar = document.querySelector('nav[aria-label="Deck-Bereiche"]');
+      const offset = (bar ? bar.getBoundingClientRect().bottom : 140) + 8;
+      const top = el.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+    };
+    requestAnimationFrame(() => {
+      run();
+      setTimeout(run, 250); // nach Layout-Verschiebungen (Bilder) nachjustieren
+    });
+  }
   function pickRole(category: string) {
     const next = roleFilter === category ? null : category;
     setRoleFilter(next);
-    if (next) {
-      requestAnimationFrame(() => {
-        const el = listRef.current;
-        if (!el) return;
-        // unter der festen Kopfzeile + Reiterleiste landen
-        const top = el.getBoundingClientRect().top + window.scrollY - 140;
-        window.scrollTo({ top, behavior: "smooth" });
-      });
-    }
+    scrollToList();
+  }
+  function clearRole() {
+    setRoleFilter(null);
+    scrollToList();
   }
 
   const typeGroups = useMemo(() => groupByType(shownStacks), [shownStacks]);
@@ -1160,7 +1174,7 @@ export function DeckDetailClient({
               <span className="rounded-full bg-indigo-500/20 border border-indigo-400/40 px-3 py-1 text-indigo-100">
                 Nur {roleFilter} · {categories.find((c) => c.category === roleFilter)?.cards.length ?? 0}
               </span>
-              <button type="button" onClick={() => setRoleFilter(null)} className="text-zinc-400 hover:text-white underline-offset-2 hover:underline">
+              <button type="button" onClick={clearRole} className="text-zinc-400 hover:text-white underline-offset-2 hover:underline">
                 Alle zeigen
               </button>
             </div>
