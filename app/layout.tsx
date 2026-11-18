@@ -3,9 +3,11 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import type { Metadata, Viewport } from "next";
 import { PWAProvider } from "@/components/PWAProvider";
+import { IconUpdateHint } from "@/components/IconUpdateHint";
 import { AppNav } from "@/components/AppNav";
 import { createClient } from "@/lib/supabase/server";
 import { cinzel, cinzelDecorative } from "@/lib/brandFonts";
+import { iconUrl } from "@/lib/brandVersion";
 
 export const metadata: Metadata = {
   title: "Magic Collection",
@@ -18,10 +20,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: iconUrl("/icon-192.png"), sizes: "192x192", type: "image/png" },
+      { url: iconUrl("/icon-512.png"), sizes: "512x512", type: "image/png" },
     ],
-    apple: "/apple-touch-icon.png",
+    apple: iconUrl("/apple-touch-icon.png"),
   },
 };
 
@@ -50,6 +52,7 @@ export default async function RootLayout({
         <AppNav email={user?.email ?? null} />
         {children}
         <PWAProvider />
+        <IconUpdateHint />
       </body>
     </html>
   );
