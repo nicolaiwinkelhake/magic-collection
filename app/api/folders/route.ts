@@ -1,4 +1,5 @@
 import { requireUser, unauthorized } from "@/lib/apiAuth";
+import { stripParentLabel } from "@/lib/folderLabels";
 
 // Eigene Ordner (Sammlung + Wunschliste): anlegen, umbenennen, löschen.
 // Löschen entfernt nur den Ordner und seine Zuordnungen – die Karten
@@ -39,7 +40,8 @@ export async function PATCH(request: Request) {
   const { supabase, user } = await requireUser();
   if (!user) return unauthorized();
   const body = await request.json().catch(() => ({}));
-  const name = cleanName(body.name);
+  // Unterordner werden als "Eltern › Name" angezeigt – nur den eigenen Teil speichern
+  const name = cleanName(stripParentLabel(String(body.name ?? "")));
   if (!body.id || !name) return Response.json({ error: "Ordner oder Name fehlt" }, { status: 400 });
   const { data, error } = await supabase
     .from("folders")

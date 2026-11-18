@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { labelFolders } from "@/lib/folderLabels";
 import { redirect } from "next/navigation";
 import { CollectionClient } from "@/components/CollectionClient";
 import { selectAll } from "@/lib/supabase/selectAll";
@@ -27,7 +28,7 @@ export default async function CollectionPage() {
     }),
     // Eigene Ordner + Zuordnungen (eine Karte kann in mehreren Ordnern
     // stehen). Fehlen die Tabellen noch, bleibt alles leer.
-    supabase.from("folders").select("id, name, created_at").order("name"),
+    supabase.from("folders").select("id, name, created_at, parent_id").order("name"),
     loadFolderEntries(supabase, "card"),
     supabase.from("decks").select("id, name").eq("user_id", user.id),
     // In welchen Decks steckt welche Karte? (Anzeige in der Sammlung)
@@ -43,7 +44,7 @@ export default async function CollectionPage() {
     <CollectionClient
       initialCards={cards ?? []}
       loadError={(error as { message: string } | null)?.message}
-      initialFolders={folders ?? []}
+      initialFolders={labelFolders(folders ?? [])}
       deckUses={uses}
       decks={(decks ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "de"))}
     />

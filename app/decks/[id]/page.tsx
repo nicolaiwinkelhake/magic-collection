@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { labelFolders } from "@/lib/folderLabels";
 import { redirect, notFound } from "next/navigation";
 import { DeckDetailClient } from "@/components/DeckDetailClient";
 import { selectAll } from "@/lib/supabase/selectAll";
@@ -51,7 +52,7 @@ export default async function DeckDetailPage({
     .order("captured_on", { ascending: true });
 
   // Eigene Ordner: Deck-Importe legen die Karten auch in die Sammlung
-  const { data: folders } = await supabase.from("folders").select("id, name").order("name");
+  const { data: folders } = await supabase.from("folders").select("id, name, parent_id").order("name");
 
   return (
     <DeckDetailClient
@@ -59,7 +60,7 @@ export default async function DeckDetailPage({
       initialCards={deckCards ?? []}
       missing={missing}
       valueHistory={valueHistory ?? []}
-      folders={folders ?? []}
+      folders={labelFolders(folders ?? [])}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { labelFolders } from "@/lib/folderLabels";
 import { redirect } from "next/navigation";
 import { ScanClient } from "@/components/ScanClient";
 
@@ -16,7 +17,7 @@ export default async function ScanPage() {
     .order("created_at", { ascending: false });
 
   // Eigene Ordner als Ziel in der Sammlung (Migration 014)
-  const { data: folders } = await supabase.from("folders").select("id, name").order("name");
+  const { data: folders } = await supabase.from("folders").select("id, name, parent_id").order("name");
 
-  return <ScanClient decks={decks ?? []} folders={folders ?? []} />;
+  return <ScanClient decks={decks ?? []} folders={labelFolders(folders ?? [])} />;
 }
