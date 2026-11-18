@@ -6,6 +6,7 @@ import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { CardViewer } from "@/components/ui/CardViewer";
 import { PageHeader } from "@/components/ui/PageHeader";
+import type { UpcomingSet } from "@/lib/setsView";
 
 type CardRow = {
   scryfall_id: string;
@@ -26,7 +27,7 @@ type Row = {
   cards: CardRow[];
 };
 
-export function SetsClient({ rows }: { rows: Row[] }) {
+export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: UpcomingSet[] }) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{ code: string; index: number } | null>(null);
@@ -41,8 +42,11 @@ export function SetsClient({ rows }: { rows: Row[] }) {
     <main className="page max-w-4xl">
       <PageHeader title="Sets" subtitle="Wie viele Karten je Set du schon besitzt" />
 
-      <p className="text-sm text-zinc-400">
-        Zeigt pro Set, wie viele verschiedene Karten du besitzt. Klicke auf ein Set um die Karten zu sehen.
+      <UpcomingSets sets={upcoming} />
+
+      <h2 className="text-lg font-semibold pt-1">Deine Sets</h2>
+      <p className="text-sm text-zinc-400 -mt-2">
+        Sortiert nach Vollständigkeit – das Set, das du am vollständigsten hast, steht oben. Antippen zeigt deine Karten daraus.
       </p>
 
       <input
@@ -152,5 +156,57 @@ export function SetsClient({ rows }: { rows: Row[] }) {
         );
       })()}
     </main>
+  );
+}
+
+const dateDe = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" });
+
+function SetIcon({ src, code }: { src: string | null; code: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className="grid place-items-center w-10 h-10 shrink-0 rounded-xl bg-white/[0.06]">
+      {src && !broken ? (
+        // Set-Symbol (SVG) hell einfärben
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="w-6 h-6 invert opacity-90" onError={() => setBroken(true)} />
+      ) : (
+        <span className="text-[10px] font-semibold uppercase text-zinc-300">{code}</span>
+      )}
+    </span>
+  );
+}
+
+function UpcomingSets({ sets }: { sets: UpcomingSet[] }) {
+  return (
+    <section aria-labelledby="upcoming-title" className="space-y-2">
+      <h2 id="upcoming-title" className="text-lg font-semibold">Kommende Sets</h2>
+      {sets.length === 0 ? (
+        <p className="text-sm text-zinc-500">Gerade sind keine neuen Sets angekündigt.</p>
+      ) : (
+        <ul className="surface divide-y divide-white/5 overflow-hidden">
+          {sets.map((s) => (
+            <li key={s.code} className="flex items-start gap-3 px-4 py-3">
+              <SetIcon src={s.icon} code={s.code} />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium leading-snug">{s.name}</p>
+                <p className="mt-0.5 text-sm text-violet-200">
+                  {dateDe(s.released)} <span className="text-zinc-500">· {s.daysLeft === 1 ? "morgen" : `in ${s.daysLeft} Tagen`}</span>
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {s.type} · <span className="uppercase">{s.code}</span>
+                  {s.spoiled > 0 && ` · ${s.spoiled} ${s.spoiled === 1 ? "Karte" : "Karten"} bisher bekannt`}
+                </p>
+                {s.related.length > 0 && <p className="text-xs text-zinc-500">dazu: {s.related.map((r) => r.name).join(", ")}</p>}
+              </div>
+              {s.url && (
+                <a href={s.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-violet-300 hover:text-violet-200 pt-1">
+                  Vorschau ↗
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

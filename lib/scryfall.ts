@@ -184,11 +184,21 @@ export function getImageUrlPublic(card: ScryfallCard): string | null {
 }
 
 // Alle Sets von Scryfall (Code, Name, Kartenzahl) – für Set-Completion.
-export async function fetchSets(): Promise<
-  Array<{ code: string; name: string; card_count: number; released_at: string }>
-> {
+export type ScryfallSet = {
+  code: string;
+  name: string;
+  card_count: number;
+  released_at: string;
+  set_type: string;
+  icon_svg_uri: string | null;
+  scryfall_uri: string | null;
+  parent_set_code: string | null;
+};
+
+export async function fetchSets(): Promise<ScryfallSet[]> {
   const res = await fetch("https://api.scryfall.com/sets", {
     headers: { "User-Agent": "MagicCollectionApp/1.0" },
+    next: { revalidate: 3600 },
   });
   if (!res.ok) return [];
   const data = await res.json();
@@ -197,8 +207,13 @@ export async function fetchSets(): Promise<
     name: s.name,
     card_count: s.card_count,
     released_at: s.released_at ?? "",
+    set_type: s.set_type ?? "",
+    icon_svg_uri: s.icon_svg_uri ?? null,
+    scryfall_uri: s.scryfall_uri ?? null,
+    parent_set_code: s.parent_set_code ?? null,
   }));
 }
+
 // Gibt nur die Kartennamen zurück; passt in eine Suchseite (aktuell ~53 Karten).
 export async function fetchGameChangerNames(): Promise<string[]> {
   const names: string[] = [];
