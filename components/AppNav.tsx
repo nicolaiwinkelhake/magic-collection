@@ -116,7 +116,7 @@ export function AppNav({ email }: { email: string | null }) {
     <>
       <header
         className={`sticky top-0 z-40 pt-[env(safe-area-inset-top)] transition-colors duration-200 ${
-          scrolled ? "bg-[#0b0b10]/90 backdrop-blur-md border-b border-white/[0.06]" : "border-b border-transparent lg:bg-[#0b0b10]/90"
+          scrolled ? "bg-[#0b0b10] border-b border-white/[0.06]" : "border-b border-transparent lg:bg-[#0b0b10]/90"
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-2">

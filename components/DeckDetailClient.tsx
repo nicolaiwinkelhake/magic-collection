@@ -354,7 +354,35 @@ export function DeckDetailClient({
     return Array.from(groups.values());
   }, [initialCards]);
 
-  const typeGroups = useMemo(() => groupByType(stackedCards), [stackedCards]);
+  // Filter über die Kacheln "Karten nach Rolle": nur Karten dieser Rolle zeigen
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const roleIds = useMemo(() => {
+    const g = roleFilter ? categories.find((c) => c.category === roleFilter) : undefined;
+    return g ? new Set(g.cards.map((c) => c.id)) : null;
+  }, [roleFilter, categories]);
+  const shownStacks = useMemo(
+    () => (roleIds ? stackedCards.filter((stack) => stack.some((c) => roleIds.has(c.id))) : stackedCards),
+    [stackedCards, roleIds],
+  );
+  useEffect(() => {
+    if (roleFilter && !categories.some((c) => c.category === roleFilter)) setRoleFilter(null);
+  }, [roleFilter, categories]);
+  function pickRole(category: string) {
+    const next = roleFilter === category ? null : category;
+    setRoleFilter(next);
+    if (next) {
+      requestAnimationFrame(() => {
+        const el = listRef.current;
+        if (!el) return;
+        // unter der festen Kopfzeile + Reiterleiste landen
+        const top = el.getBoundingClientRect().top + window.scrollY - 140;
+        window.scrollTo({ top, behavior: "smooth" });
+      });
+    }
+  }
+
+  const typeGroups = useMemo(() => groupByType(shownStacks), [shownStacks]);
 
   // Reihenfolge wie in der Kartenliste angezeigt (nach Typ gruppiert).
   const viewerStacks = useMemo(() => typeGroups.flatMap((g) => g.stacks), [typeGroups]);
@@ -628,7 +656,7 @@ export function DeckDetailClient({
 
       {/* Reiter */}
       <nav
-        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0b0b10]/95"
+        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-2 bg-[#0b0b10]"
         aria-label="Deck-Bereiche"
       >
         <div className="segmented">
@@ -1084,19 +1112,28 @@ export function DeckDetailClient({
         <div className="surface p-4">
           <h2 className="font-medium mb-3">Karten nach Rolle</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {categories.map((group) => (
-              <div
-                key={group.category}
-                className="bg-zinc-800 rounded-md px-3 py-2 flex items-center justify-between"
-              >
-                <span className="text-sm text-zinc-300">{group.category}</span>
-                <span className="text-sm font-semibold">{group.cards.length}</span>
-              </div>
-            ))}
+            {categories.map((group) => {
+              const active = roleFilter === group.category;
+              return (
+                <button
+                  key={group.category}
+                  type="button"
+                  onClick={() => pickRole(group.category)}
+                  aria-pressed={active}
+                  title={active ? "Filter aufheben" : `Nur ${group.category} in der Kartenliste zeigen`}
+                  className={`press rounded-md px-3 py-2 flex items-center justify-between text-left transition ${
+                    active ? "bg-indigo-500/25 ring-1 ring-inset ring-indigo-400/60" : "bg-zinc-800 active:bg-zinc-700 hover:bg-zinc-700/80"
+                  }`}
+                >
+                  <span className={`text-sm ${active ? "text-white" : "text-zinc-300"}`}>{group.category}</span>
+                  <span className="text-sm font-semibold">{group.cards.length}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div>
+        <div ref={listRef}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <h2 className="font-medium text-lg">
               Kartenliste {loadingOwnership && (
@@ -1118,6 +1155,16 @@ export function DeckDetailClient({
               <CardViewToggle mode={cardView} onChange={setCardView} allowList />
             </div>
           </div>
+          {roleFilter && (
+            <div className="mb-3 flex items-center gap-2 text-sm">
+              <span className="rounded-full bg-indigo-500/20 border border-indigo-400/40 px-3 py-1 text-indigo-100">
+                Nur {roleFilter} · {categories.find((c) => c.category === roleFilter)?.cards.length ?? 0}
+              </span>
+              <button type="button" onClick={() => setRoleFilter(null)} className="text-zinc-400 hover:text-white underline-offset-2 hover:underline">
+                Alle zeigen
+              </button>
+            </div>
+          )}
           <div className="space-y-5">
             {typeGroups.map((g) => (
               <section key={g.key} aria-label={g.label}>
