@@ -12,7 +12,7 @@
 // Karten- und Preisdaten werden bewusst NICHT dauerhaft gecacht, da sie
 // sich ändern – die App ist online gedacht, offline gibt es einen Hinweis.
 
-const CACHE = "magic-collection-v5"; // v5: Logo mit Schriftzug
+const CACHE = "magic-collection-v6"; // v6: Logo Amethyst
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/icon-512.png"];
 
