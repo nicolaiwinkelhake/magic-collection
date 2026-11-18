@@ -1,5 +1,6 @@
 "use client";
 import { BrandEmblem } from "@/components/ui/Brand";
+import { installIosViewportFix } from "@/lib/iosViewportFix";
 
 import { useEffect, useState } from "react";
 
@@ -13,6 +14,9 @@ export function PWAProvider() {
     useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHint, setShowIosHint] = useState(false);
   const [dismissed, setDismissed] = useState(true);
+
+  // iOS: Bildschirmhöhe nach dem Schließen der Tastatur zurücksetzen
+  useEffect(() => installIosViewportFix(), []);
 
   useEffect(() => {
     // Service Worker registrieren
