@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { fetchSets } from "@/lib/scryfall";
 import { SetsClient } from "@/components/SetsClient";
+import { sortByPercent, upcomingSets } from "@/lib/setsView";
 import { selectAll } from "@/lib/supabase/selectAll";
 
 export default async function SetsPage() {
@@ -38,7 +39,7 @@ export default async function SetsPage() {
   const allSets = await fetchSets();
   const setInfo = new Map(allSets.map((s) => [s.code, s]));
 
-  const rows = [...cardsBySet.entries()]
+  const rows = sortByPercent([...cardsBySet.entries()]
     .map(([code, setCards]) => {
       const info = setInfo.get(code);
       const uniqueIds = new Set(setCards!.map((c) => c.scryfall_id));
@@ -50,8 +51,7 @@ export default async function SetsPage() {
         released: info?.released_at ?? "",
         cards: setCards!.sort((a, b) => a.name.localeCompare(b.name)),
       };
-    })
-    .sort((a, b) => (b.released > a.released ? 1 : -1));
+    }));
 
-  return <SetsClient rows={rows} />;
+  return <SetsClient rows={rows} upcoming={upcomingSets(allSets)} />;
 }
