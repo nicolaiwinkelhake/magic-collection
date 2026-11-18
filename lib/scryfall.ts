@@ -82,13 +82,29 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Scryfall erlaubt für /cards/collection nur etwa 2 Abfragen pro Sekunde.
+// Schneller (früher 0,1 s Abstand) sperrt Scryfall nach ~25 Abfragen für
+// 60 Sekunden (429 + Retry-After) – dann fehlten im nächtlichen Preis-Update
+// ganze Blöcke. Großabrufe halten deshalb diesen Abstand ein.
+export const COLLECTION_PACE_MS = 550;
+
+/** Wartezeit nach einem 429: Retry-After (Sekunden), begrenzt auf 65 s. */
+export function retryAfterMs(header: string | null, attempt: number): number {
+  const sec = header ? Number(header) : NaN;
+  if (Number.isFinite(sec) && sec >= 0) return Math.min(sec, 65) * 1000 + 250;
+  return 2000 * (attempt + 1);
+}
+
 // /cards/collection (max. 75 Identifier) mit Retry: transiente Fehler
 // (429/5xx/Netzwerk) ließen sonst einen ganzen Block als "nicht gefunden"
-// durchfallen. null = Block auch nach Retries nicht abrufbar.
+// durchfallen. Bei 429 wird so lange gewartet, wie Scryfall verlangt.
+// null = Block auch nach Retries nicht abrufbar.
 export async function fetchCollectionWithRetry(
-  identifiers: Array<Record<string, string>>
+  identifiers: Array<Record<string, string>>,
+  attempts = 4
 ): Promise<ScryfallCard[] | null> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    let wait = 800 * (attempt + 1);
     try {
       const res = await fetch(`${SCRYFALL_BASE}/cards/collection`, {
         method: "POST",
@@ -99,10 +115,12 @@ export async function fetchCollectionWithRetry(
         const data = await res.json();
         return (data.data ?? []) as ScryfallCard[];
       }
+      if (res.status === 429) wait = retryAfterMs(res.headers.get("retry-after"), attempt);
+      else if (res.status >= 400 && res.status < 500) return null; // fehlerhafte Anfrage – Wiederholen hilft nicht
     } catch {
       // Netzwerkfehler -> Retry
     }
-    await sleep(800 * (attempt + 1));
+    if (attempt + 1 < attempts) await sleep(wait);
   }
   return null;
 }
@@ -246,26 +264,11 @@ export async function fetchCardsCollection(
 ): Promise<Map<string, ScryfallCard>> {
   const byId = new Map<string, ScryfallCard>();
 
-  // In 75er-Blöcke aufteilen (API-Limit)
+  // In 75er-Blöcke aufteilen (API-Limit), im erlaubten Tempo und mit Retry
   for (let i = 0; i < identifiers.length; i += 75) {
-    const chunk = identifiers.slice(i, i + 75);
-    const res = await fetch(`${SCRYFALL_BASE}/cards/collection`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "MagicCollectionApp/1.0",
-      },
-      body: JSON.stringify({ identifiers: chunk }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      for (const card of data.data as ScryfallCard[]) {
-        byId.set(card.id, card);
-      }
-    }
-
-    if (i + 75 < identifiers.length) await sleep(100);
+    const chunk = identifiers.slice(i, i + 75) as Array<Record<string, string>>;
+    for (const card of (await fetchCollectionWithRetry(chunk)) ?? []) byId.set(card.id, card);
+    if (i + 75 < identifiers.length) await sleep(COLLECTION_PACE_MS);
   }
 
   return byId;

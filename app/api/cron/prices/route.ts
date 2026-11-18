@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchCollectionWithRetry, getPrices, sleep } from "@/lib/scryfall";
+import { COLLECTION_PACE_MS, fetchCollectionWithRetry, getPrices, sleep } from "@/lib/scryfall";
 import { cardValue } from "@/lib/valuation";
 
 export const maxDuration = 300;
@@ -57,17 +57,25 @@ export async function GET(request: Request) {
     }>(supabase, "cards", "id, user_id, scryfall_id, quantity, foil, condition, price_eur, price_eur_foil");
     const uniqueIds = Array.from(new Set(cards.map((c) => c.scryfall_id)));
 
-    // 2) Preise gebündelt bei Scryfall abrufen
+    // 2) Preise gebündelt bei Scryfall abrufen – im erlaubten Tempo (≈2/s).
+    //    Blöcke, die trotz Retry scheitern, werden am Ende ein zweites Mal
+    //    versucht, damit keine Drucke ohne Tagespreis bleiben.
     const prices = new Map<string, { eur: number | null; eurFoil: number | null }>();
-    let scryfallFailures = 0;
-    for (let i = 0; i < uniqueIds.length; i += SCRYFALL_CHUNK) {
-      const found = await fetchCollectionWithRetry(
-        uniqueIds.slice(i, i + SCRYFALL_CHUNK).map((id) => ({ id }))
-      );
-      if (found === null) scryfallFailures += 1;
-      for (const card of found ?? []) prices.set(card.id, getPrices(card));
-      if (i + SCRYFALL_CHUNK < uniqueIds.length) await sleep(100);
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniqueIds.length; i += SCRYFALL_CHUNK) chunks.push(uniqueIds.slice(i, i + SCRYFALL_CHUNK));
+    let failed: string[][] = [];
+    for (let round = 0; round < 2; round++) {
+      const todo = round === 0 ? chunks : failed;
+      failed = [];
+      for (let i = 0; i < todo.length; i++) {
+        const found = await fetchCollectionWithRetry(todo[i].map((id) => ({ id })));
+        if (found === null) failed.push(todo[i]);
+        for (const card of found ?? []) prices.set(card.id, getPrices(card));
+        if (i + 1 < todo.length) await sleep(COLLECTION_PACE_MS);
+      }
+      if (!failed.length) break;
     }
+    const scryfallFailures = failed.length;
 
     // 3) Gesammelt schreiben (Preisverlauf, cards, deck_cards)
     const updates = Array.from(prices, ([id, p]) => ({ id, eur: p.eur, eur_foil: p.eurFoil }));
