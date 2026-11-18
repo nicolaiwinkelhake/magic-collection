@@ -1,4 +1,5 @@
 "use client";
+import { BrandEmblem } from "@/components/ui/Brand";
 
 import { useEffect, useState } from "react";
 
@@ -80,7 +81,7 @@ export function PWAProvider() {
       className="bottom-3 max-lg:[.has-tabbar_&]:bottom-[calc(5.75rem+env(safe-area-inset-bottom))] bg-zinc-900 border border-white/10 rounded-2xl p-4 shadow-lg"
     >
       <div className="flex items-start gap-3">
-        <span className="text-2xl">🪄</span>
+        <BrandEmblem className="h-9 w-auto shrink-0" />
         <div className="flex-1">
           <p className="font-medium text-sm">App installieren</p>
           {installEvent ? (

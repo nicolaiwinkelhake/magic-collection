@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BrandMark } from "@/components/ui/Brand";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -120,8 +121,7 @@ export function AppNav({ email }: { email: string | null }) {
       >
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-2">
           <Link href="/collection" className="flex items-center gap-2.5 font-semibold whitespace-nowrap mr-3" aria-label="Magic Collection">
-            <Logo />
-            <span className="hidden lg:inline tracking-tight">Magic Collection</span>
+            <BrandMark />
           </Link>
 
           {/* Desktop */}
@@ -302,16 +302,6 @@ function TabLink({ link, active }: { link: NavLink; active: boolean }) {
         <span className="text-[10px] font-medium">{link.label}</span>
       </span>
     </Link>
-  );
-}
-
-function Logo() {
-  return (
-    <span className="relative grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-400 via-indigo-500 to-fuchsia-500 shadow-glow ring-1 ring-inset ring-white/25">
-      <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M12 2.5l2.4 6.1 6.1 2.4-6.1 2.4L12 19.5l-2.4-6.1L3.5 11l6.1-2.4z" />
-      </svg>
-    </span>
   );
 }
 

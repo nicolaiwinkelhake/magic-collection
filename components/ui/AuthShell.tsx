@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BrandLockup } from "@/components/ui/Brand";
 
 // Rahmen für Anmelden/Registrieren/Passwort: Logo, Claim und ein Fächer aus
 // stilisierten Karten in den fünf Manafarben im Hintergrund.
@@ -29,8 +30,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
       <div className="relative w-full max-w-sm animate-fade-up mt-52">
         <div className="mb-6 text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-gradient">Magic Collection</h2>
-          <p className="mt-1.5 text-sm text-zinc-400">Eure Sammlung, Decks und Wunschlisten – immer dabei.</p>
+          <h2 className="sr-only">Magic Collection</h2>
+          <BrandLockup />
+          <p className="mt-4 text-sm text-zinc-400">Eure Sammlung, Decks und Wunschlisten – immer dabei.</p>
         </div>
         {children}
       </div>

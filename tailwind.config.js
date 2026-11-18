@@ -15,6 +15,8 @@ module.exports = {
       fontFamily: {
         sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         mono: ["var(--font-geist-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+        brand: ["var(--font-cinzel)", "Georgia", "serif"],
+        "brand-deco": ["var(--font-cinzel-deco)", "var(--font-cinzel)", "Georgia", "serif"],
       },
       colors: {
         zinc: {
