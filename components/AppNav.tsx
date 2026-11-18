@@ -27,6 +27,7 @@ const MORE: NavLink[] = [
   { href: "/wishlist", label: "Wunschliste", icon: "star" },
   { href: "/ai-deck-generator", label: "AI Deck Generator", icon: "sparkles" },
   { href: "/sets", label: "Sets", icon: "box" },
+  { href: "/sell", label: "Extern verkaufen", icon: "tag" },
   { href: "/trades", label: "Trades", icon: "swap" },
   { href: "/loans", label: "Verliehen", icon: "hand" },
   { href: "/stats", label: "Wertverlauf", icon: "chart" },
@@ -326,6 +327,7 @@ type IconName =
   | "discover"
   | "scan"
   | "sparkles"
+  | "tag"
   | "star"
   | "box"
   | "swap"
@@ -345,6 +347,7 @@ const PATHS: Record<IconName, string> = {
   crown: "M3 18h18M4 8l4 4 4-7 4 7 4-4-1.5 10h-13z",
   discover: "M12 21a9 9 0 100-18 9 9 0 000 18zM15.5 8.5l-2 5-5 2 2-5z",
   scan: "M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2M8 9h8v6H8z",
+  tag: "M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8zM7.5 7.5h.01",
   sparkles: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
   star: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z",
   box: "M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8",
