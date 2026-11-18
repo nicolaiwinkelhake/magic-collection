@@ -6,6 +6,8 @@ import { selectAll } from "@/lib/supabase/selectAll";
 // Aktualisiert die Preise der gesamten Sammlung über Scryfalls
 // Batch-Endpoint (75 Karten pro Request) – schnell genug auch für
 // große Sammlungen, statt jede Karte einzeln abzufragen.
+export const maxDuration = 300;
+
 export async function POST() {
   const supabase = createClient();
   const {
@@ -33,30 +35,24 @@ export async function POST() {
   let updated = 0;
   const now = new Date().toISOString();
 
-  for (const id of uniqueIds) {
-    const scryfallCard = cardMap.get(id);
-    if (!scryfallCard) continue;
-    const { eur, eurFoil } = getPrices(scryfallCard);
-
-    // Alle eigenen Zeilen dieses Drucks aktualisieren (normal + foil)
-    const { error } = await supabase
-      .from("cards")
-      .update({
-        price_eur: eur,
-        price_eur_foil: eurFoil,
-        price_updated_at: now,
+  // Schreiben in kleinen parallelen Gruppen – einzeln nacheinander dauerten
+  // über 1000 Drucke so lange, dass die Funktion abbrach.
+  const known = uniqueIds.filter((id) => cardMap.has(id));
+  for (let i = 0; i < known.length; i += 25) {
+    await Promise.all(
+      known.slice(i, i + 25).map(async (id) => {
+        const { eur, eurFoil } = getPrices(cardMap.get(id)!);
+        // Alle eigenen Zeilen dieses Drucks aktualisieren (normal + foil)
+        const { error } = await supabase
+          .from("cards")
+          .update({ price_eur: eur, price_eur_foil: eurFoil, price_updated_at: now })
+          .eq("user_id", user.id)
+          .eq("scryfall_id", id);
+        if (!error) updated += 1;
+        // Preisverlauf festhalten
+        await supabase.rpc("record_card_price", { p_scryfall_id: id, p_eur: eur, p_eur_foil: eurFoil });
       })
-      .eq("user_id", user.id)
-      .eq("scryfall_id", id);
-
-    if (!error) updated += 1;
-
-    // Preisverlauf festhalten
-    await supabase.rpc("record_card_price", {
-      p_scryfall_id: id,
-      p_eur: eur,
-      p_eur_foil: eurFoil,
-    });
+    );
   }
 
   // Tages-Snapshot des Gesamtwerts schreiben
