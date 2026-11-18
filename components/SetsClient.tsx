@@ -24,6 +24,7 @@ type Row = {
   owned: number;
   total: number;
   released: string;
+  icon?: string | null;
   cards: CardRow[];
 };
 
@@ -69,12 +70,15 @@ export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: Up
                   onClick={() => setExpanded(isOpen ? null : r.code)}
                   className="w-full p-3 text-left hover:bg-zinc-800 transition"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="font-medium">{r.name}</span>{" "}
-                      <span className="text-xs text-zinc-500 uppercase">{r.code}</span>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <SetIcon src={r.icon ?? null} code={r.code} />
+                      <div className="min-w-0">
+                        <span className="font-medium">{r.name}</span>{" "}
+                        <span className="text-xs text-zinc-500 uppercase">{r.code}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <span className="text-sm text-zinc-400">
                         {r.owned}{r.total > 0 ? ` / ${r.total}` : ""}{" "}
                         {r.total > 0 && (

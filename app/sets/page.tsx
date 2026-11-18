@@ -49,6 +49,7 @@ export default async function SetsPage() {
         owned: uniqueIds.size,
         total: info?.card_count ?? 0,
         released: info?.released_at ?? "",
+        icon: info?.icon_svg_uri ?? null,
         cards: setCards!.sort((a, b) => a.name.localeCompare(b.name)),
       };
     }));
