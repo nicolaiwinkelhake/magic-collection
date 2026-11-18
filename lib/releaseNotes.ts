@@ -22,6 +22,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-18b",
+    date: "2026-11-18",
+    title: "Sets im Blick und Scannen in Reihenfolge",
+    items: [
+      {
+        icon: "🗓️",
+        title: "Kommende Sets",
+        text: "Unter Sets siehst du, welche Sets demnächst erscheinen – mit Datum, Tagen bis zum Release und Vorschau. Deine Sets sind jetzt nach Vollständigkeit sortiert, das vollständigste oben.",
+        href: "/sets",
+      },
+      {
+        icon: "📷",
+        title: "Scan-Stapel in Reihenfolge",
+        text: "Jede gescannte Karte bleibt ein eigener Eintrag, die neueste oben – auch bei gleichem Druck. So prüfst du die Drucke Karte für Karte wie in deinem Stapel.",
+        href: "/scan",
+      },
+    ],
+  },
+  {
     id: "2026-11-18",
     date: "2026-11-18",
     title: "Verkaufen, neues Logo und mehr Überblick",
