@@ -140,6 +140,14 @@ body {
   .text-gradient {
     @apply bg-gradient-to-r from-white via-indigo-200 to-fuchsia-200 bg-clip-text text-transparent;
   }
+
+  /* Silber-Schriftzug des Logos */
+  .text-silver {
+    background: linear-gradient(180deg, #ffffff 0%, #d4d4dc 45%, #8b8b99 55%, #e6e6ee 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 }
 
 @keyframes sheet {

@@ -5,6 +5,7 @@ import type { Metadata, Viewport } from "next";
 import { PWAProvider } from "@/components/PWAProvider";
 import { AppNav } from "@/components/AppNav";
 import { createClient } from "@/lib/supabase/server";
+import { cinzel, cinzelDecorative } from "@/lib/brandFonts";
 
 export const metadata: Metadata = {
   title: "Magic Collection",
@@ -44,7 +45,7 @@ export default async function RootLayout({
   } = await createClient().auth.getUser();
 
   return (
-    <html lang="de" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="de" className={`${GeistSans.variable} ${GeistMono.variable} ${cinzel.variable} ${cinzelDecorative.variable}`}>
       <body className={user ? "has-tabbar" : undefined}>
         <AppNav email={user?.email ?? null} />
         {children}
