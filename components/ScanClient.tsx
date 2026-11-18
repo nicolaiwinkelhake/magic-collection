@@ -29,6 +29,7 @@ import {
   addScan,
   failPending,
   pendingKey,
+  scanKey,
   resolvePending,
   setQuantity,
   unresolved,
@@ -388,13 +389,14 @@ export function ScanClient({
     scanLog(`pending_resolved ${match ? match.name : "-"}`);
     const keep = match && !match.exact && camHash ? Array.from(camHash) : undefined;
     setStack((s) => (match ? resolvePending(s, key, match, keep) : failPending(s, key)));
-    if (match && !match.exact && camHash) void refinePrint(match, foil, camHash);
+    if (match && !match.exact && camHash) void refinePrint(match, camHash, key);
   }
 
-  function accept(match: ScanMatch, foil = prefsRef.current.foil, camHash?: CardHash) {
+  function accept(match: ScanMatch, foil = prefsRef.current.foil, camHash?: CardHash): string {
     // Fingerabdruck nur merken, wenn der Druck nicht sicher ist (spart Speicher)
     const keep = !match.exact && camHash ? Array.from(camHash) : undefined;
-    setStack((s) => addScan(s, match, foil, Date.now(), keep));
+    const key = scanKey();
+    setStack((s) => addScan(s, match, foil, Date.now(), keep, key));
     setSuggestions([]);
     setManualName("");
     setStatus(null);
@@ -402,11 +404,12 @@ export function ScanClient({
     setTimeout(() => setFlash(null), 450);
     if (prefsRef.current.sound) beep(true);
     buzz(40);
+    return key;
   }
 
   // Druck per Bildvergleich bestimmen, wenn Set/Nummer nicht lesbar waren:
   // Fingerabdruck der Kamera gegen die Drucke dieser Karte (neueste zuerst).
-  async function refinePrint(match: ScanMatch, foil: boolean, camHash: CardHash) {
+  async function refinePrint(match: ScanMatch, camHash: CardHash, key: string) {
     try {
       const prints = (await loadPrints(match.name)).slice(0, MAX_HASH_PRINTS);
       if (prints.length < 2) return;
@@ -417,11 +420,10 @@ export function ScanClient({
       }
       const best = pickBest(camHash, hashed);
       if (!best || best.best.id === match.id) return;
-      const key = `${match.id}|${foil ? 1 : 0}`;
       setStack((s) => {
         const item = s.find((x) => x.key === key);
-        // nur frisch gescannte Einzelkarte umstellen, nie vorhandene Mengen
-        return item && item.quantity === 1 ? updateItem(s, key, { print: { ...best.best, exact: true } }) : s;
+        // nur diesen Scan umstellen, und nur solange noch der vermutete Druck drinsteht
+        return item && item.id === match.id ? updateItem(s, key, { print: { ...best.best, exact: true } }) : s;
       });
       setToast(`Druck per Bild erkannt: ${best.best.setName ?? best.best.set?.toUpperCase()}`);
       setTimeout(() => setToast(null), 2500);
@@ -476,8 +478,8 @@ export function ScanClient({
         for (const raw of names.slice(0, 2)) match ??= await directByName(raw, 0.8).catch(() => null);
         scanLog(`resolved ${match ? match.name : "-"}`);
         if (match) {
-          accept(match, prefsRef.current.foil, camHash);
-          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          const scanned = accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, camHash, scanned);
           return true;
         }
         if (!german?.length) return false;
@@ -490,8 +492,8 @@ export function ScanClient({
         for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
         scanLog(`resolved_de ${match ? match.name : "-"}`);
         if (match) {
-          accept(match, prefsRef.current.foil, camHash);
-          if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+          const scanned = accept(match, prefsRef.current.foil, camHash);
+          if (!match.exact) void refinePrint(match, camHash, scanned);
           return true;
         }
         return false;
@@ -500,8 +502,8 @@ export function ScanClient({
       const { match, read: readName } = await resolveCandidates(tryNames, info, !auto);
       scanLog(`resolved ${match ? match.name : "-"}`);
       if (match) {
-        accept(match, prefsRef.current.foil, camHash);
-        if (!match.exact) void refinePrint(match, prefsRef.current.foil, camHash);
+        const scanned = accept(match, prefsRef.current.foil, camHash);
+        if (!match.exact) void refinePrint(match, camHash, scanned);
         return true;
       }
       if (!auto) {
