@@ -41,12 +41,14 @@ create unique index if not exists folders_user_parent_name_idx on public.folders
 drop policy if exists "Eigene Ordner anlegen" on public.folders;
 create policy "Eigene Ordner anlegen" on public.folders for insert with check (
   auth.uid() = user_id
-  and (parent_id is null or exists (select 1 from public.folders p where p.id = parent_id and p.user_id = auth.uid()))
+  and (folders.parent_id is null
+       or exists (select 1 from public.folders p where p.id = folders.parent_id and p.user_id = auth.uid()))
 );
 drop policy if exists "Eigene Ordner umbenennen" on public.folders;
 create policy "Eigene Ordner umbenennen" on public.folders for update using (auth.uid() = user_id) with check (
   auth.uid() = user_id
-  and (parent_id is null or exists (select 1 from public.folders p where p.id = parent_id and p.user_id = auth.uid()))
+  and (folders.parent_id is null
+       or exists (select 1 from public.folders p where p.id = folders.parent_id and p.user_id = auth.uid()))
 );
 
 -- 2) Preis + Menge je Eintrag
