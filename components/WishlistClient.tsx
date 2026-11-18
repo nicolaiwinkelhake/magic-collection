@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -44,6 +44,7 @@ export function WishlistClient({
   const [folder, setFolder] = useState<FolderFilter>(ALL);
   const [folderBusy, setFolderBusy] = useState(false);
   const [folderIds, setFolderIds] = useState<string[] | null>(null);
+  const foldersDirty = useRef(false);
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("wishlist-folder");
@@ -299,10 +300,17 @@ export function WishlistClient({
           items={allItems.filter((i) => folderIds.includes(i.id))}
           onChanged={(folderId, ids, add) => {
             setAllItems((prev) => withFolder(prev, new Set(ids), folderId, add));
-            router.refresh();
+            // erst beim Schließen neu laden (sonst schließt sich das Fenster)
+            foldersDirty.current = true;
           }}
-          onFolderCreated={() => router.refresh()}
+          onFolderCreated={() => {
+            foldersDirty.current = true;
+          }}
           onClose={() => {
+            if (foldersDirty.current) {
+              foldersDirty.current = false;
+              router.refresh();
+            }
             if (selectMode) {
               setSelectMode(false);
               setSelected(new Set());

@@ -125,11 +125,14 @@ export function CardGrid({
 
   // Ordner-Zuordnung wurde gespeichert: lokal übernehmen, Kennzahlen der
   // Ordnerleiste kommen mit dem Neuladen.
+  const foldersDirty = useRef(false);
   function folderChanged(folderId: string, ids: string[], add: boolean) {
     const set = new Set(ids);
     setLocal((prev) => withFolder(prev, set, folderId, add));
     setEditing((e) => (e && set.has(e.id) ? withFolder([e], set, folderId, add)[0] : e));
-    onFoldersChanged?.();
+    // Erst beim Schließen neu laden – sonst setzt das Neuladen das offene
+    // Ordnerfenster samt Bestätigung zurück
+    foldersDirty.current = true;
   }
 
   // Druck wechseln (nicht optimistisch: Server prüft und legt ggf. zusammen).
@@ -749,8 +752,14 @@ export function CardGrid({
           folders={folders}
           items={local.filter((c) => folderIds.includes(c.id))}
           onChanged={folderChanged}
-          onFolderCreated={() => onFoldersChanged?.()}
+          onFolderCreated={() => {
+            foldersDirty.current = true;
+          }}
           onClose={() => {
+            if (foldersDirty.current) {
+              foldersDirty.current = false;
+              onFoldersChanged?.();
+            }
             // nach einer Mehrfachauswahl ist die Aufgabe erledigt
             if (folderIds.length > 1 || selectMode) {
               setSelected(new Set());

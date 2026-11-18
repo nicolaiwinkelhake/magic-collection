@@ -18,6 +18,12 @@ export function membership(items: Item[], folderId: string): State {
   return n === 0 ? "none" : n === items.length ? "all" : "some";
 }
 
+/** z. B. "8 Karten zu „Für Burn“ hinzugefügt" */
+export function folderNotice(count: number, folder: string, add: boolean): string {
+  const what = count === 1 ? "1 Karte" : `${count} Karten`;
+  return add ? `${what} zu „${folder}“ hinzugefügt` : `${what} aus „${folder}“ entfernt`;
+}
+
 export function FolderPicker({
   kind,
   folders,
@@ -37,6 +43,8 @@ export function FolderPicker({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bestätigung nach dem Speichern: wie viele Karten in welchen Ordner
+  const [notice, setNotice] = useState<string | null>(null);
   // neu angelegte Ordner sofort zeigen (die Seite lädt sie im Hintergrund nach)
   const [created, setCreated] = useState<Folder[]>([]);
   const all = [...folders, ...created.filter((c) => !folders.some((f) => f.id === c.id))].sort((a, b) =>
@@ -49,6 +57,7 @@ export function FolderPicker({
   async function toggle(folderId: string, add: boolean) {
     setBusyId(folderId);
     setError(null);
+    setNotice(null);
     const r = await setFolderEntries(folderId, add ? "add" : "remove", kind === "card" ? { cardIds: ids } : { wishlistIds: ids });
     setBusyId(null);
     if (r.error) {
@@ -56,6 +65,8 @@ export function FolderPicker({
       return;
     }
     onChanged(folderId, ids, add);
+    const name = all.find((f) => f.id === folderId)?.name ?? "Ordner";
+    setNotice(folderNotice(ids.length, name, add));
   }
 
   async function create() {
@@ -93,6 +104,9 @@ export function FolderPicker({
           </button>
         </div>
         {error && <p className="text-sm text-red-400">{error}</p>}
+        <p aria-live="polite" className={notice ? "rounded-xl bg-emerald-500/15 border border-emerald-400/30 px-3 py-2 text-sm text-emerald-200" : "sr-only"}>
+          {notice ? `✓ ${notice}` : ""}
+        </p>
         {all.length === 0 ? (
           <p className="text-sm text-zinc-400">Noch keine Ordner – leg den ersten an.</p>
         ) : (
