@@ -13,6 +13,7 @@ import { ALL, UNSORTED, collectionMeasure, folderStats, inFolder, type FolderFil
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
 import { DEFAULT_FILTERS, filterAndSortCards, setCodes } from "@/lib/cardFilters";
 import type { DeckUse } from "@/lib/deckUsage";
+import { PriceTrend, usePriceBaselines } from "@/components/ui/PriceTrend";
 
 export function CollectionClient({
   initialCards,
@@ -170,6 +171,7 @@ export function CollectionClient({
   const overallCount = useMemo(() => totalCardCount(folderCards), [folderCards]);
 
   const formattedTotal = formatEur(totalValue);
+  const baselines = usePriceBaselines();
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -207,6 +209,7 @@ export function CollectionClient({
               {folder !== ALL && <span className="text-zinc-300"> · {activeFolder?.name ?? "Ohne Ordner"}</span>}
             </h1>
             <p className="mt-1 text-[2.4rem] leading-none sm:text-5xl font-bold tracking-tight tabular-nums text-gradient">{formattedTotal}</p>
+            <PriceTrend cards={filteredCards} baselines={baselines} />
             {filteredCards.length !== folderCards.length && (
               <p className="text-xs text-zinc-500 mt-0.5">Wert der gefilterten Karten</p>
             )}
