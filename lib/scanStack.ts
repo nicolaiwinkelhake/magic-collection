@@ -1,5 +1,8 @@
-// Scan-Stapel (rein, getestet): gescannte Karten sammeln, gleiche Karte
-// (gleicher Druck + Foil) zusammenzählen, Werte summieren, rückgängig machen.
+// Scan-Stapel (rein, getestet): gescannte Karten sammeln, Werte summieren,
+// rückgängig machen. Jeder Scan bleibt ein eigener Eintrag in Scan-Reihenfolge
+// (neuester oben) – auch bei gleichem Druck. So lässt sich der Druck Karte für
+// Karte mit dem echten Stapel abgleichen. Zusammengezählt wird erst beim
+// Speichern in Sammlung/Deck.
 
 export type ScanMatch = {
   id: string; // Scryfall-ID = genauer Druck
@@ -27,24 +30,20 @@ export type ScanItem = ScanMatch & {
   failed?: boolean;
 };
 
-const itemKey = (id: string, foil: boolean) => `${id}|${foil ? 1 : 0}`;
+/** Eindeutiger Schlüssel je Scan */
+export function scanKey(now = Date.now()): string {
+  return `scan:${now}:${Math.random().toString(36).slice(2, 8)}`;
+}
 
-/** Neue Karte oben auf den Stapel; gleicher Druck + Foil erhöht nur die Menge. */
+/** Neue Karte oben auf den Stapel – immer als eigener Eintrag. */
 export function addScan(
   stack: ScanItem[],
   match: ScanMatch,
   foil: boolean,
   now = Date.now(),
   camHash?: number[],
+  key = scanKey(now),
 ): ScanItem[] {
-  const key = itemKey(match.id, foil);
-  const existing = stack.find((s) => s.key === key);
-  if (existing) {
-    return [
-      { ...existing, quantity: existing.quantity + 1, scannedAt: now },
-      ...stack.filter((s) => s.key !== key),
-    ];
-  }
   return [{ ...match, key, foil, quantity: 1, scannedAt: now, ...(camHash ? { camHash } : {}) }, ...stack];
 }
 
@@ -61,24 +60,13 @@ export function setQuantity(stack: ScanItem[], key: string, quantity: number): S
     : stack.map((s) => (s.key === key ? { ...s, quantity } : s));
 }
 
-/** Foil umschalten oder Druck wechseln; trifft das auf einen vorhandenen Eintrag, werden beide zusammengelegt. */
+/** Foil umschalten oder Druck wechseln – nur dieser Eintrag, an seiner Stelle. */
 export function updateItem(
   stack: ScanItem[],
   key: string,
   change: { foil?: boolean; print?: ScanMatch },
 ): ScanItem[] {
-  const item = stack.find((s) => s.key === key);
-  if (!item) return stack;
-  const next: ScanItem = { ...item, ...(change.print ?? {}), foil: change.foil ?? item.foil };
-  next.key = itemKey(next.id, next.foil);
-  const others = stack.filter((s) => s.key !== key);
-  const twin = others.find((s) => s.key === next.key);
-  if (twin) {
-    return stack
-      .filter((s) => s.key !== key)
-      .map((s) => (s.key === twin.key ? { ...s, quantity: s.quantity + item.quantity } : s));
-  }
-  return stack.map((s) => (s.key === key ? next : s));
+  return stack.map((s) => (s.key === key ? { ...s, ...(change.print ?? {}), key: s.key, foil: change.foil ?? s.foil } : s));
 }
 
 export function unitPrice(item: Pick<ScanItem, "foil" | "eur" | "eurFoil">): number {
@@ -111,27 +99,16 @@ export function addPending(stack: ScanItem[], name: string, foil: boolean, now =
 }
 
 /**
- * Vorläufigen Eintrag durch den gefundenen Druck ersetzen. Gibt es den Druck
- * (mit gleichem Foil) schon, wird die Menge dort addiert. Wurde der Eintrag
- * inzwischen entfernt (rückgängig), bleibt der Stapel unverändert.
+ * Vorläufigen Eintrag durch den gefundenen Druck ersetzen – an seiner Stelle,
+ * auch wenn der Druck schon im Stapel liegt. Wurde der Eintrag inzwischen
+ * entfernt (rückgängig), bleibt der Stapel unverändert.
  */
 export function resolvePending(stack: ScanItem[], key: string, match: ScanMatch, camHash?: number[]): ScanItem[] {
-  const item = stack.find((s) => s.key === key);
-  if (!item) return stack;
-  const finalKey = itemKey(match.id, item.foil);
-  const twin = stack.find((s) => s.key === finalKey);
-  if (twin) {
-    return stack.filter((s) => s.key !== key).map((s) => (s.key === finalKey ? { ...s, quantity: s.quantity + item.quantity } : s));
-  }
-  const resolved: ScanItem = {
-    ...match,
-    key: finalKey,
-    foil: item.foil,
-    quantity: item.quantity,
-    scannedAt: item.scannedAt,
-    ...(camHash ? { camHash } : {}),
-  };
-  return stack.map((s) => (s.key === key ? resolved : s));
+  return stack.map((s) =>
+    s.key === key
+      ? { ...match, key, foil: s.foil, quantity: s.quantity, scannedAt: s.scannedAt, ...(camHash ? { camHash } : {}) }
+      : s,
+  );
 }
 
 export function failPending(stack: ScanItem[], key: string): ScanItem[] {
