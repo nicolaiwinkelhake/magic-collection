@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { formatEur } from "@/lib/format";
 import {
@@ -46,6 +47,7 @@ async function api(path: string, method: string, body?: unknown) {
 }
 
 export function SellClient() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("cardmarket");
   const [state, setState] = useState<State | null>(null);
   const [sales, setSales] = useState<Sale[] | null>(null);
@@ -64,10 +66,13 @@ export function SellClient() {
       d.ads = (d.ads as Folder[]).map((a) => ({ ...a, asking_price: num(a.asking_price) }));
       setState(d);
       setError(null);
+      // Verkaufsordner/Anzeigen können neu sein – zwischengespeicherte Seiten
+      // (Sammlung mit Ordnerliste) verwerfen, damit sie dort sofort auftauchen.
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Laden fehlgeschlagen");
     }
-  }, []);
+  }, [router]);
   const loadSales = useCallback(async () => {
     try {
       const d = await api("/api/sell/history", "GET");
