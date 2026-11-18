@@ -159,18 +159,18 @@ export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: Up
   );
 }
 
-const dateDe = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" });
+const dateDe = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" });
 
 function SetIcon({ src, code }: { src: string | null; code: string }) {
   const [broken, setBroken] = useState(false);
   return (
-    <span className="grid place-items-center w-10 h-10 shrink-0 rounded-xl bg-white/[0.06]">
+    <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-white/[0.06]">
       {src && !broken ? (
         // Set-Symbol (SVG) hell einfärben
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="w-6 h-6 invert opacity-90" onError={() => setBroken(true)} />
+        <img src={src} alt="" className="w-5 h-5 invert opacity-90" onError={() => setBroken(true)} />
       ) : (
-        <span className="text-[10px] font-semibold uppercase text-zinc-300">{code}</span>
+        <span className="text-[9px] font-semibold uppercase text-zinc-300">{code}</span>
       )}
     </span>
   );
@@ -184,27 +184,39 @@ function UpcomingSets({ sets }: { sets: UpcomingSet[] }) {
         <p className="text-sm text-zinc-500">Gerade sind keine neuen Sets angekündigt.</p>
       ) : (
         <ul className="surface divide-y divide-white/5 overflow-hidden">
-          {sets.map((s) => (
-            <li key={s.code} className="flex items-start gap-3 px-4 py-3">
-              <SetIcon src={s.icon} code={s.code} />
-              <div className="min-w-0 flex-1">
-                <p className="font-medium leading-snug">{s.name}</p>
-                <p className="mt-0.5 text-sm text-violet-200">
-                  {dateDe(s.released)} <span className="text-zinc-500">· {s.daysLeft === 1 ? "morgen" : `in ${s.daysLeft} Tagen`}</span>
-                </p>
-                <p className="text-xs text-zinc-500">
-                  {s.type} · <span className="uppercase">{s.code}</span>
-                  {s.spoiled > 0 && ` · ${s.spoiled} ${s.spoiled === 1 ? "Karte" : "Karten"} bisher bekannt`}
-                </p>
-                {s.related.length > 0 && <p className="text-xs text-zinc-500">dazu: {s.related.map((r) => r.name).join(", ")}</p>}
-              </div>
-              {s.url && (
-                <a href={s.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-violet-300 hover:text-violet-200 pt-1">
-                  Vorschau ↗
-                </a>
-              )}
-            </li>
-          ))}
+          {sets.map((s) => {
+            const info = [
+              s.type,
+              s.related.length ? `+ ${s.related.map((r) => r.type).join(", ")}` : null,
+              s.spoiled > 0 ? `${s.spoiled} Karten bekannt` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            const body = (
+              <>
+                <SetIcon src={s.icon} code={s.code} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{s.name}</span>
+                  <span className="block truncate text-xs text-zinc-500" title={s.related.map((r) => r.name).join(", ")}>{info}</span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-xs font-medium text-violet-200">{dateDe(s.released)}</span>
+                  <span className="block text-[11px] text-zinc-500">{s.daysLeft === 1 ? "morgen" : `in ${s.daysLeft} Tagen`}{s.url ? " ↗" : ""}</span>
+                </span>
+              </>
+            );
+            return (
+              <li key={s.code}>
+                {s.url ? (
+                  <a href={s.url} target="_blank" rel="noreferrer" title="Vorschau bei Scryfall" className="flex items-center gap-3 px-3 py-2 hover:bg-white/[0.03]">
+                    {body}
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-3 px-3 py-2">{body}</div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
