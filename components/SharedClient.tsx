@@ -11,7 +11,7 @@ import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TradeComposer } from "@/components/TradeComposer";
-import { addToBasket, basketCount, basketValue, type Basket } from "@/lib/tradeBasket";
+import { addToBasket, basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type Basket } from "@/lib/tradeBasket";
 
 // Geteilte Sammlungen von Freunden – gleiche Darstellung wie die eigene
 // Sammlung (Wert-Kopf, Filter, Sortieren/Gruppieren, Liste/Raster/Details,
@@ -31,11 +31,17 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   // Trade-Korb je Freund (bleibt beim Wechseln zwischen Freunden erhalten)
+  // Wird im Browser gemerkt, damit der Korb beim Seitenwechsel nicht verloren
+  // geht; die Trades-Seite zeigt ihn als angefangenen Trade an.
   const [baskets, setBaskets] = useState<Record<string, Basket>>({});
   const [composerOpen, setComposerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const basket = baskets[selected] ?? [];
-  const setBasket = (b: Basket) => setBaskets((all) => ({ ...all, [selected]: b }));
+  const setBasket = (b: Basket) => {
+    setBaskets((all) => ({ ...all, [selected]: b }));
+    const o = owners.find((x) => x.owner_id === selected);
+    if (o) saveDrafts(withDraft(loadDrafts(), selected, displayName(o.owner_email), b, new Date().toISOString()));
+  };
   function addCards(list: Card[]) {
     setBasket(addToBasket(basket, list));
     setToast(list.length === 1 ? `„${list[0].name}“ zum Trade hinzugefügt` : `${list.length} Karten zum Trade hinzugefügt`);
@@ -76,8 +82,20 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
     } catch {
       // Speicher gesperrt
     }
-    const pick = owners.find((o) => o.owner_id === last)?.owner_id ?? (owners.length === 1 ? owners[0].owner_id : "");
+    // gemerkte Trade-Körbe wiederherstellen
+    const drafts = loadDrafts();
+    setBaskets(Object.fromEntries(Object.entries(drafts).map(([id, d]) => [id, d.basket])));
+    // von der Trades-Seite: /shared?trade=<Freund> öffnet den Korb direkt
+    let wanted: string | null = null;
+    try {
+      wanted = new URLSearchParams(window.location.search).get("trade");
+    } catch {
+      // ignorieren
+    }
+    const fromTrade = owners.find((o) => o.owner_id === wanted)?.owner_id;
+    const pick = fromTrade ?? owners.find((o) => o.owner_id === last)?.owner_id ?? (owners.length === 1 ? owners[0].owner_id : "");
     if (pick) void load(pick);
+    if (fromTrade && drafts[fromTrade]) setComposerOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

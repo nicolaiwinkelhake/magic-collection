@@ -47,3 +47,52 @@ export function basketValue(basket: Basket): number {
 export function basketPayload(basket: Basket): Array<{ id: string; quantity: number }> {
   return basket.map((b) => ({ id: b.card.id, quantity: b.qty }));
 }
+
+// ---- Angefangene Trades merken ----
+// Der Korb bleibt im Browser gespeichert (je Freund), damit er beim
+// Seitenwechsel nicht verloren geht. Die Trades-Seite zeigt ihn als
+// "angefangen" an, bis er abgeschickt oder verworfen wird.
+
+export const DRAFTS_KEY = "trade-drafts";
+export type TradeDraft = { name: string; basket: Basket; updated: string };
+export type TradeDrafts = Record<string, TradeDraft>;
+
+/** Korb für einen Freund setzen; leerer Korb entfernt den Entwurf. */
+export function withDraft(drafts: TradeDrafts, ownerId: string, name: string, basket: Basket, now: string): TradeDrafts {
+  const next = { ...drafts };
+  if (basket.length) next[ownerId] = { name, basket, updated: now };
+  else delete next[ownerId];
+  return next;
+}
+
+export function parseDrafts(raw: string | null): TradeDrafts {
+  if (!raw) return {};
+  try {
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    const out: TradeDrafts = {};
+    for (const [id, d] of Object.entries(data as Record<string, TradeDraft>)) {
+      if (d && Array.isArray(d.basket) && d.basket.length && typeof d.name === "string") out[id] = d;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function loadDrafts(): TradeDrafts {
+  try {
+    return parseDrafts(window.localStorage.getItem(DRAFTS_KEY));
+  } catch {
+    return {};
+  }
+}
+
+export function saveDrafts(drafts: TradeDrafts): void {
+  try {
+    if (Object.keys(drafts).length) window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+    else window.localStorage.removeItem(DRAFTS_KEY);
+  } catch {
+    // Speicher gesperrt – dann eben nur für diese Seite
+  }
+}
