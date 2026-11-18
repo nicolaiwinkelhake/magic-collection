@@ -56,7 +56,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // ocr/: Texterkennungs-Dateien (öffentlich, groß) ohne Login-Prüfung ausliefern
-    "/((?!_next/static|_next/image|ocr/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Ohne Login-Prüfung: ocr/ (Texterkennungs-Dateien), data/ (Namenslisten),
+    // App-Manifest, Service Worker und Offline-Seite – sonst bekommt der
+    // Browser beim "Zum Home-Bildschirm" eine Weiterleitung statt des Manifests
+    // (falsches/kein Symbol, App startet ohne Offline-Unterstützung).
+    "/((?!_next/static|_next/image|ocr/|data/|manifest\\.webmanifest|sw\\.js|offline\\.html|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2)$).*)",
   ],
 };
