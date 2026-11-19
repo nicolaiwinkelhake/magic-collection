@@ -22,6 +22,48 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-19b",
+    date: "2026-11-19",
+    title: "Besserer Scanner, flexiblere Trades",
+    items: [
+      {
+        icon: "📷",
+        title: "Scanner: dunkle Karten und wenig Licht",
+        text: "Schwarze Karten und Karten bei schwachem Licht werden deutlich öfter erkannt. Bei wenig Licht prüft der Scanner jede Karte doppelt (weniger Fehltreffer) und bietet die Taschenlampe an.",
+        href: "/scan",
+      },
+      {
+        icon: "🎯",
+        title: "Scanner: richtige Version",
+        text: "Für die Version nutzt der Scanner jetzt alles, was er lesen kann – auch nur das Set-Kürzel oder nur die Nummer – und vergleicht erst dann das Bild.",
+        href: "/scan",
+      },
+      {
+        icon: "🔋",
+        title: "Scanner: sparsamer",
+        text: "Die Automatik schaut nur noch schnell ins Kamerabild, wenn eine neue Karte daliegt – das schont den Akku.",
+      },
+      {
+        icon: "✂️",
+        title: "Einzelne Karten entfernen",
+        text: "In einem offenen Trade, den du vorgeschlagen hast, nimmst du mit ✕ einzelne Karten wieder heraus.",
+        href: "/trades",
+      },
+      {
+        icon: "☑️",
+        title: "Nur einen Teil annehmen",
+        text: "Bekommst du einen Trade, kannst du einzelne Karten abwählen und nur den Rest annehmen – getauscht werden nur die angehakten.",
+        href: "/trades",
+      },
+      {
+        icon: "✅",
+        title: "„Hast du schon“ bei Trades",
+        text: "Karten, die du bekommst und schon besitzt, sind mit ✓ markiert; im Detail siehst du auch deine Decks.",
+        href: "/trades",
+      },
+    ],
+  },
+  {
     id: "2026-11-19",
     date: "2026-11-19",
     title: "Besser tauschen mit Freunden",

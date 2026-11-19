@@ -19,6 +19,7 @@ type TradeItem = {
   price: number | null;
   from_user_id: string;
   scryfall_id?: string | null;
+  id?: string;
 };
 
 type Trade = {
@@ -98,11 +99,11 @@ export function TradesClient({
     router.refresh();
   }
 
-  async function respond(id: string, action: "accept" | "decline") {
+  async function respond(id: string, action: "accept" | "decline" | "remove_item", extra: { itemIds?: string[]; itemId?: string } = {}) {
     const res = await fetch(`/api/trades/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, ...extra }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -232,12 +233,35 @@ function TradeCard({
 }: {
   trade: Trade;
   currentUserId: string;
-  onRespond: (id: string, action: "accept" | "decline") => void;
+  onRespond: (id: string, action: "accept" | "decline" | "remove_item", extra?: { itemIds?: string[]; itemId?: string }) => void;
   own: OwnIndex | null;
   myDecks: MyDecks | null;
 }) {
   const myItems = trade.items.filter((i) => i.from_user_id === currentUserId);
   const theirItems = trade.items.filter((i) => i.from_user_id !== currentUserId);
+  // Offener Trade: Anfragender kann einzelne Karten entfernen, der Partner
+  // wählt, welche Karten er annimmt (anfangs alle).
+  const pending = trade.status === "pending";
+  const canPick = pending && trade.partner_id === currentUserId && trade.items.every((i) => i.id);
+  const canRemove = pending && trade.proposer_id === currentUserId && trade.items.every((i) => i.id);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(trade.items.map((i) => i.id ?? "")));
+  const isPicked = (i: TradeItem) => !canPick || picked.has(i.id ?? "");
+  const togglePick = (i: TradeItem) =>
+    setPicked((p) => {
+      const n = new Set(p);
+      if (n.has(i.id!)) n.delete(i.id!);
+      else n.add(i.id!);
+      return n;
+    });
+  const pickedCount = trade.items.filter(isPicked).length;
+  const [busyItem, setBusyItem] = useState<string | null>(null);
+  async function removeItem(i: TradeItem) {
+    const last = trade.items.length === 1;
+    if (!confirm(last ? `„${i.name}“ entfernen? Es ist die letzte Karte – der Trade wird damit zurückgezogen.` : `„${i.name}“ aus dem Trade entfernen?`)) return;
+    setBusyItem(i.id!);
+    await onRespond(trade.id, "remove_item", { itemId: i.id });
+    setBusyItem(null);
+  }
   // Kartendetail: antippen zeigt Bild, Set und Nummer zum Raussuchen
   const [viewing, setViewing] = useState<number | null>(null);
   const ordered = [...myItems, ...theirItems];
@@ -252,11 +276,22 @@ function TradeCard({
     scryfall_id: i.scryfall_id ?? null,
   }));
   const itemRow = (i: TradeItem, idx: number) => (
-    <li key={idx}>
+    <li key={idx} className={`flex items-center gap-1 ${isPicked(i) ? "" : "opacity-45"}`}>
+      {canPick && (
+        <button
+          onClick={() => togglePick(i)}
+          role="checkbox"
+          aria-checked={isPicked(i)}
+          aria-label={`${i.name} ${isPicked(i) ? "nicht annehmen" : "annehmen"}`}
+          className={`shrink-0 grid place-items-center w-6 h-6 rounded-md border text-sm ${isPicked(i) ? "bg-emerald-500 border-emerald-400 text-white" : "border-white/25"}`}
+        >
+          {isPicked(i) ? "✓" : ""}
+        </button>
+      )}
       <button
         onClick={() => setViewing(idx)}
         aria-label={`${i.name} ansehen`}
-        className="w-full flex items-center gap-2.5 rounded-lg -mx-1 px-1 py-1 text-left hover:bg-white/5 active:bg-white/10"
+        className="min-w-0 flex-1 flex items-center gap-2.5 rounded-lg px-1 py-1 text-left hover:bg-white/5 active:bg-white/10"
       >
         <span className="relative shrink-0 w-8 h-11 rounded-[3px] overflow-hidden bg-zinc-800">
           {i.image_url && <Image src={i.image_url} alt="" width={32} height={44} className="w-full h-full object-cover" />}
@@ -271,14 +306,24 @@ function TradeCard({
             </span>
           )}
         </span>
-        <span className="shrink-0 text-zinc-500 tabular-nums">{formatEur(i.price)}</span>
-        <span className="shrink-0 text-zinc-600" aria-hidden>›</span>
+        <span className={`shrink-0 tabular-nums ${isPicked(i) ? "text-zinc-500" : "text-zinc-600 line-through"}`}>{formatEur(i.price)}</span>
+        {!canRemove && <span className="shrink-0 text-zinc-600" aria-hidden>›</span>}
       </button>
+      {canRemove && (
+        <button
+          onClick={() => void removeItem(i)}
+          disabled={busyItem !== null}
+          aria-label={`${i.name} aus dem Trade entfernen`}
+          className="shrink-0 grid place-items-center w-8 h-8 rounded-full text-zinc-500 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-40"
+        >
+          {busyItem === i.id ? "…" : "✕"}
+        </button>
+      )}
     </li>
   );
 
   const sum = (items: TradeItem[]) =>
-    items.reduce((s, i) => s + (i.price ?? 0) * i.quantity, 0);
+    items.filter(isPicked).reduce((s, i) => s + (i.price ?? 0) * i.quantity, 0);
 
   const otherEmail = trade.i_am_proposer
     ? trade.partner_email
@@ -354,10 +399,15 @@ function TradeCard({
         <div className="flex gap-2 pt-1">
           {canAccept && (
             <button
-              onClick={() => onRespond(trade.id, "accept")}
-              className="bg-emerald-600 hover:bg-emerald-500 transition rounded-md px-3 py-1.5 text-sm font-medium"
+              onClick={() => {
+                const partial = canPick && pickedCount < trade.items.length;
+                if (partial && !confirm(`Nur ${pickedCount} von ${trade.items.length} Karten annehmen? Die übrigen fallen aus dem Trade.`)) return;
+                onRespond(trade.id, "accept", partial ? { itemIds: trade.items.filter(isPicked).map((i) => i.id!) } : {});
+              }}
+              disabled={canPick && pickedCount === 0}
+              className="bg-emerald-600 hover:bg-emerald-500 transition rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40"
             >
-              Annehmen
+              {canPick && pickedCount < trade.items.length ? `Annehmen (${pickedCount} von ${trade.items.length})` : "Annehmen"}
             </button>
           )}
           <button

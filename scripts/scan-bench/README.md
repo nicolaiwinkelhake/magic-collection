@@ -11,7 +11,7 @@ node scripts/scan-bench/run.mjs <daten>            # alle Bedingungen
 node scripts/scan-bench/run.mjs <daten> --limit 60 --only typisch
 ```
 
-Ausgabe je Bedingung (`ideal`, `typisch`, `schwer`, `fern`):
+Ausgabe je Bedingung (`ideal`, `typisch`, `schwer`, `fern`, `dunkel` = wenig Licht):
 
 - **sofort richtig** – Name per Wörterbuch sicher, ohne Netz
 - **falsche Karte** – sicher, aber falsch (muss 0 sein)
@@ -25,3 +25,12 @@ wurden die Einstellungen in `lib/scanRead.ts` gewählt.
 
 Stand (262 Karten aus den Sets der Sammlung): typisch 88 % sofort richtig,
 94 % erkannt, 0 falsche Karten bei 1048 Scans.
+
+Schwarze Karten werden gesondert ausgewiesen, wenn im Datenordner eine
+`tones.json` liegt (Helligkeit des Kartenrahmens je Karte; < 60 = dunkel).
+`--only` nimmt auch mehrere Bedingungen (`--only typisch,dunkel`).
+
+Stand nach den Scanner-Verbesserungen (130 Karten, je Bedingung), sofort richtig:
+ideal 98,5 % · typisch 93,8 % · schwer 87,7 % · fern 89,2 % · dunkel 86,9 %
+(vorher 76,2 %), schwarze Karten bei wenig Licht 76 % (vorher 41 %);
+0 falsche Karten außer einem Grenzfall in `schwer` (unverändert).

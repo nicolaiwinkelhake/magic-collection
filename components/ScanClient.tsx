@@ -12,7 +12,8 @@ import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
 import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
 import { germanIndexIfReady, loadGermanIndex } from "@/lib/germanIndexClient";
-import { pickBest, type CardHash } from "@/lib/imageHash";
+import { type CardHash } from "@/lib/imageHash";
+import { choosePrint, narrowPrints } from "@/lib/printChoice";
 import { grayOf, hashOf, printHash } from "@/lib/printHashClient";
 import { loadPrints } from "@/components/ui/PrintPicker";
 import { directByName, directExact, directPrint } from "@/lib/scryfallDirect";
@@ -24,6 +25,8 @@ import { toggle, toggleAll } from "@/lib/selection";
 import { nameCandidates, type CardInfo } from "@/lib/ocr";
 import { coverGuide, fromVisible, visibleRegion, type Rect } from "@/lib/scanGeometry";
 import { contrast, initialWatch, markScanned, toGray, watchFrame, WATCH, type WatchState } from "@/lib/frameWatch";
+import { nextTickMs, sameRect } from "@/lib/scanPace";
+import { confirmDim, DIM_LEVEL, mean, type Pending } from "@/lib/scanLight";
 import {
   addPending,
   addScan,
@@ -57,7 +60,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 // Automatik: so oft wird das Kamerabild geprüft, und so viele Leseversuche
 // gibt es je Karte, bevor der Scanner bis zum Kartenwechsel pausiert.
 // Schnell auslösen: lieber ein Versuch mehr als warten.
-const TICK_MS = 40;
 const MAX_MISSES = 4;
 const THUMB_W = 32;
 const THUMB_H = 45;
@@ -146,6 +148,10 @@ export function ScanClient({
   const fileRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLCanvasElement | null>(null);
   const watchRef = useRef<WatchState>(initialWatch());
+  // Helligkeit im Rahmen (Automatik misst laufend); wenig Licht → strenger annehmen
+  const lightRef = useRef(255);
+  const [dim, setDim] = useState(false);
+  const confirmRef = useRef<Pending>(null);
   const scanningRef = useRef(false);
   // Standbild fürs Lesen (gelesen wird in mehreren Schritten, das Video läuft weiter)
   const snapRef = useRef<HTMLCanvasElement | null>(null);
@@ -389,7 +395,7 @@ export function ScanClient({
     scanLog(`pending_resolved ${match ? match.name : "-"}`);
     const keep = match && !match.exact && camHash ? Array.from(camHash) : undefined;
     setStack((s) => (match ? resolvePending(s, key, match, keep) : failPending(s, key)));
-    if (match && !match.exact && camHash) void refinePrint(match, camHash, key);
+    if (match && !match.exact && camHash) void refinePrint(match, camHash, key, info);
   }
 
   function accept(match: ScanMatch, foil = prefsRef.current.foil, camHash?: CardHash): string {
@@ -409,23 +415,26 @@ export function ScanClient({
 
   // Druck per Bildvergleich bestimmen, wenn Set/Nummer nicht lesbar waren:
   // Fingerabdruck der Kamera gegen die Drucke dieser Karte (neueste zuerst).
-  async function refinePrint(match: ScanMatch, camHash: CardHash, key: string) {
+  // Genutzt wird alles, was von der Karte gelesen wurde: auch nur das
+  // Set-Kürzel oder nur die Nummer grenzt die Drucke ein, das Bild entscheidet
+  // unter den übrigen.
+  async function refinePrint(match: ScanMatch, camHash: CardHash, key: string, info?: CardInfo | null) {
     try {
-      const prints = (await loadPrints(match.name)).slice(0, MAX_HASH_PRINTS);
-      if (prints.length < 2) return;
-      const hashed: Array<(typeof prints)[number] & { hash: CardHash }> = [];
-      for (const p of prints) {
-        const h = await printHash(p.id, p.imageUrl);
-        if (h) hashed.push({ ...p, hash: h });
-      }
-      const best = pickBest(camHash, hashed);
+      const all = await loadPrints(match.name);
+      if (all.length < 2) return;
+      const { list } = narrowPrints(all, info);
+      const hashed: Array<(typeof list)[number] & { hash: CardHash | null }> = [];
+      // nur die übrig gebliebenen Drucke vergleichen (spart Bilder laden)
+      if (list.length > 1) for (const p of list.slice(0, MAX_HASH_PRINTS)) hashed.push({ ...p, hash: await printHash(p.id, p.imageUrl) });
+      const choice = choosePrint(list.length > 1 ? hashed : list, camHash, info);
+      const best = choice ? { best: choice.best } : null;
       if (!best || best.best.id === match.id) return;
       setStack((s) => {
         const item = s.find((x) => x.key === key);
         // nur diesen Scan umstellen, und nur solange noch der vermutete Druck drinsteht
         return item && item.id === match.id ? updateItem(s, key, { print: { ...best.best, exact: true } }) : s;
       });
-      setToast(`Druck per Bild erkannt: ${best.best.setName ?? best.best.set?.toUpperCase()}`);
+      setToast(`Druck erkannt${choice?.by === "bild" ? " (Bild)" : ""}: ${best.best.setName ?? best.best.set?.toUpperCase()}`);
       setTimeout(() => setToast(null), 2500);
     } catch {
       // Bildvergleich ist eine Zugabe – ohne ihn bleibt der Standarddruck
@@ -460,7 +469,15 @@ export function ScanClient({
       const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
       const { names, sure, corrected, german } = await read.name;
       scanLog(`name_done names=${JSON.stringify(names)} sure=${sure?.name ?? "-"}`);
+      const dimNow = auto && lightRef.current < DIM_LEVEL;
       if (sure) {
+        // Wenig Licht: erst annehmen, wenn das nächste Bild denselben Namen liefert
+        const c = confirmDim(confirmRef.current, sure.name, Date.now(), dimNow);
+        confirmRef.current = c.pending;
+        if (!c.accept) {
+          scanLog(`dim_wait ${sure.name}`);
+          return false;
+        }
         acceptPending(sure.name, read.info, names, camHash);
         return true;
       }
@@ -475,11 +492,12 @@ export function ScanClient({
         const guess = bestGuess({ names, sure, corrected }, dict);
         let match: ScanMatch | null = null;
         if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [...names, ...(guess ? [guess.name] : [])], true).catch(() => null);
-        for (const raw of names.slice(0, 2)) match ??= await directByName(raw, 0.8).catch(() => null);
+        // unscharfe Suche: bei wenig Licht nur bei sehr ähnlichem Text
+        for (const raw of names.slice(0, 2)) match ??= await directByName(raw, dimNow ? 0.9 : 0.8).catch(() => null);
         scanLog(`resolved ${match ? match.name : "-"}`);
         if (match) {
           const scanned = accept(match, prefsRef.current.foil, camHash);
-          if (!match.exact) void refinePrint(match, camHash, scanned);
+          if (!match.exact) void refinePrint(match, camHash, scanned, info);
           return true;
         }
         if (!german?.length) return false;
@@ -493,7 +511,7 @@ export function ScanClient({
         scanLog(`resolved_de ${match ? match.name : "-"}`);
         if (match) {
           const scanned = accept(match, prefsRef.current.foil, camHash);
-          if (!match.exact) void refinePrint(match, camHash, scanned);
+          if (!match.exact) void refinePrint(match, camHash, scanned, info);
           return true;
         }
         return false;
@@ -503,7 +521,7 @@ export function ScanClient({
       scanLog(`resolved ${match ? match.name : "-"}`);
       if (match) {
         const scanned = accept(match, prefsRef.current.foil, camHash);
-        if (!match.exact) void refinePrint(match, camHash, scanned);
+        if (!match.exact) void refinePrint(match, camHash, scanned, info);
         return true;
       }
       if (!auto) {
@@ -533,11 +551,14 @@ export function ScanClient({
     thumb.height = THUMB_H;
     const ctx = thumb.getContext("2d", { willReadFrequently: true })!;
 
+    let lastDetected: Rect | null = null;
     async function tick() {
       if (stopped) return;
       const video = videoRef.current;
       const view = viewRef.current;
-      if (video?.videoWidth && view && !scanningRef.current && !printFor && !sheetOpen) {
+      // App im Hintergrund: nichts auswerten (Akku)
+      const hidden = typeof document !== "undefined" && document.hidden;
+      if (!hidden && video?.videoWidth && view && !scanningRef.current && !printFor && !sheetOpen) {
         const tickStart = performance.now();
         // 1) Karte im sichtbaren Bild suchen
         const vis = visibleRegion(video.videoWidth, video.videoHeight, view.clientWidth, view.clientHeight);
@@ -549,7 +570,11 @@ export function ScanClient({
           dh,
         );
         detectedRef.current = found ? { video: fromVisible(found, vis), screen: found } : null;
-        setDetected(found);
+        // nur neu zeichnen, wenn sich der Rahmen sichtbar bewegt hat
+        if (!sameRect(found, lastDetected)) {
+          lastDetected = found;
+          setDetected(found);
+        }
         // 2) Ruhe-/Wechselprüfung auf dem ganzen sichtbaren Bild – das wackelt
         //    nicht mit dem erkannten Kartenrahmen (sonst würde dieselbe Karte
         //    mehrfach gezählt). Karte vorhanden: erkannt oder genug Kontrast
@@ -567,9 +592,12 @@ export function ScanClient({
         );
         const frame = toGray(ctx.getImageData(0, 0, THUMB_W, THUMB_H).data);
         const gv = guide!.video;
-        const guideContrast = contrast(
-          grayOf(video, gv.x * video.videoWidth, gv.y * video.videoHeight, gv.w * video.videoWidth, gv.h * video.videoHeight, 24, 34),
-        );
+        const guideGray = grayOf(video, gv.x * video.videoWidth, gv.y * video.videoHeight, gv.w * video.videoWidth, gv.h * video.videoHeight, 24, 34);
+        const guideContrast = contrast(guideGray);
+        // Licht messen (geglättet, damit der Hinweis nicht flackert)
+        lightRef.current = lightRef.current * 0.8 + mean(guideGray) * 0.2;
+        const isDim = lightRef.current < DIM_LEVEL;
+        setDim((d) => (d === isDim ? d : isDim));
         // Ersatz, falls die Kanten nicht erkannt werden (z. B. weiße Karte auf
         // hellem Tisch): sehr kontrastreicher Inhalt im Hilfsrahmen. Doppelte
         // Schwelle, damit gemusterte Tische nicht als Karte gelten.
@@ -594,7 +622,9 @@ export function ScanClient({
           }
         }
       }
-      if (!stopped) setTimeout(tick, TICK_MS);
+      // Takt anpassen: schnell nur, wenn eine ungelesene Karte daliegt
+      if (!stopped)
+        setTimeout(tick, nextTickMs({ hidden, present: presentRef.current, armed: watchRef.current.armed }));
     }
     const t = setTimeout(tick, 200);
     return () => {
@@ -1058,6 +1088,20 @@ export function ScanClient({
                 <span className="w-10" />
               )}
             </div>
+
+            {/* Hinweis bei wenig Licht */}
+            {dim && prefs.auto && !torch && (
+              <div className="absolute top-[calc(4rem+env(safe-area-inset-top))] inset-x-0 flex justify-center px-3 pointer-events-none">
+                <p className="pointer-events-auto flex items-center gap-2 rounded-full bg-amber-300/95 text-zinc-900 text-xs font-medium px-3 py-1.5 shadow" role="status">
+                  Wenig Licht – Karte wird doppelt geprüft
+                  {torch != null && (
+                    <button onClick={toggleTorch} className="rounded-full bg-zinc-900 text-amber-200 px-2 py-0.5">
+                      ϟ Lampe an
+                    </button>
+                  )}
+                </p>
+              </div>
+            )}
 
             {/* Statuszeile über dem unteren Bereich */}
             <div className="absolute bottom-2 inset-x-0 px-3 flex flex-col items-center gap-2">
