@@ -11,7 +11,7 @@ import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TradeComposer } from "@/components/TradeComposer";
-import { buildOwnIndex, ownedFor, ownedText, type OwnIndex, type OwnRow } from "@/lib/ownedMatch";
+import { buildOwnIndex, myDeckUses, ownedFor, ownedText, type OwnIndex, type OwnRow } from "@/lib/ownedMatch";
 import { addToBasket, basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type Basket } from "@/lib/tradeBasket";
 
 // Geteilte Sammlungen von Freunden – gleiche Darstellung wie die eigene
@@ -104,15 +104,25 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
   // Karten ich schon habe – damit ich keine Trades für eigene Karten anfrage.
   const [own, setOwn] = useState<OwnIndex | null>(null);
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [myDecks, setMyDecks] = useState<{ cards: Array<{ deck_id: string; name: string }>; decks: Array<{ id: string; name: string }> } | null>(null);
+  const deckUses = useMemo(() => (myDecks ? myDeckUses(cards, myDecks.cards, myDecks.decks) : undefined), [myDecks, cards]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) return;
-      const rows = await selectAll<OwnRow>(() =>
-        supabase.from("cards").select("name, scryfall_id, quantity").eq("user_id", auth.user!.id).order("id"),
-      ).catch(() => null);
-      if (!cancelled && rows) setOwn(buildOwnIndex(rows));
+      const uid = auth.user.id;
+      const [rows, deckRows, { data: deckList }] = await Promise.all([
+        selectAll<OwnRow>(() => supabase.from("cards").select("name, scryfall_id, quantity").eq("user_id", uid).order("id")).catch(() => null),
+        // in welchen meiner Decks steckt eine Karte (jede Version)?
+        selectAll<{ deck_id: string; name: string }>(() =>
+          supabase.from("deck_cards").select("deck_id, name").eq("user_id", uid).order("id"),
+        ).catch(() => []),
+        supabase.from("decks").select("id, name").eq("user_id", uid),
+      ]);
+      if (cancelled) return;
+      if (rows) setOwn(buildOwnIndex(rows));
+      setMyDecks({ cards: deckRows, decks: deckList ?? [] });
     })();
     return () => {
       cancelled = true;
@@ -216,7 +226,19 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
                 <div className="flex items-center justify-between gap-3 -mt-1">
                   <p className="text-xs text-zinc-400">
                     <span className="inline-block rounded bg-emerald-600/90 px-1 text-[10px] font-semibold text-white mr-1">✓</span>
-                    = hast du selbst · {missingCount} {missingCount === 1 ? "Eintrag fehlt" : "Einträge fehlen"} dir
+                    = hast du selbst
+                    {deckUses && Object.keys(deckUses).length > 0 && (
+                      <>
+                        {" · "}
+                        <span className="inline-flex align-[-2px] rounded bg-indigo-600/90 px-0.5 py-px text-white mr-1" aria-hidden>
+                          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2zM9 2h8a2 2 0 012 2" />
+                          </svg>
+                        </span>= in deinem Deck
+                      </>
+                    )}
+                    {" · "}
+                    {missingCount} {missingCount === 1 ? "Eintrag fehlt" : "Einträge fehlen"} dir
                   </p>
                   <button
                     onClick={() => setOnlyMissing((v) => !v)}
@@ -236,6 +258,7 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
                 groupBy={filters.group}
                 readOnly
                 owned={ownedCounts}
+                deckUses={deckUses}
                 selectAction={{ label: "Zum Trade", onRun: addCards }}
                 detailActions={(card) => {
                   const inBasket = basket.find((b) => b.card.id === card.id)?.qty ?? 0;

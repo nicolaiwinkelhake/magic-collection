@@ -857,7 +857,7 @@ function OwnedBadge({ count }: { count: number }) {
   const title = `Hast du selbst: ${count}×`;
   return (
     <span
-      className="absolute bottom-1.5 left-1.5 flex items-center gap-0.5 rounded-md bg-emerald-600/90 px-1 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/20"
+      className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-md bg-emerald-600/90 px-1 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/20"
       title={title}
       aria-label={title}
     >
