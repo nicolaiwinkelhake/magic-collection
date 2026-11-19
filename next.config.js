@@ -7,6 +7,10 @@ const nextConfig = {
     staleTimes: { dynamic: 180, static: 300 },
   },
   images: {
+    // Bilder direkt von Scryfall laden: Scryfall liefert sie schon komprimiert,
+    // und Vercels Bildoptimierung hat ein Monatskontingent – ist es aufgebraucht,
+    // bleiben neue Kartenbilder leer.
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
