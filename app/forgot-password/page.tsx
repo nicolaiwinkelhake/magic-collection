@@ -3,11 +3,12 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createRecoveryClient } from "@/lib/supabase/recoveryClient";
 import { AuthShell } from "@/components/ui/AuthShell";
 
 // "Passwort vergessen": Supabase schickt eine Mail mit Link. Der Link führt
-// über /auth/callback (Code gegen Sitzung tauschen) auf /reset-password.
+// direkt auf /reset-password und bringt die Sitzung mit – klappt daher auch,
+// wenn die Mail in einem anderen Browser oder auf dem Handy geöffnet wird.
 function ForgotPasswordForm() {
   const params = useSearchParams();
   const linkError = params.get("error") === "link";
@@ -20,8 +21,8 @@ function ForgotPasswordForm() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const { error } = await createClient().auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+    const { error } = await createRecoveryClient().auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
     });
     setLoading(false);
     if (error) {
@@ -46,14 +47,14 @@ function ForgotPasswordForm() {
 
         {linkError && !sent && (
           <p className="text-sm text-amber-300">
-            Der Link ist abgelaufen oder ungültig. Fordere hier einen neuen an – und öffne ihn im selben Browser.
+            Der Link ist abgelaufen oder wurde schon benutzt. Fordere hier einen neuen an.
           </p>
         )}
 
         {sent ? (
           <p className="text-sm text-zinc-300">
             Falls ein Konto zu <span className="font-medium">{email}</span> existiert, haben wir dir eine E-Mail
-            mit einem Link zum Zurücksetzen geschickt. Öffne den Link am besten im selben Browser.
+            mit einem Link zum Zurücksetzen geschickt. Der Link gilt eine Stunde und nur einmal.
           </p>
         ) : (
           <>
