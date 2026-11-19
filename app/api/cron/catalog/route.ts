@@ -17,8 +17,8 @@ export const dynamic = "force-dynamic";
 //   Abgleich) wird übersprungen, außer mit ?force=1.
 
 const BUDGET_MS = 240_000;
-const BATCH = 500;
-const PARALLEL = 3;
+const BATCH = 250;
+const PARALLEL = 2;
 const UA = { "User-Agent": "MagicCollectionApp/1.0", Accept: "application/json" };
 
 type Bulk = { updated_at: string; jsonl_download_uri?: string; download_uri?: string };
@@ -55,6 +55,22 @@ async function authorized(request: Request): Promise<boolean> {
   return !!data;
 }
 
+/** Block speichern; bei Zeitüberschreitung o. Ä. halbieren und erneut versuchen. */
+async function saveRows(db: SupabaseClient, rows: CatalogRow[], depth = 0): Promise<void> {
+  const { error } = await db.from("catalog_cards").upsert(rows, { onConflict: "id" });
+  if (!error) return;
+  if (depth >= 4 || rows.length < 2) {
+    // letzter Versuch nach kurzer Pause
+    await new Promise((r) => setTimeout(r, 1500));
+    const again = await db.from("catalog_cards").upsert(rows, { onConflict: "id" });
+    if (again.error) throw new Error(`Speichern: ${again.error.message}`);
+    return;
+  }
+  const mid = Math.ceil(rows.length / 2);
+  await saveRows(db, rows.slice(0, mid), depth + 1);
+  await saveRows(db, rows.slice(mid), depth + 1);
+}
+
 async function syncCards(db: SupabaseClient, origin: string, from: number, force: boolean, started: number) {
   const bulk = await bulkInfo("default-cards");
   const meta = await getMeta(db, "cards");
@@ -73,10 +89,7 @@ async function syncCards(db: SupabaseClient, origin: string, from: number, force
     if (!batch.length) return;
     const chunk = batch;
     batch = [];
-    const p = (async () => {
-      const { error } = await db.from("catalog_cards").upsert(chunk, { onConflict: "id" });
-      if (error) throw new Error(`Speichern: ${error.message}`);
-    })();
+    const p = saveRows(db, chunk);
     inFlight.add(p);
     p.finally(() => inFlight.delete(p)).catch(() => {});
     if (inFlight.size >= PARALLEL) await Promise.race(inFlight);
