@@ -7,7 +7,7 @@ type Meta = { updated_at?: string; done?: boolean; rows?: number; finished_at?: 
 
 // Wartung (nur Admins): Stand des Karten-Katalogs und Abgleich von Hand.
 // Der Abgleich läuft sonst jede Nacht automatisch.
-export function CatalogAdmin({ cards, names, count, error }: { cards: Meta | null; names: Meta | null; count: number | null; error: Meta | null }) {
+export function CatalogAdmin({ cards, names, defaults = null, count, error }: { cards: Meta | null; names: Meta | null; defaults?: Meta | null; count: number | null; error: Meta | null }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -29,6 +29,9 @@ export function CatalogAdmin({ cards, names, count, error }: { cards: Meta | nul
         {count != null ? `${count.toLocaleString("de-DE")} Drucke in der Datenbank` : "Noch leer"}
         {cards?.finished_at ? ` · zuletzt vollständig ${formatDate(cards.finished_at)}` : ""}
         {cards && !cards.done && cards.next ? ` · läuft (Zeile ${cards.next.toLocaleString("de-DE")})` : ""}
+      </p>
+      <p className="text-sm text-zinc-400">
+        Standarddrucke: {defaults?.finished_at ? `${(defaults.rows ?? 0).toLocaleString("de-DE")} · ${formatDate(defaults.finished_at)}` : "noch nicht"}
       </p>
       <p className="text-sm text-zinc-400">
         Deutsche Namen: {names?.finished_at ? `${(names.rows ?? 0).toLocaleString("de-DE")} · ${formatDate(names.finished_at)}` : "noch nicht"}

@@ -2,6 +2,9 @@
 // Gesamtdatei in kompakte Zeilen für die Tabelle catalog_cards bringen,
 // gepackte JSONL-Dateien zeilenweise lesen und deutsche Namen bestimmen.
 
+/** Stand des Katalog-Aufbaus; höher = neue Spalten (Neuimport nötig, bis dahin wird er nicht genutzt). */
+export const CATALOG_VERSION = 2;
+
 export type ScryCard = {
   id: string;
   oracle_id?: string;
@@ -21,7 +24,7 @@ export type ScryCard = {
   power?: string;
   toughness?: string;
   image_uris?: { normal?: string };
-  card_faces?: Array<{ name?: string; printed_name?: string; mana_cost?: string; type_line?: string; oracle_text?: string; colors?: string[]; image_uris?: { normal?: string }; power?: string; toughness?: string }>;
+  card_faces?: Array<{ oracle_id?: string; name?: string; printed_name?: string; mana_cost?: string; type_line?: string; oracle_text?: string; colors?: string[]; image_uris?: { normal?: string }; power?: string; toughness?: string }>;
   prices?: { eur?: string | null; eur_foil?: string | null };
   released_at?: string;
   cardmarket_id?: number;
@@ -32,6 +35,15 @@ export type ScryCard = {
   finishes?: string[];
   games?: string[];
   printed_name?: string;
+  produced_mana?: string[];
+  edhrec_rank?: number;
+  game_changer?: boolean;
+  set_type?: string;
+  frame_effects?: string[];
+  promo_types?: string[];
+  variation?: boolean;
+  oversized?: boolean;
+  textless?: boolean;
 };
 
 export type CatalogRow = {
@@ -62,6 +74,15 @@ export type CatalogRow = {
   full_art: boolean | null;
   promo: boolean | null;
   finishes: string[] | null;
+  produced_mana: string[] | null;
+  edhrec_rank: number | null;
+  game_changer: boolean | null;
+  set_type: string | null;
+  frame_effects: string[] | null;
+  promo_types: string[] | null;
+  variation: boolean | null;
+  oversized: boolean | null;
+  textless: boolean | null;
   updated_at: string;
 };
 
@@ -77,7 +98,7 @@ export function toCatalogRow(c: ScryCard, now: string): CatalogRow {
   const faces = c.card_faces ?? [];
   return {
     id: c.id,
-    oracle_id: c.oracle_id ?? null,
+    oracle_id: c.oracle_id ?? face?.oracle_id ?? null,
     name: c.name,
     lang: c.lang ?? null,
     set: c.set,
@@ -103,6 +124,15 @@ export function toCatalogRow(c: ScryCard, now: string): CatalogRow {
     full_art: c.full_art ?? null,
     promo: c.promo ?? null,
     finishes: c.finishes ?? null,
+    produced_mana: c.produced_mana ?? null,
+    edhrec_rank: c.edhrec_rank ?? null,
+    game_changer: c.game_changer ?? null,
+    set_type: c.set_type ?? null,
+    frame_effects: c.frame_effects ?? null,
+    promo_types: c.promo_types ?? null,
+    variation: c.variation ?? null,
+    oversized: c.oversized ?? null,
+    textless: c.textless ?? null,
     updated_at: now,
   };
 }

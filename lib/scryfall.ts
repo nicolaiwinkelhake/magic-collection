@@ -64,6 +64,11 @@ export async function fetchCardByName(name: string): Promise<{
   imageUrl: string | null;
   error?: string;
 }> {
+  // zuerst im eigenen Katalog (exakter Name, auch nur Vorderseite oder
+  // deutsch) – gleicher Standarddruck wie Scryfalls Namenssuche
+  const { catalogByNames } = await import("@/lib/catalogLookup");
+  const local = (await catalogByNames([name]).catch(() => null))?.get(name.trim().toLowerCase());
+  if (local) return { card: local, imageUrl: getImageUrl(local) };
   const url = `${SCRYFALL_BASE}/cards/named?fuzzy=${encodeURIComponent(name)}`;
   const res = await fetch(url, {
     headers: { "User-Agent": "MagicCollectionApp/1.0" },
