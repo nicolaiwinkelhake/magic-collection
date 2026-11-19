@@ -181,3 +181,45 @@ export async function catalogByNames(names: string[]): Promise<Map<string, Scryf
   }
   return out;
 }
+
+/**
+ * Preise aus dem Katalog für viele Drucke (nur wenn der Katalog frisch ist:
+ * vollständig abgeglichen vor höchstens `maxHours` Stunden). Fehlende IDs
+ * sind nicht in der Antwort – der Aufrufer fragt dafür Scryfall.
+ */
+export async function catalogPrices(ids: string[], maxHours = 30): Promise<Map<string, { eur: number | null; eurFoil: number | null }>> {
+  const out = new Map<string, { eur: number | null; eurFoil: number | null }>();
+  const db = await catalogDb().catch(() => null);
+  if (!db || !ids.length) return out;
+  try {
+    const { data: meta } = await db.from("catalog_meta").select("value").eq("key", "cards").maybeSingle();
+    const finished = (meta?.value as { finished_at?: string } | undefined)?.finished_at;
+    if (!finished || Date.now() - new Date(finished).getTime() > maxHours * 3600_000) return out;
+    const unique = Array.from(new Set(ids.map((x) => x.toLowerCase())));
+    for (let i = 0; i < unique.length; i += 300) {
+      const { data, error } = await db.from("catalog_cards").select("id, eur, eur_foil").in("id", unique.slice(i, i + 300));
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as Array<{ id: string; eur: number | string | null; eur_foil: number | string | null }>) {
+        out.set(r.id.toLowerCase(), { eur: r.eur == null ? null : Number(r.eur), eurFoil: r.eur_foil == null ? null : Number(r.eur_foil) });
+      }
+    }
+  } catch {
+    out.clear(); // lieber vollständig über Scryfall als halb
+  }
+  return out;
+}
+
+/** Drucke je Set laut Katalog (nur Papier). Leer, wenn der Katalog nicht bereit ist. */
+export async function catalogSetCounts(sets: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const db = await catalogDb().catch(() => null);
+  if (!db || !sets.length) return out;
+  try {
+    const { data, error } = await db.rpc("catalog_set_counts", { p_sets: sets });
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as Array<{ set: string; prints: number }>) out.set(r.set, r.prints);
+  } catch {
+    out.clear();
+  }
+  return out;
+}

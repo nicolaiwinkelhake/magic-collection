@@ -111,3 +111,24 @@ export async function catalogPrints(name: string): Promise<CatalogPrint[]> {
     return [];
   }
 }
+
+/** Alle Drucke eines Sets, nach Sammlernummer (Set-Vollständigkeit). */
+export async function catalogSetPrints(set: string): Promise<CatalogPrint[]> {
+  if (!(await catalogReady())) return [];
+  try {
+    const { data } = await db().from("catalog_cards").select(COLS).eq("set", set.toLowerCase()).limit(2000);
+    return sortByNumber(((data ?? []) as Row[]).map((r) => rowToMatch(r, true)));
+  } catch {
+    return [];
+  }
+}
+
+/** Sammlernummern natürlich sortieren ("2" vor "10", "10a" nach "10"). */
+export function sortByNumber<T extends { collectorNumber?: string }>(list: T[]): T[] {
+  const key = (n = "") => [parseInt(n.replace(/^\D+/, ""), 10) || 0, n] as const;
+  return [...list].sort((a, b) => {
+    const [na, sa] = key(a.collectorNumber);
+    const [nb, sb] = key(b.collectorNumber);
+    return na - nb || sa.localeCompare(sb);
+  });
+}
