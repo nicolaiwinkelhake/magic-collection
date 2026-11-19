@@ -202,6 +202,8 @@ const api = {
     img.src = url;
     await img.decode();
     const { frame, truth, guide, corners } = compose(img, cond, seed);
+    // Helligkeit der Karte selbst (dunkle/schwarze Karten getrennt auswerten)
+    const tone = grayOf(img, 0, 0, img.naturalWidth, img.naturalHeight, 32, 44).reduce((a, b) => a + b, 0) / (32 * 44);
     const dh = Math.round((DETECT_W * H) / W);
     // wie in der App: die einfache Rechtecksuche läuft im Takt mit und dient als Ersatz
     const rect = detectCard(grayOf(frame, 0, 0, W, H, DETECT_W, dh), DETECT_W, dh);
@@ -223,7 +225,7 @@ const api = {
       const m = index ? matchName(index, raw) : null;
       return m && Math.max(nameSimilarity(raw, m.name), nameSimilarity(raw, m.name.split(" // ")[0])) >= 0.8 ? m.name : null;
     });
-    return { detected: !!read.quad, cornerErr, quadMs: t1 - t0, nameMs: t2 - t0, totalMs: t3 - t0, ...name, info, printCheck, fuzzy: fuzzy.find(Boolean) ?? null };
+    return { tone, detected: !!read.quad, cornerErr, quadMs: t1 - t0, nameMs: t2 - t0, totalMs: t3 - t0, ...name, info, printCheck, fuzzy: fuzzy.find(Boolean) ?? null };
   },
   /** Versuche: Ausschnitt/Größe/Sprache frei wählbar (zum Vergleichen von Varianten) */
   async experiment(url: string, cond: Condition, seed: number, o: { rect: "truth" | "detect" | "quad" | "truthquad"; quadW?: number; nameH: number; infoH: number; langs: string; nameArea?: Rect; infoArea?: Rect; pre?: string; infoPre?: string; psm?: string }) {

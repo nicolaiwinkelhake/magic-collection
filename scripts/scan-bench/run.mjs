@@ -22,7 +22,15 @@ export const CONDITIONS = {
   typisch: { scale: [0.82, 1.02], offset: 0.05, rot: 3, blur: [0.4, 1.2], brightness: [0.8, 1.1], noise: 14, glare: 0.1, squash: 0.96 },
   schwer: { scale: [0.7, 1.05], offset: 0.09, rot: 7, blur: [1.0, 2.2], brightness: [0.55, 1.2], noise: 26, glare: 0.4, squash: 0.92 },
   fern: { scale: [0.5, 0.62], offset: 0.12, rot: 4, blur: [0.5, 1.2], brightness: [0.8, 1.1], noise: 14, glare: 0.1, squash: 0.96 },
+  // wenig Licht: dunkel, stark verrauscht, etwas unscharf (Handy belichtet länger)
+  dunkel: { scale: [0.82, 1.02], offset: 0.05, rot: 3, blur: [0.8, 1.6], brightness: [0.3, 0.45], noise: 30, glare: 0, squash: 0.96 },
 };
+// dunkle Karten (z. B. schwarze Karten, dunkle Rahmen): mittlere Helligkeit des Kartenbilds darunter
+const DARK_TONE = Number(process.env.DARK_TONE ?? 85);
+// genauer: Helligkeit des Kartenrahmens neben dem Bild (tones.json, optional; schwarze Karten < 60)
+const tonesPath = path.join(data, "tones.json");
+const tones = fs.existsSync(tonesPath) ? JSON.parse(fs.readFileSync(tonesPath, "utf8")) : null;
+const isDark = (r) => (tones?.[r.id] ? tones[r.id].frame < 60 : r.tone < DARK_TONE);
 
 const bundle = await build({
   entryPoints: [path.join(here, "harness.ts")],
@@ -73,7 +81,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] 
 const p90 = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length * 0.9)] ?? 0;
 const all = {};
 for (const [cname, cond] of Object.entries(CONDITIONS)) {
-  if (only && only !== cname) continue;
+  if (only && !only.split(",").includes(cname)) continue;
   const rows = [];
   for (let i = 0; i < cards.length; i++) {
     const c = cards[i];
@@ -89,6 +97,11 @@ for (const [cname, cond] of Object.entries(CONDITIONS)) {
   all[cname] = rows;
   const n = rows.length;
   const count = (o) => rows.filter((r) => r.outcome === o).length;
+  const dark = rows.filter(isDark);
+  const dc = (o) => dark.filter((r) => r.outcome === o).length;
+  console.log(
+    `${"".padEnd(8)} dunkle Karten (${dark.length}): sofort richtig ${pct(dc("sofort"), dark.length)} | falsch ${pct(dc("FALSCH"), dark.length)} | erkannt ${pct(dark.length - dc("nichts"), dark.length)} | Druck gelesen ${pct(dark.filter((r) => r.infoOk).length, dark.length)} | Karte gefunden ${pct(dark.filter((r) => r.cornerErr >= 0 && r.cornerErr < 0.04).length, dark.length)}`,
+  );
   console.log(
     `${cname.padEnd(8)} sofort richtig ${pct(count("sofort"), n).padStart(7)} | falsche Karte ${pct(count("FALSCH"), n).padStart(6)} | über Set/Nr ${pct(count("druck"), n).padStart(6)} | nur per Netz ${pct(count("netz"), n).padStart(6)} | nicht erkannt ${pct(count("nichts"), n).padStart(6)} || Druck gelesen ${pct(rows.filter((r) => r.infoOk).length, n).padStart(6)} | Karte genau gefunden ${pct(rows.filter((r) => r.cornerErr >= 0 && r.cornerErr < 0.04).length, n).padStart(6)} || Zeit bis Name: Median ${Math.round(median(rows.map((r) => r.nameMs)))} ms, P90 ${Math.round(p90(rows.map((r) => r.nameMs)))} ms; bis Druck: Median ${Math.round(median(rows.map((r) => r.totalMs)))} ms`,
   );
