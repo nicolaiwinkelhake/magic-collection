@@ -6,7 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-export function AccountClient({ email }: { email: string }) {
+export function AccountClient({ email, admin = null }: { email: string; admin?: React.ReactNode }) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -134,6 +134,8 @@ export function AccountClient({ email }: { email: string }) {
           {emailBusy ? "Sende..." : "E-Mail ändern"}
         </button>
       </form>
+
+      {admin}
 
       <button
         onClick={logout}
