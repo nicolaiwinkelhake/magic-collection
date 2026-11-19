@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -14,11 +16,24 @@ export async function POST(
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
   }
 
-  const { action } = await request.json(); // "accept" | "decline"
+  // "accept" (optional itemIds: nur diese Karten) | "decline" | "remove_item" (itemId)
+  const body = await request.json().catch(() => ({}));
+  const action = body.action;
+  const isId = (x: unknown): x is string => typeof x === "string" && UUID.test(x);
+
+  if (action === "remove_item") {
+    if (!isId(body.itemId)) return NextResponse.json({ error: "Karte fehlt" }, { status: 400 });
+    const { data, error } = await supabase.rpc("remove_trade_item", { p_item_id: body.itemId });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ status: data === 0 ? "cancelled" : "pending", left: data });
+  }
 
   if (action === "accept") {
+    const itemIds = Array.isArray(body.itemIds) ? body.itemIds.filter(isId) : null;
+    if (itemIds && !itemIds.length) return NextResponse.json({ error: "Mindestens eine Karte auswählen" }, { status: 400 });
     const { error } = await supabase.rpc("accept_trade", {
       p_trade_id: params.id,
+      ...(itemIds ? { p_item_ids: itemIds } : {}),
     });
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });

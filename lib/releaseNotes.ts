@@ -22,6 +22,31 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-19b",
+    date: "2026-11-19",
+    title: "Trades flexibler",
+    items: [
+      {
+        icon: "✂️",
+        title: "Einzelne Karten entfernen",
+        text: "In einem offenen Trade, den du vorgeschlagen hast, nimmst du mit ✕ einzelne Karten wieder heraus.",
+        href: "/trades",
+      },
+      {
+        icon: "☑️",
+        title: "Nur einen Teil annehmen",
+        text: "Bekommst du einen Trade, kannst du einzelne Karten abwählen und nur den Rest annehmen – getauscht werden nur die angehakten.",
+        href: "/trades",
+      },
+      {
+        icon: "✅",
+        title: "„Hast du schon“ bei Trades",
+        text: "Karten, die du bekommst und schon besitzt, sind mit ✓ markiert; im Detail siehst du auch deine Decks.",
+        href: "/trades",
+      },
+    ],
+  },
+  {
     id: "2026-11-19",
     date: "2026-11-19",
     title: "Besser tauschen mit Freunden",
