@@ -6,6 +6,7 @@ import { formatEur } from "@/lib/format";
 import type { ScanMatch } from "@/lib/scanStack";
 import type { CardHash } from "@/lib/imageHash";
 import { distancesTo } from "@/lib/printHashClient";
+import { catalogPrints } from "@/lib/catalogClient";
 
 // So viele Drucke (neueste zuerst) werden höchstens mit dem Foto verglichen –
 // Standardländer haben Hunderte, die übrigen bleiben per Suche erreichbar.
@@ -36,7 +37,18 @@ const MAX_PAGES = 6; // 6 × 175 Drucke
 // Pro Sitzung merken: dieselbe Karte nicht mehrfach laden.
 const cache = new Map<string, Print[]>();
 
+/**
+ * Alle Drucke einer Karte: zuerst aus dem eigenen Katalog (schnell, alle
+ * Papier-Drucke), sonst von Scryfall. Für die Versionserkennung im Scanner.
+ */
 export async function loadPrints(name: string): Promise<Print[]> {
+  const local = await catalogPrints(name).catch(() => []);
+  if (local.length) return local;
+  return scryfallPrints(name);
+}
+
+/** Drucke von Scryfall (vollständig inkl. Sonderdrucke, langsamer). */
+export async function scryfallPrints(name: string): Promise<Print[]> {
   const key = name.toLowerCase();
   if (cache.has(key)) return cache.get(key)!;
   const q = new URLSearchParams({
@@ -83,6 +95,13 @@ export async function loadPrints(name: string): Promise<Print[]> {
   return out;
 }
 
+/** Drucke zusammenführen (ohne Doppelte), neueste zuerst. */
+export function mergePrints(a: Print[], b: Print[]): Print[] {
+  const seen = new Set(a.map((p) => p.id));
+  const all = [...a, ...b.filter((p) => !seen.has(p.id))];
+  return all.sort((x, y) => (y.releasedAt ?? "").localeCompare(x.releasedAt ?? ""));
+}
+
 export function PrintPicker({
   name,
   currentId,
@@ -112,9 +131,19 @@ export function PrintPicker({
     let cancelled = false;
     setPrints(null);
     setLoadError(null);
-    loadPrints(name)
-      .then((p) => !cancelled && setPrints(p))
-      .catch(() => !cancelled && setLoadError("Drucke konnten nicht geladen werden."));
+    // Katalog sofort anzeigen, Scryfall im Hintergrund ergänzen (Sonderdrucke)
+    void (async () => {
+      const local = await catalogPrints(name).catch(() => []);
+      if (cancelled) return;
+      if (local.length) setPrints(local);
+      try {
+        const full = await scryfallPrints(name);
+        if (cancelled) return;
+        setPrints(mergePrints(local, full));
+      } catch {
+        if (!cancelled && !local.length) setLoadError("Drucke konnten nicht geladen werden.");
+      }
+    })();
     return () => {
       cancelled = true;
     };
