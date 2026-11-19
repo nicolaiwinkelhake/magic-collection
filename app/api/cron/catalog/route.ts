@@ -36,6 +36,8 @@ async function getMeta(db: SupabaseClient, key: string): Promise<Meta> {
 }
 async function setMeta(db: SupabaseClient, key: string, value: Meta) {
   await db.from("catalog_meta").upsert({ key, value, updated_at: new Date().toISOString() });
+  // erfolgreich abgeschlossen → alten Fehlerhinweis dieses Teils entfernen
+  if (value.done) await db.from("catalog_meta").delete().eq("key", `${key}_error`);
 }
 
 /** Nächsten Teil im Hintergrund anstoßen (eigene Anfrage, eigenes Zeitlimit). */

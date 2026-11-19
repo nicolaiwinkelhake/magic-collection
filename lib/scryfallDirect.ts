@@ -5,6 +5,7 @@
 import type { ScanMatch } from "@/lib/scanStack";
 import { nameSimilarity, normalizeName } from "@/lib/textSimilarity";
 import { readScore } from "@/lib/nameIndex";
+import { catalogExact, catalogPrint } from "@/lib/catalogClient";
 
 const API = "https://api.scryfall.com";
 
@@ -33,6 +34,12 @@ async function get(url: string): Promise<Raw | null> {
     await new Promise((r) => setTimeout(r, 300));
   }
   return null;
+}
+
+/** Katalog-Treffer ohne Zusatzfelder (wie ein Scryfall-Treffer). */
+function strip(p: ScanMatch & { nameDe?: string | null; releasedAt?: string }): ScanMatch {
+  const { nameDe: _n, releasedAt: _r, ...m } = p;
+  return m;
 }
 
 function toMatch(c: Raw, exact: boolean): ScanMatch {
@@ -68,6 +75,14 @@ export function printMatchesRead(names: string[], printNames: Array<string | und
 
 /** Genauer Druck über Set + Nummer (englischer Druck wegen der Preise). */
 export async function directPrint(set: string, number: string, lang: string | null, names: string[], strict = false): Promise<ScanMatch | null> {
+  // zuerst im eigenen Katalog (englischer und deutscher Name zum Abgleich)
+  const fromCatalog = await catalogPrint(set, number).catch(() => null);
+  if (fromCatalog) {
+    if (printMatchesRead(names, [fromCatalog.name, fromCatalog.nameDe], 0.5, strict)) return strip(fromCatalog);
+    // englische Karte und Name passt nicht → bei Scryfall wäre es genauso
+    if (!lang || lang === "EN") return null;
+    // fremdsprachig: der gedruckte Name dieses Drucks kann abweichen → Scryfall prüft
+  }
   const base = `${API}/cards/${encodeURIComponent(set.toLowerCase())}/${encodeURIComponent(number)}`;
   // Sprachkürzel der Karte → Scryfall (Chinesisch hat eigene Kürzel)
   const LANG: Record<string, string> = { ZH: "zhs", CS: "zhs", CT: "zht" };
@@ -86,6 +101,9 @@ export async function directPrint(set: string, number: string, lang: string | nu
  * ähnlich ist (Automatik: keine weit hergeholten Treffer).
  */
 export async function directByName(name: string, minSimilarity = 0): Promise<ScanMatch | null> {
+  // exakt gelesener Name: direkt aus dem Katalog (gleicher Standarddruck)
+  const local = await catalogExact(name).catch(() => null);
+  if (local) return strip(local);
   const c = await get(`${API}/cards/named?fuzzy=${encodeURIComponent(name)}`);
   if (!c) return null;
   if (minSimilarity > 0 && Math.max(nameSimilarity(name, c.name), nameSimilarity(name, c.name.split(" // ")[0])) < minSimilarity) return null;
@@ -94,6 +112,8 @@ export async function directByName(name: string, minSimilarity = 0): Promise<Sca
 
 /** Karte über den exakten (vom Wörterbuch korrigierten) englischen Namen. */
 export async function directExact(name: string): Promise<ScanMatch | null> {
+  const local = await catalogExact(name).catch(() => null);
+  if (local) return strip(local);
   const c = await get(`${API}/cards/named?exact=${encodeURIComponent(name)}`);
   return c ? toMatch(c, false) : null;
 }
