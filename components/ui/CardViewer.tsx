@@ -26,6 +26,8 @@ export type ViewerCard = {
   price_eur_foil?: number | null;
   foil?: boolean;
   quantity?: number;
+  /** genauer Druck – lädt Set/Nummer bei Scryfall nach, wenn sie fehlen */
+  scryfall_id?: string | null;
 };
 
 type Details = Pick<ViewerCard, "type_line" | "mana_cost" | "oracle_text" | "set_code" | "collector_number" | "rarity">;
@@ -38,7 +40,9 @@ async function fetchDetails(card: ViewerCard): Promise<Details | null> {
   const url =
     card.set_code && card.collector_number
       ? `https://api.scryfall.com/cards/${encodeURIComponent(card.set_code.toLowerCase())}/${encodeURIComponent(card.collector_number)}`
-      : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}`;
+      : card.scryfall_id
+        ? `https://api.scryfall.com/cards/${encodeURIComponent(card.scryfall_id)}`
+        : `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(card.name)}`;
   if (detailCache.has(url)) return detailCache.get(url)!;
   try {
     const res = await fetch(url);

@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatEur, formatDate } from "@/lib/format";
+import Image from "next/image";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { CardViewer, type ViewerCard } from "@/components/ui/CardViewer";
 import { basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type TradeDrafts } from "@/lib/tradeBasket";
 
 type TradeItem = {
@@ -14,6 +16,7 @@ type TradeItem = {
   quantity: number;
   price: number | null;
   from_user_id: string;
+  scryfall_id?: string | null;
 };
 
 type Trade = {
@@ -225,6 +228,39 @@ function TradeCard({
 }) {
   const myItems = trade.items.filter((i) => i.from_user_id === currentUserId);
   const theirItems = trade.items.filter((i) => i.from_user_id !== currentUserId);
+  // Kartendetail: antippen zeigt Bild, Set und Nummer zum Raussuchen
+  const [viewing, setViewing] = useState<number | null>(null);
+  const ordered = [...myItems, ...theirItems];
+  const viewerCards: ViewerCard[] = ordered.map((i, idx) => ({
+    key: `${idx}-${i.scryfall_id ?? i.name}`,
+    name: i.name,
+    image_url: i.image_url,
+    foil: i.foil,
+    quantity: i.quantity,
+    price_eur: i.foil ? null : i.price,
+    price_eur_foil: i.foil ? i.price : null,
+    scryfall_id: i.scryfall_id ?? null,
+  }));
+  const itemRow = (i: TradeItem, idx: number) => (
+    <li key={idx}>
+      <button
+        onClick={() => setViewing(idx)}
+        aria-label={`${i.name} ansehen`}
+        className="w-full flex items-center gap-2.5 rounded-lg -mx-1 px-1 py-1 text-left hover:bg-white/5 active:bg-white/10"
+      >
+        <span className="relative shrink-0 w-8 h-11 rounded-[3px] overflow-hidden bg-zinc-800">
+          {i.image_url && <Image src={i.image_url} alt="" width={32} height={44} className="w-full h-full object-cover" />}
+          {i.foil && <span className="absolute inset-0 bg-gradient-to-tr from-fuchsia-500/30 via-transparent to-cyan-300/30" aria-hidden />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          {i.quantity}× {i.name}
+          {i.foil ? <span className="text-fuchsia-300"> Foil</span> : ""}
+        </span>
+        <span className="shrink-0 text-zinc-500 tabular-nums">{formatEur(i.price)}</span>
+        <span className="shrink-0 text-zinc-600" aria-hidden>›</span>
+      </button>
+    </li>
+  );
 
   const sum = (items: TradeItem[]) =>
     items.reduce((s, i) => s + (i.price ?? 0) * i.quantity, 0);
@@ -260,13 +296,7 @@ function TradeCard({
             Du gibst · {formatEur(sum(myItems))}
           </p>
           <ul className="space-y-0.5 text-zinc-300">
-            {myItems.map((i, idx) => (
-              <li key={idx}>
-                {i.quantity}× {i.name}
-                {i.foil ? " (Foil)" : ""} —{" "}
-                <span className="text-zinc-500">{formatEur(i.price)}</span>
-              </li>
-            ))}
+            {myItems.map((i, idx) => itemRow(i, idx))}
             {myItems.length === 0 && <li className="text-zinc-600">–</li>}
           </ul>
         </div>
@@ -275,13 +305,7 @@ function TradeCard({
             Du bekommst · {formatEur(sum(theirItems))}
           </p>
           <ul className="space-y-0.5 text-zinc-300">
-            {theirItems.map((i, idx) => (
-              <li key={idx}>
-                {i.quantity}× {i.name}
-                {i.foil ? " (Foil)" : ""} —{" "}
-                <span className="text-zinc-500">{formatEur(i.price)}</span>
-              </li>
-            ))}
+            {theirItems.map((i, idx) => itemRow(i, myItems.length + idx))}
             {theirItems.length === 0 && <li className="text-zinc-600">–</li>}
           </ul>
         </div>
@@ -328,6 +352,23 @@ function TradeCard({
             {canCancel ? "Zurückziehen" : "Ablehnen"}
           </button>
         </div>
+      )}
+      {viewing !== null && viewerCards[viewing] && (
+        <CardViewer
+          cards={viewerCards}
+          index={viewing}
+          onIndexChange={setViewing}
+          onClose={() => setViewing(null)}
+          info={(card) => {
+            const idx = viewerCards.indexOf(card);
+            const mine = idx >= 0 && idx < myItems.length;
+            return (
+              <p className={`rounded-xl px-3 py-2 text-sm border ${mine ? "bg-emerald-500/10 border-emerald-400/25 text-emerald-200" : "bg-indigo-500/10 border-indigo-400/25 text-indigo-200"}`}>
+                {mine ? "Du gibst" : `Du bekommst von ${otherEmail.split("@")[0]}`}: {card.quantity}×{card.foil ? " Foil" : ""}
+              </p>
+            );
+          }}
+        />
       )}
     </div>
   );

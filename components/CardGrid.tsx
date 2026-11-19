@@ -32,6 +32,7 @@ export function CardGrid({
   detailActions,
   selectAction,
   deckUses = {},
+  owned,
   decks = [],
 }: {
   cards: Card[];
@@ -39,6 +40,8 @@ export function CardGrid({
   decks?: DeckOption[];
   /** in welchen eigenen Decks steckt der Eintrag (nach card.id) */
   deckUses?: Record<string, DeckUse[]>;
+  /** Geteilte Sammlung: wie oft ich selbst die Karte habe (je Eintrag-ID) */
+  owned?: Record<string, number>;
   groupBy?: GroupKey;
   /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
   readOnly?: boolean;
@@ -245,6 +248,7 @@ export function CardGrid({
                       {card.foil && <span className="text-fuchsia-300">Foil</span>}
                       {card.condition && card.condition !== "NM" && <span className="text-amber-400">{card.condition}</span>}
                       {card.language && card.language !== "EN" && <span>{card.language}</span>}
+                      {owned?.[card.id] ? <span className="text-emerald-400 shrink-0">· ✓ hast du {owned[card.id]}×</span> : null}
                       {deckUses[card.id]?.length ? (
                         <span className="text-indigo-300 truncate" title={deckUses[card.id].map((u) => u.deckName).join(", ")}>
                           · {deckUses[card.id].length === 1 ? deckUses[card.id][0].deckName : `${deckUses[card.id].length} Decks`}
@@ -300,6 +304,7 @@ export function CardGrid({
                 )}
                 <QuantityBadge count={card.quantity} />
                 {deckUses[card.id]?.length ? <DeckBadge uses={deckUses[card.id]} /> : null}
+                {owned?.[card.id] ? <OwnedBadge count={owned[card.id]} /> : null}
               </span>
               {selectMode && (
                 <span
@@ -404,7 +409,7 @@ export function CardGrid({
           ))}
         </div>
       )
-  ), [shown, groupBy, view, selectMode, selected, deckUses]);
+  ), [shown, groupBy, view, selectMode, selected, deckUses, owned]);
 
   if (!local.length) {
     return (
@@ -848,6 +853,19 @@ function PriceTile({ label, value, active }: { label: string; value: number | nu
 }
 
 /** Kleines Deck-Abzeichen auf der Kachel: in wie vielen Decks die Karte steckt. */
+function OwnedBadge({ count }: { count: number }) {
+  const title = `Hast du selbst: ${count}×`;
+  return (
+    <span
+      className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 rounded-md bg-emerald-600/90 px-1 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/20"
+      title={title}
+      aria-label={title}
+    >
+      ✓ {count}
+    </span>
+  );
+}
+
 function DeckBadge({ uses }: { uses: DeckUse[] }) {
   const title = `In ${uses.length === 1 ? "Deck" : "Decks"}: ${uses.map((u) => u.deckName).join(", ")}`;
   return (

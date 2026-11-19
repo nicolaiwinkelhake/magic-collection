@@ -22,6 +22,36 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-19",
+    date: "2026-11-19",
+    title: "Besser tauschen mit Freunden",
+    items: [
+      {
+        icon: "✅",
+        title: "Was du schon hast",
+        text: "In der geteilten Sammlung eines Freundes zeigt ein grünes Häkchen, welche Karten du selbst hast (jede Version), ein lila Abzeichen, in welchen deiner Decks sie stecken. Mit „Nur fehlende“ blendest du alles andere aus.",
+        href: "/shared",
+      },
+      {
+        icon: "🔁",
+        title: "Angefangene Trades bleiben",
+        text: "Karten, die du für einen Trade anfragst, gehen beim Seitenwechsel nicht mehr verloren. Unter Trades stehen sie oben als „Noch nicht abgeschickt“.",
+        href: "/trades",
+      },
+      {
+        icon: "🔍",
+        title: "Trade-Karten im Detail",
+        text: "Karten in einem Trade antippen zeigt sie groß mit Set und Nummer – so suchst du den richtigen Druck leichter heraus.",
+        href: "/trades",
+      },
+      {
+        icon: "📁",
+        title: "Ordner mit Bestätigung",
+        text: "Beim Zuordnen zu einem Ordner siehst du, wie viele Karten übernommen wurden, und das Fenster bleibt für weitere Ordner offen.",
+      },
+    ],
+  },
+  {
     id: "2026-11-18b",
     date: "2026-11-18",
     title: "Sets im Blick und Scannen in Reihenfolge",
