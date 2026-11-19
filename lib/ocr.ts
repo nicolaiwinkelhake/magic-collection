@@ -65,14 +65,15 @@ export function preprocessPixels(data: Uint8ClampedArray): void {
     hist[g]++;
     sum += g;
   }
-  // Grenzen per Perzentil statt Minimum/Maximum: einzelne verrauschte
-  // Pixel (wenig Licht) verhindern sonst das Strecken
+  // Grenzen: normal Minimum/Maximum; bei dunklem Bild per Perzentil –
+  // einzelne verrauschte Pixel (wenig Licht) verhindern sonst das Strecken
+  const pct = sum / n < 85 ? 0.01 : 0;
   let min = -1;
   let max = 255;
   for (let v = 0, acc = 0; v < 256; v++) {
     acc += hist[v];
-    if (min < 0 && acc > n * 0.01) min = v;
-    if (acc >= n * 0.99) {
+    if (min < 0 && acc > n * pct) min = v;
+    if (acc >= n * (1 - pct)) {
       max = v;
       break;
     }
