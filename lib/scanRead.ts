@@ -106,7 +106,6 @@ export function warpToCanvas(
   return canvas;
 }
 
-const asIs = () => {};
 
 /** Namensbalken: normal unbearbeitet (liest am besten); nur bei dunklem Bild
  *  (wenig Licht, schwarze Karte) den Kontrast strecken – ohne Umkehren. */

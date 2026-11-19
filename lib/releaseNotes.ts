@@ -24,8 +24,25 @@ export const RELEASES: Release[] = [
   {
     id: "2026-11-19b",
     date: "2026-11-19",
-    title: "Trades flexibler",
+    title: "Besserer Scanner, flexiblere Trades",
     items: [
+      {
+        icon: "📷",
+        title: "Scanner: dunkle Karten und wenig Licht",
+        text: "Schwarze Karten und Karten bei schwachem Licht werden deutlich öfter erkannt. Bei wenig Licht prüft der Scanner jede Karte doppelt (weniger Fehltreffer) und bietet die Taschenlampe an.",
+        href: "/scan",
+      },
+      {
+        icon: "🎯",
+        title: "Scanner: richtige Version",
+        text: "Für die Version nutzt der Scanner jetzt alles, was er lesen kann – auch nur das Set-Kürzel oder nur die Nummer – und vergleicht erst dann das Bild.",
+        href: "/scan",
+      },
+      {
+        icon: "🔋",
+        title: "Scanner: sparsamer",
+        text: "Die Automatik schaut nur noch schnell ins Kamerabild, wenn eine neue Karte daliegt – das schont den Akku.",
+      },
       {
         icon: "✂️",
         title: "Einzelne Karten entfernen",
