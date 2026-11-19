@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/prices",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/catalog",
+      "schedule": "40 1 * * *"
     }
   ],
   "regions": [
