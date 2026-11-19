@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { GermanNames, isPaper, parseLine, streamLines, toCatalogRow, type CatalogRow } from "@/lib/catalog";
+import { CATALOG_VERSION, GermanNames, isPaper, parseLine, streamLines, toCatalogRow, type CatalogRow } from "@/lib/catalog";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ const PARALLEL = 3;
 const UA = { "User-Agent": "MagicCollectionApp/1.0", Accept: "application/json" };
 
 type Bulk = { updated_at: string; jsonl_download_uri?: string; download_uri?: string };
-type Meta = { updated_at?: string; done?: boolean; next?: number; rows?: number; finished_at?: string; error?: string };
+type Meta = { updated_at?: string; done?: boolean; next?: number; rows?: number; finished_at?: string; error?: string; version?: number };
 
 async function bulkInfo(type: string): Promise<Bulk> {
   const res = await fetch(`https://api.scryfall.com/bulk-data/${type}`, { headers: UA, cache: "no-store" });
@@ -58,7 +58,7 @@ async function authorized(request: Request): Promise<boolean> {
 async function syncCards(db: SupabaseClient, origin: string, from: number, force: boolean, started: number) {
   const bulk = await bulkInfo("default-cards");
   const meta = await getMeta(db, "cards");
-  if (!force && from === 0 && meta.done && meta.updated_at === bulk.updated_at) return { skipped: true, updated_at: bulk.updated_at };
+  if (!force && from === 0 && meta.done && meta.updated_at === bulk.updated_at && meta.version === CATALOG_VERSION) return { skipped: true, updated_at: bulk.updated_at };
   const uri = bulk.jsonl_download_uri ?? bulk.download_uri;
   if (!uri) throw new Error("Keine Download-Adresse für default-cards");
   const res = await fetch(uri, { headers: { "User-Agent": UA["User-Agent"] }, cache: "no-store" });
@@ -93,15 +93,45 @@ async function syncCards(db: SupabaseClient, origin: string, from: number, force
     if (Date.now() - started > BUDGET_MS) {
       await flush();
       await Promise.all(inFlight);
-      await setMeta(db, "cards", { updated_at: bulk.updated_at, done: false, next: line, rows });
+      await setMeta(db, "cards", { updated_at: bulk.updated_at, done: false, next: line, rows, version: meta.version });
       await chain(origin, { part: "cards", from: String(line), ...(force ? { force: "1" } : {}) });
       return { continued: true, line, rows };
     }
   }
   await flush();
   await Promise.all(inFlight);
-  await setMeta(db, "cards", { updated_at: bulk.updated_at, done: true, rows, finished_at: new Date().toISOString() });
+  await setMeta(db, "cards", { updated_at: bulk.updated_at, done: true, rows, finished_at: new Date().toISOString(), version: CATALOG_VERSION });
   return { done: true, rows, updated_at: bulk.updated_at };
+}
+
+/** Standarddruck je Karte (wie Scryfalls Namenssuche) aus "oracle_cards". */
+async function syncDefaults(db: SupabaseClient, started: number) {
+  const bulk = await bulkInfo("oracle-cards");
+  const uri = bulk.jsonl_download_uri ?? bulk.download_uri;
+  if (!uri) throw new Error("Keine Download-Adresse für oracle-cards");
+  const res = await fetch(uri, { headers: { "User-Agent": UA["User-Agent"] }, cache: "no-store" });
+  if (!res.ok || !res.body) throw new Error(`Gesamtdatei (Standarddrucke): ${res.status}`);
+  const now = new Date().toISOString();
+  let batch: Array<{ oracle_id: string; card_id: string; updated_at: string }> = [];
+  let rows = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const { error } = await db.from("catalog_defaults").upsert(batch, { onConflict: "oracle_id" });
+    if (error) throw new Error(`Standarddrucke speichern: ${error.message}`);
+    batch = [];
+  };
+  for await (const l of streamLines(res.body, uri.endsWith(".gz"))) {
+    const c = parseLine(l);
+    const oracle = c?.oracle_id ?? c?.card_faces?.[0]?.oracle_id;
+    if (!c || !oracle || !isPaper(c)) continue;
+    batch.push({ oracle_id: oracle, card_id: c.id, updated_at: now });
+    rows++;
+    if (batch.length >= 1000) await flush();
+    if (Date.now() - started > 285_000) throw new Error("Zeitlimit bei den Standarddrucken");
+  }
+  await flush();
+  await setMeta(db, "defaults", { updated_at: bulk.updated_at, done: true, rows, finished_at: new Date().toISOString() });
+  return { defaults: rows };
 }
 
 async function syncNames(db: SupabaseClient, started: number) {
@@ -140,16 +170,21 @@ export async function GET(request: Request) {
   const db = createAdminClient();
   try {
     if (part === "names") return NextResponse.json(await syncNames(db, started));
-    const result = await syncCards(db, url.origin, from, force, started);
-    // danach deutsche Namen: sonntags oder wenn noch nie gemacht (eigene Anfrage)
-    if (!("continued" in result)) {
+    if (part === "defaults") {
+      const result = await syncDefaults(db, started);
+      // danach deutsche Namen: sonntags oder wenn noch nie gemacht (eigene Anfrage)
       const names = await getMeta(db, "names");
-      if (force || !names.done || new Date().getUTCDay() === 0) await chain(url.origin, { part: "names" });
+      if (url.searchParams.get("names") === "1" || !names.done || new Date().getUTCDay() === 0) await chain(url.origin, { part: "names" });
+      return NextResponse.json(result);
     }
+    const result = await syncCards(db, url.origin, from, force, started);
+    // Reihenfolge: Karten → Standarddrucke → (deutsche Namen), je eigene Anfrage
+    const defaultsDone = (await getMeta(db, "defaults")).done;
+    if (!("continued" in result) && (!("skipped" in result) || !defaultsDone)) await chain(url.origin, { part: "defaults", ...(force ? { names: "1" } : {}) });
     return NextResponse.json(result);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    await setMeta(db, part === "names" ? "names_error" : "cards_error", { error: message, finished_at: new Date().toISOString() }).catch(() => {});
+    await setMeta(db, `${part}_error`, { error: message, finished_at: new Date().toISOString() }).catch(() => {});
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
