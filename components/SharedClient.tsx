@@ -11,6 +11,7 @@ import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TradeComposer } from "@/components/TradeComposer";
+import { buildOwnIndex, ownedFor, ownedText, type OwnIndex, type OwnRow } from "@/lib/ownedMatch";
 import { addToBasket, basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type Basket } from "@/lib/tradeBasket";
 
 // Geteilte Sammlungen von Freunden – gleiche Darstellung wie die eigene
@@ -99,7 +100,39 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = useMemo(() => filterAndSortCards(cards, filters), [cards, filters]);
+  // Eigene Sammlung (einmal laden): zeigt in der Sammlung des Freundes, welche
+  // Karten ich schon habe – damit ich keine Trades für eigene Karten anfrage.
+  const [own, setOwn] = useState<OwnIndex | null>(null);
+  const [onlyMissing, setOnlyMissing] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) return;
+      const rows = await selectAll<OwnRow>(() =>
+        supabase.from("cards").select("name, scryfall_id, quantity").eq("user_id", auth.user!.id).order("id"),
+      ).catch(() => null);
+      if (!cancelled && rows) setOwn(buildOwnIndex(rows));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+  const ownedCounts = useMemo(() => {
+    if (!own) return undefined;
+    const out: Record<string, number> = {};
+    for (const c of cards) {
+      const n = ownedFor(own, c).any;
+      if (n) out[c.id] = n;
+    }
+    return out;
+  }, [own, cards]);
+  const missingCount = ownedCounts ? cards.filter((c) => !ownedCounts[c.id]).length : 0;
+
+  const filtered = useMemo(() => {
+    const list = filterAndSortCards(cards, filters);
+    return onlyMissing && ownedCounts ? list.filter((c) => !ownedCounts[c.id]) : list;
+  }, [cards, filters, onlyMissing, ownedCounts]);
   const sets = useMemo(() => setCodes(cards), [cards]);
   const value = useMemo(() => totalValue(filtered), [filtered]);
   const count = (list: Card[]) => list.reduce((s, c) => s + (c.quantity ?? 1), 0);
@@ -179,19 +212,46 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
               <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0b0b10]">
                 <Filters state={filters} onChange={setFilters} sets={sets} />
               </div>
+              {ownedCounts && (
+                <div className="flex items-center justify-between gap-3 -mt-1">
+                  <p className="text-xs text-zinc-400">
+                    <span className="inline-block rounded bg-emerald-600/90 px-1 text-[10px] font-semibold text-white mr-1">✓</span>
+                    = hast du selbst · {missingCount} {missingCount === 1 ? "Eintrag fehlt" : "Einträge fehlen"} dir
+                  </p>
+                  <button
+                    onClick={() => setOnlyMissing((v) => !v)}
+                    aria-pressed={onlyMissing}
+                    className={`chip h-8 text-xs shrink-0 ${onlyMissing ? "chip-active" : ""}`}
+                  >
+                    Nur fehlende
+                  </button>
+                </div>
+              )}
+              {onlyMissing && filtered.length === 0 && cards.length > 0 && (
+                <p className="surface p-4 text-sm text-zinc-400">Hier fehlt dir nichts – du hast alle passenden Karten schon selbst.</p>
+              )}
               <CardGrid
                 key={selected}
                 cards={filtered}
                 groupBy={filters.group}
                 readOnly
+                owned={ownedCounts}
                 selectAction={{ label: "Zum Trade", onRun: addCards }}
                 detailActions={(card) => {
                   const inBasket = basket.find((b) => b.card.id === card.id)?.qty ?? 0;
                   const full = inBasket >= card.quantity;
+                  const mine = own ? ownedFor(own, card) : null;
                   return (
+                    <>
+                    {mine && (
+                      <p className={`w-full rounded-xl px-3 py-2 text-sm ${mine.any ? "bg-emerald-500/10 border border-emerald-400/25 text-emerald-200" : "bg-white/[0.04] border border-white/10 text-zinc-400"}`}>
+                        {mine.any ? "✓ " : ""}{ownedText(mine)}
+                      </p>
+                    )}
                     <button onClick={() => addCards([card])} disabled={full} className="btn-primary h-10 w-full">
                       {inBasket ? (full ? `Im Trade (${inBasket}×) ✓` : `Im Trade (${inBasket}×) · noch eine`) : "🔁 Für Trade anfragen"}
                     </button>
+                    </>
                   );
                 }}
               />
