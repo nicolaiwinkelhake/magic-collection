@@ -22,6 +22,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-19d",
+    date: "2026-11-19",
+    title: "Commander-Rangliste",
+    items: [
+      {
+        icon: "👑",
+        title: "Beliebteste Commander",
+        text: "Unter Commander siehst du die Top 100 der letzten 2 Jahre von EDHREC – mit Platz, Bild und Anzahl Decks. Deine eigenen sind markiert, nach Farben filterbar.",
+        href: "/commanders",
+      },
+      {
+        icon: "🏅",
+        title: "Deine Commander im Vergleich",
+        text: "Unter „Deine“ stehen alle Commander aus Sammlung und Decks, sortiert nach Beliebtheit – mit ihrem Platz in der Rangliste.",
+        href: "/commanders",
+      },
+    ],
+  },
+  {
     id: "2026-11-19c",
     date: "2026-11-19",
     title: "Eigene Kartendatenbank",
