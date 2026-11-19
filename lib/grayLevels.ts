@@ -44,3 +44,21 @@ export function normalizeGray(g: Float32Array, minRange = 170): Float32Array {
   for (let i = 0; i < g.length; i++) out[i] = Math.max(0, Math.min(255, (g[i] - lo) * k));
   return out;
 }
+
+/** 3×3-Mittelwert (glättet Bildrauschen bei wenig Licht, Ränder bleiben). */
+export function boxBlur3(g: Float32Array, w: number, h: number): Float32Array {
+  const out = new Float32Array(g);
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      out[i] = (g[i - w - 1] + g[i - w] + g[i - w + 1] + g[i - 1] + g[i] + g[i + 1] + g[i + w - 1] + g[i + w] + g[i + w + 1]) / 9;
+    }
+  return out;
+}
+
+/** Für die Kantensuche: flaue (dunkle, verrauschte) Bilder erst glätten, dann strecken. */
+export function prepareForEdges(g: Float32Array, w: number, h: number, minRange = 170): Float32Array {
+  const { lo, hi } = levels(g);
+  if (hi - lo >= minRange || hi - lo < 8) return g;
+  return normalizeGray(boxBlur3(g, w, h), minRange);
+}

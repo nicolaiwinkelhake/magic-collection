@@ -56,17 +56,28 @@ export function resolveVariants(name: string, maxDrop = 2): string[] {
 // dunklem Grund (z. B. Showcase-Rahmen) wird invertiert. Arbeitet direkt auf
 // RGBA-Pixeldaten (ImageData.data).
 export function preprocessPixels(data: Uint8ClampedArray): void {
-  let min = 255;
-  let max = 0;
   let sum = 0;
   const n = data.length / 4;
+  const hist = new Uint32Array(256);
   for (let i = 0; i < data.length; i += 4) {
     const g = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
     data[i] = g;
-    if (g < min) min = g;
-    if (g > max) max = g;
+    hist[g]++;
     sum += g;
   }
+  // Grenzen per Perzentil statt Minimum/Maximum: einzelne verrauschte
+  // Pixel (wenig Licht) verhindern sonst das Strecken
+  let min = -1;
+  let max = 255;
+  for (let v = 0, acc = 0; v < 256; v++) {
+    acc += hist[v];
+    if (min < 0 && acc > n * 0.01) min = v;
+    if (acc >= n * 0.99) {
+      max = v;
+      break;
+    }
+  }
+  min = Math.max(0, min);
   const invert = sum / n < 110;
   const range = Math.max(1, max - min);
   for (let i = 0; i < data.length; i += 4) {

@@ -8,7 +8,7 @@
 // sehen – gefunden wird dann der innere Rahmen. Das wird erkannt (dunkler,
 // gleichmäßiger Streifen außen herum) und auf den Kartenrand hochgerechnet.
 
-import { normalizeGray } from "@/lib/grayLevels";
+import { prepareForEdges } from "@/lib/grayLevels";
 
 export type Pt = { x: number; y: number };
 /** Ecken in Pixeln des Suchbilds: oben links, oben rechts, unten rechts, unten links */
@@ -31,7 +31,7 @@ function cross(v: Line, hl: Line, w: number, h: number): Pt {
 export function detectQuadBoth(input: Float32Array, w: number, h: number): { quad: Quad; alt: Quad | null } | null {
   if (w < 24 || h < 24) return null;
   // wenig Licht / dunkle Karte: Kontrast strecken, damit die Kanten sichtbar werden
-  const gray = normalizeGray(input);
+  const gray = prepareForEdges(input, w, h);
   const gx = new Float32Array(w * h);
   const gy = new Float32Array(w * h);
   let gsum = 0;
