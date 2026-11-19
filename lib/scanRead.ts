@@ -153,8 +153,9 @@ export async function readName(source: CanvasImageSource, w: number, h: number, 
 }
 
 /** Infozeile (Set, Nummer, Sprache) der entzerrten Karte lesen. */
-export async function readInfo(source: CanvasImageSource, w: number, h: number, quad: Quad, sets?: SetPrior): Promise<CardInfo | null> {
-  const canvas = warpToCanvas(source, w, h, quad, INFO_QUAD_AREA, INFO_QUAD_HEIGHT);
+export async function readInfo(source: CanvasImageSource, w: number, h: number, quad: Quad, sets?: SetPrior, robust = false): Promise<CardInfo | null> {
+  // `robust`: Kontrast per Perzentil strecken (Zusatzversuch bei verrauschtem Bild)
+  const canvas = warpToCanvas(source, w, h, quad, INFO_QUAD_AREA, INFO_QUAD_HEIGHT, robust ? (d) => preprocessPixels(d, 0.01) : preprocessPixels);
   const lines = await ocrLines(canvas, await getInfoWorker());
   const info = parseCardInfo(lines.map((l) => l.text).join("\n"), sets);
   return info.set || info.number ? info : null;

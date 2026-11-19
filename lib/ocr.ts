@@ -55,7 +55,7 @@ export function resolveVariants(name: string, maxDrop = 2): string[] {
 // Bild für OCR aufbereiten: Graustufen, Kontrast strecken; helle Schrift auf
 // dunklem Grund (z. B. Showcase-Rahmen) wird invertiert. Arbeitet direkt auf
 // RGBA-Pixeldaten (ImageData.data).
-export function preprocessPixels(data: Uint8ClampedArray): void {
+export function preprocessPixels(data: Uint8ClampedArray, clip = 0): void {
   let sum = 0;
   const n = data.length / 4;
   const hist = new Uint32Array(256);
@@ -65,9 +65,9 @@ export function preprocessPixels(data: Uint8ClampedArray): void {
     hist[g]++;
     sum += g;
   }
-  // Grenzen: normal Minimum/Maximum; bei dunklem Bild per Perzentil –
-  // einzelne verrauschte Pixel (wenig Licht) verhindern sonst das Strecken
-  const pct = sum / n < 85 ? 0.01 : 0;
+  // Grenzen: normal Minimum/Maximum; mit `clip` per Perzentil (Zusatzversuch
+  // bei Rauschen: einzelne verrauschte Pixel verhindern sonst das Strecken)
+  const pct = clip;
   let min = -1;
   let max = 255;
   for (let v = 0, acc = 0; v < 256; v++) {

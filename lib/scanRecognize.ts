@@ -106,10 +106,13 @@ export function recognizeFrame(
     const first = await readInfo(source, w, h, quad, sets).catch(() => null);
     if (first?.set && first.number) return first;
     let best = first;
-    // Andere Lesarten probieren (innerer Rahmen ↔ Kartenrand, aufbereitetes Bild)
-    for (const q of [alt, extra]) {
-      if (!q) continue;
-      const next = await readInfo(source, w, h, q, sets).catch(() => null);
+    // Andere Lesarten probieren: robuster aufbereitet (Rauschen), innerer
+    // Rahmen ↔ Kartenrand, Viereck aus dem aufbereiteten Bild
+    const tries: Array<[Quad, boolean]> = [[quad, true]];
+    if (alt) tries.push([alt, false]);
+    if (extra) tries.push([extra, false]);
+    for (const [q, robust] of tries) {
+      const next = await readInfo(source, w, h, q, sets, robust).catch(() => null);
       if (next?.set && next.number) return next;
       if (!best?.set && next) best = next;
     }
