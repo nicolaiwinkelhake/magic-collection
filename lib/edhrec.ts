@@ -55,7 +55,7 @@ export function commanderSlug(names: string[]): string {
 }
 
 type RawCardview = { name: string; synergy?: number; lift?: number; num_decks?: number; potential_decks?: number };
-type RawPage = {
+export type RawPage = {
   container?: { json_dict?: { card?: { num_decks?: number; name?: string }; cardlists?: Array<{ tag?: string; header?: string; cardviews?: RawCardview[] }> } };
   tag_counts?: Array<{ slug: string; value: string; count: number }>;
   similar?: string[];
@@ -121,7 +121,7 @@ async function fetchJson(path: string): Promise<RawPage | "notfound" | null> {
  * EDHREC-Seite gecacht holen (7 Tage). null = unbekannt oder nicht
  * erreichbar (dann wird ein alter Cache-Eintrag genutzt).
  */
-async function cachedPage<T>(
+export async function cachedPage<T>(
   supabase: SupabaseClient,
   key: string,
   path: string,
