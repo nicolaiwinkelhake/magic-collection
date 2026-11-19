@@ -28,10 +28,10 @@ function cross(v: Line, hl: Line, w: number, h: number): Pt {
 }
 
 /** Karte als Viereck; `alt` ist die zweite Lesart (innerer Rahmen ↔ Kartenrand), falls die erste nicht passt. */
-export function detectQuadBoth(input: Float32Array, w: number, h: number): { quad: Quad; alt: Quad | null } | null {
+export function detectQuadBoth(input: Float32Array, w: number, h: number, enhance = false): { quad: Quad; alt: Quad | null } | null {
   if (w < 24 || h < 24) return null;
-  // wenig Licht / dunkle Karte: Kontrast strecken, damit die Kanten sichtbar werden
-  const gray = prepareForEdges(input, w, h);
+  // `enhance`: flaues Bild (wenig Licht, dunkle Karte) geglättet und gestreckt – als Zusatzversuch
+  const gray = enhance ? prepareForEdges(input, w, h) : input;
   const gx = new Float32Array(w * h);
   const gy = new Float32Array(w * h);
   let gsum = 0;

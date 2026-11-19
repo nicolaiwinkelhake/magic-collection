@@ -6,6 +6,7 @@
 // Tempo: Der Name kommt zuerst (ein kurzer Lesevorgang); die Infozeile
 // (Set/Nummer → genauer Druck) läuft parallel und darf später fertig werden.
 import { detectQuadBoth, type Quad } from "@/lib/cardQuad";
+import { levels } from "@/lib/grayLevels";
 import type { CardInfo, SetPrior } from "@/lib/ocr";
 import { matchName, PROBABLE, type NameIndex, type NameMatch } from "@/lib/nameIndex";
 import { getGermanWorker } from "@/lib/ocrEngine";
@@ -83,18 +84,36 @@ export function recognizeFrame(
 ): FrameRead {
   const qw = QUAD_W;
   const qh = Math.max(24, Math.round((qw * region.h * h) / (region.w * w)));
-  const found = detectQuadBoth(grayOf(source, region.x * w, region.y * h, region.w * w, region.h * h, qw, qh), qw, qh);
+  const g = grayOf(source, region.x * w, region.y * h, region.w * w, region.h * h, qw, qh);
+  const lv = levels(g);
+  // Flaues/dunkles Bild (wenig Licht, schwarze Karte auf dunklem Tisch):
+  // zusätzlich im aufbereiteten Suchbild nach der Karte suchen und den Namen
+  // aufgehellt nachlesen – aber nur als Zusatzversuch, der normale Weg bleibt
+  // zuerst (Messung: allein aufbereitet verschlechtert manche Karten).
+  const flat = lv.hi - lv.lo < 170;
+  const dim = lv.mean < 85;
+  const raw = detectQuadBoth(g, qw, qh);
+  const enh = flat ? detectQuadBoth(g, qw, qh, true) : null;
+  const found = raw ?? enh;
   const toImage = (q: Quad) => q.map((p) => ({ x: region.x + (p.x / qw) * region.w, y: region.y + (p.y / qh) * region.h })) as Quad;
   const quad = found ? toImage(found.quad) : rectToQuad(fallback);
   const alt = found?.alt ? toImage(found.alt) : null;
+  // anderes Viereck aus dem aufbereiteten Bild (nur wenn deutlich verschieden)
+  const differs = (a: Quad, b: Quad) => a.some((p, i) => Math.hypot(p.x - b[i].x, p.y - b[i].y) > 2);
+  const extra = raw && enh && differs(raw.quad, enh.quad) ? toImage(enh.quad) : null;
 
   const info = (async () => {
     const first = await readInfo(source, w, h, quad, sets).catch(() => null);
-    if ((first?.set && first.number) || !alt) return first;
-    // Andere Rahmen-Lesart probieren (innerer Rahmen ↔ Kartenrand)
-    const second = await readInfo(source, w, h, alt, sets).catch(() => null);
-    if (second?.set && second.number) return second;
-    return first?.set ? first : second ?? first;
+    if (first?.set && first.number) return first;
+    let best = first;
+    // Andere Lesarten probieren (innerer Rahmen ↔ Kartenrand, aufbereitetes Bild)
+    for (const q of [alt, extra]) {
+      if (!q) continue;
+      const next = await readInfo(source, w, h, q, sets).catch(() => null);
+      if (next?.set && next.number) return next;
+      if (!best?.set && next) best = next;
+    }
+    return best;
   })();
 
   const name = (async () => {
@@ -102,10 +121,19 @@ export function recognizeFrame(
     const first = await readName(source, w, h, quad, worker);
     let read = judge(first.names, dictionary, first.late);
     if (read.sure) return read;
-    if (alt) {
-      const second = await readName(source, w, h, alt, worker);
-      // beide Lesarten gemeinsam bewerten (eine kann den Anfang verloren haben)
-      read = judge(Array.from(new Set([...first.names, ...second.names])), dictionary, new Set([...first.late, ...second.late]));
+    // weitere Versuche; alle Lesarten gemeinsam bewerten (eine kann den Anfang verloren haben)
+    const allNames = new Set(first.names);
+    const allLate = new Set(first.late);
+    const attempts: Array<[Quad, boolean]> = [];
+    if (alt) attempts.push([alt, false]);
+    if (extra) attempts.push([extra, false]);
+    if (dim) attempts.push([quad, true]);
+    if (dim && extra) attempts.push([extra, true]);
+    for (const [q, brighten] of attempts) {
+      const more = await readName(source, w, h, q, worker, brighten);
+      more.names.forEach((n) => allNames.add(n));
+      more.late.forEach((n) => allLate.add(n));
+      read = judge(Array.from(allNames), dictionary, allLate);
       if (read.sure) return read;
     }
     // Vermutlich keine englische Karte: Es wurde etwas gelesen, aber kein
@@ -115,7 +143,7 @@ export function recognizeFrame(
     // vielen Karten steht keine.
     // Deutsches Wörterbuch auf dem Gerät: Auch das englische Lesemodell
     // liest deutsche Namen oft gut genug ("Schildkrotenformation").
-    const lateAll = new Set(first.late);
+    const lateAll = allLate;
     const viaGerman = (names: string[], late: Set<string>): NameRead | null => {
       if (!german) return null;
       const de = judge(names, german.index, late).sure;
