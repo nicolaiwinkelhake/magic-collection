@@ -63,3 +63,11 @@ describe("Katalog im Browser", () => {
     expect(mergePrints(a, b).map((p) => p.id)).toEqual(["y", "x"]);
   });
 });
+
+describe("Sammlernummern sortieren", () => {
+  it("natürlich: 2 vor 10, Buchstaben danach", async () => {
+    const { sortByNumber } = await import("@/lib/catalogClient");
+    const out = sortByNumber([{ collectorNumber: "10" }, { collectorNumber: "2" }, { collectorNumber: "10a" }, { collectorNumber: "1" }]);
+    expect(out.map((x) => x.collectorNumber)).toEqual(["1", "2", "10", "10a"]);
+  });
+});

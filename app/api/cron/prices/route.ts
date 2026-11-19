@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { COLLECTION_PACE_MS, fetchCollectionWithRetry, getPrices, sleep } from "@/lib/scryfall";
 import { cardValue } from "@/lib/valuation";
+import { catalogPrices } from "@/lib/catalogLookup";
 
 export const maxDuration = 300;
 
@@ -55,14 +56,29 @@ export async function GET(request: Request) {
       price_eur: number | null;
       price_eur_foil: number | null;
     }>(supabase, "cards", "id, user_id, scryfall_id, quantity, foil, condition, price_eur, price_eur_foil");
-    const uniqueIds = Array.from(new Set(cards.map((c) => c.scryfall_id)));
+    // auch Deck-Karten und Wunschliste (nicht nur, was in Sammlungen liegt)
+    const [deckIds, wishIds] = await Promise.all([
+      selectAll<{ scryfall_id: string | null }>(supabase, "deck_cards", "id, scryfall_id"),
+      selectAll<{ scryfall_id: string | null }>(supabase, "wishlist", "id, scryfall_id"),
+    ]);
+    const uniqueIds = Array.from(
+      new Set([...cards.map((c) => c.scryfall_id), ...deckIds.map((d) => d.scryfall_id), ...wishIds.map((w) => w.scryfall_id)].filter((x): x is string => !!x)),
+    );
 
-    // 2) Preise gebündelt bei Scryfall abrufen – im erlaubten Tempo (≈2/s).
-    //    Blöcke, die trotz Retry scheitern, werden am Ende ein zweites Mal
-    //    versucht, damit keine Drucke ohne Tagespreis bleiben.
+    // 2) Preise: zuerst aus dem eigenen Katalog (täglich aus Scryfalls
+    //    Gesamtdatei – derselbe Tagesstand wie die Einzelabfrage); nur was
+    //    dort fehlt (oder wenn der Katalog nicht frisch ist), gebündelt bei
+    //    Scryfall – im erlaubten Tempo (≈2/s), fehlgeschlagene Blöcke ein
+    //    zweites Mal.
     const prices = new Map<string, { eur: number | null; eurFoil: number | null }>();
+    const fromCatalog = await catalogPrices(uniqueIds);
+    for (const id of uniqueIds) {
+      const p = fromCatalog.get(id.toLowerCase());
+      if (p) prices.set(id, p);
+    }
+    const restIds = uniqueIds.filter((id) => !prices.has(id));
     const chunks: string[][] = [];
-    for (let i = 0; i < uniqueIds.length; i += SCRYFALL_CHUNK) chunks.push(uniqueIds.slice(i, i + SCRYFALL_CHUNK));
+    for (let i = 0; i < restIds.length; i += SCRYFALL_CHUNK) chunks.push(restIds.slice(i, i + SCRYFALL_CHUNK));
     let failed: string[][] = [];
     for (let round = 0; round < 2; round++) {
       const todo = round === 0 ? chunks : failed;
@@ -120,6 +136,8 @@ export async function GET(request: Request) {
 
     const summary = {
       prints: uniqueIds.length,
+      fromCatalog: uniqueIds.length - restIds.length,
+      fromScryfall: restIds.length,
       updatedPrints: updates.length,
       scryfallFailures,
       users: byUser.size,

@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { formatEur } from "@/lib/format";
 import { CardViewer } from "@/components/ui/CardViewer";
+import { catalogSetPrints, type CatalogPrint } from "@/lib/catalogClient";
 import { PageHeader } from "@/components/ui/PageHeader";
 import type { UpcomingSet } from "@/lib/setsView";
 
@@ -140,6 +141,9 @@ export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: Up
                         </button>
                       ))}
                     </div>
+                    {r.total > r.owned && (
+                      <MissingCards code={r.code} ownedIds={r.cards.map((c) => c.scryfall_id)} expected={r.total - r.owned} />
+                    )}
                   </div>
                 )}
               </div>
@@ -224,5 +228,97 @@ function UpcomingSets({ sets }: { sets: UpcomingSet[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * Fehlende Karten eines Sets (aus dem eigenen Katalog), auf Wunsch geladen.
+ * Antippen zeigt die Karte groß; von dort direkt auf die Wunschliste.
+ */
+function MissingCards({ code, ownedIds, expected }: { code: string; ownedIds: string[]; expected: number }) {
+  const [list, setList] = useState<CatalogPrint[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
+  const [wished, setWished] = useState<Set<string>>(new Set());
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    const all = await catalogSetPrints(code);
+    const owned = new Set(ownedIds);
+    setList(all.filter((p) => !owned.has(p.id)));
+    setLoading(false);
+  }
+
+  async function wish(p: CatalogPrint) {
+    setMsg(null);
+    const res = await fetch("/api/wishlist/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [{ i: 0, name: p.name, scryfallId: p.id }] }),
+    }).catch(() => null);
+    if (res?.ok) setWished((w) => new Set(w).add(p.id));
+    else setMsg("Konnte nicht auf die Wunschliste gesetzt werden.");
+  }
+
+  if (!list) {
+    return (
+      <button onClick={() => void load()} disabled={loading} className="btn-secondary mt-3 h-10 w-full text-sm">
+        {loading ? "Lade …" : `Fehlen dir noch (${expected}) anzeigen`}
+      </button>
+    );
+  }
+  if (!list.length) return <p className="mt-3 text-sm text-zinc-500">Fehlende Karten konnten nicht geladen werden.</p>;
+
+  return (
+    <div className="mt-4 space-y-2">
+      <p className="text-sm font-medium text-zinc-300">Fehlen dir noch ({list.length})</p>
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        {list.map((p, i) => (
+          <button
+            key={p.id}
+            onClick={() => setViewing(i)}
+            aria-label={`${p.name} (fehlt) ansehen`}
+            className="relative rounded-lg overflow-hidden bg-zinc-900 border border-white/5 text-left opacity-60 hover:opacity-100 transition"
+          >
+            {p.imageUrl ? (
+              <Image src={p.imageUrl} alt={p.name} width={146} height={204} className="w-full h-auto grayscale-[40%]" />
+            ) : (
+              <div className="aspect-[244/340] grid place-items-center p-1 text-center text-[10px] text-zinc-500">{p.name}</div>
+            )}
+            <span className="absolute top-1 left-1 rounded bg-black/70 px-1 text-[10px] text-zinc-300">#{p.collectorNumber}</span>
+            {wished.has(p.id) && <span className="absolute top-1 right-1 rounded bg-emerald-600 px-1 text-[10px] text-white">♥</span>}
+          </button>
+        ))}
+      </div>
+      {msg && <p className="text-xs text-amber-300">{msg}</p>}
+      {viewing !== null && list[viewing] && (
+        <CardViewer
+          cards={list.map((p) => ({
+            key: p.id,
+            name: p.name,
+            image_url: p.imageUrl,
+            set_code: p.set,
+            collector_number: p.collectorNumber,
+            price_eur: p.eur,
+            price_eur_foil: p.eurFoil,
+            scryfall_id: p.id,
+          }))}
+          index={viewing}
+          onIndexChange={setViewing}
+          onClose={() => setViewing(null)}
+          actions={(card) => {
+            const p = list.find((x) => x.id === card.key)!;
+            return wished.has(p.id) ? (
+              <span className="text-sm text-emerald-300">♥ Auf der Wunschliste</span>
+            ) : (
+              <button onClick={() => void wish(p)} className="btn-primary h-10 px-4 text-sm">
+                Auf die Wunschliste
+              </button>
+            );
+          }}
+        />
+      )}
+    </div>
   );
 }

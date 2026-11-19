@@ -22,6 +22,30 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-19c",
+    date: "2026-11-19",
+    title: "Eigene Kartendatenbank",
+    items: [
+      {
+        icon: "📚",
+        title: "Alle Magic-Karten an Bord",
+        text: "Die App kennt jetzt alle 111.000 Drucke selbst – Importieren, Hinzufügen und Scannen gehen schneller, deutsche Kartennamen werden direkt erkannt.",
+      },
+      {
+        icon: "🧩",
+        title: "Was dir im Set fehlt",
+        text: "Unter Sets ein Set aufklappen und „Fehlen dir noch“ antippen: alle fehlenden Karten mit Sammlernummer – mit einem Tipp auf die Wunschliste.",
+        href: "/sets",
+      },
+      {
+        icon: "💶",
+        title: "Tagespreise für die Wunschliste",
+        text: "Wunschliste und Deck-Karten bekommen jetzt jeden Tag aktuelle Preise, nicht nur deine Sammlung.",
+        href: "/wishlist",
+      },
+    ],
+  },
+  {
     id: "2026-11-19b",
     date: "2026-11-19",
     title: "Besserer Scanner, flexiblere Trades",

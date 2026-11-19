@@ -4,6 +4,7 @@ import { fetchSets } from "@/lib/scryfall";
 import { SetsClient } from "@/components/SetsClient";
 import { sortByPercent, upcomingSets } from "@/lib/setsView";
 import { selectAll } from "@/lib/supabase/selectAll";
+import { catalogSetCounts } from "@/lib/catalogLookup";
 
 export default async function SetsPage() {
   const supabase = createClient();
@@ -36,7 +37,9 @@ export default async function SetsPage() {
     cardsBySet.get(c.set_code)!.push(c);
   }
 
-  const allSets = await fetchSets();
+  // Set-Größe: Papier-Drucke laut eigenem Katalog (ohne reine Online-Drucke),
+  // sonst Scryfalls Kartenzahl
+  const [allSets, printCounts] = await Promise.all([fetchSets(), catalogSetCounts(Array.from(cardsBySet.keys()))]);
   const setInfo = new Map(allSets.map((s) => [s.code, s]));
 
   const rows = sortByPercent([...cardsBySet.entries()]
@@ -47,7 +50,7 @@ export default async function SetsPage() {
         code,
         name: info?.name ?? code.toUpperCase(),
         owned: uniqueIds.size,
-        total: info?.card_count ?? 0,
+        total: printCounts.get(code) ?? info?.card_count ?? 0,
         released: info?.released_at ?? "",
         icon: info?.icon_svg_uri ?? null,
         cards: setCards!.sort((a, b) => a.name.localeCompare(b.name)),
