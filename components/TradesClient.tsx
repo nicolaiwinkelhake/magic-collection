@@ -7,6 +7,8 @@ import { formatEur, formatDate } from "@/lib/format";
 import Image from "next/image";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CardViewer, type ViewerCard } from "@/components/ui/CardViewer";
+import { myDeckUses, ownedFor, ownedText, type OwnIndex } from "@/lib/ownedMatch";
+import { useMyCollection, type MyDecks } from "@/lib/useMyCollection";
 import { basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type TradeDrafts } from "@/lib/tradeBasket";
 
 type TradeItem = {
@@ -57,6 +59,8 @@ export function TradesClient({
   friends: string[];
 }) {
   const router = useRouter();
+  // eigene Sammlung: zeigt bei Karten, die man bekommt, ob man sie schon hat
+  const mine = useMyCollection();
   const [partnerEmail, setPartnerEmail] = useState(friends[0] ?? "");
   const [give, setGive] = useState("");
   const [receive, setReceive] = useState("");
@@ -209,6 +213,8 @@ export function TradesClient({
               trade={trade}
               currentUserId={currentUserId}
               onRespond={respond}
+              own={mine.own}
+              myDecks={mine.myDecks}
             />
           ))
         )}
@@ -221,10 +227,14 @@ function TradeCard({
   trade,
   currentUserId,
   onRespond,
+  own,
+  myDecks,
 }: {
   trade: Trade;
   currentUserId: string;
   onRespond: (id: string, action: "accept" | "decline") => void;
+  own: OwnIndex | null;
+  myDecks: MyDecks | null;
 }) {
   const myItems = trade.items.filter((i) => i.from_user_id === currentUserId);
   const theirItems = trade.items.filter((i) => i.from_user_id !== currentUserId);
@@ -255,6 +265,11 @@ function TradeCard({
         <span className="min-w-0 flex-1 truncate">
           {i.quantity}× {i.name}
           {i.foil ? <span className="text-fuchsia-300"> Foil</span> : ""}
+          {idx >= myItems.length && own && ownedFor(own, i).any > 0 && (
+            <span className="ml-1.5 rounded bg-emerald-600/90 px-1 text-[10px] font-semibold text-white align-[1px]" title="Hast du schon">
+              ✓ {ownedFor(own, i).any}
+            </span>
+          )}
         </span>
         <span className="shrink-0 text-zinc-500 tabular-nums">{formatEur(i.price)}</span>
         <span className="shrink-0 text-zinc-600" aria-hidden>›</span>
@@ -362,10 +377,32 @@ function TradeCard({
           info={(card) => {
             const idx = viewerCards.indexOf(card);
             const mine = idx >= 0 && idx < myItems.length;
+            const have = !mine && own ? ownedFor(own, card) : null;
+            const decks = !mine && myDecks ? myDeckUses([{ id: card.key, name: card.name }], myDecks.cards, myDecks.decks)[card.key] : undefined;
             return (
-              <p className={`rounded-xl px-3 py-2 text-sm border ${mine ? "bg-emerald-500/10 border-emerald-400/25 text-emerald-200" : "bg-indigo-500/10 border-indigo-400/25 text-indigo-200"}`}>
-                {mine ? "Du gibst" : `Du bekommst von ${otherEmail.split("@")[0]}`}: {card.quantity}×{card.foil ? " Foil" : ""}
-              </p>
+              <>
+                <p className={`rounded-xl px-3 py-2 text-sm border ${mine ? "bg-emerald-500/10 border-emerald-400/25 text-emerald-200" : "bg-indigo-500/10 border-indigo-400/25 text-indigo-200"}`}>
+                  {mine ? "Du gibst" : `Du bekommst von ${otherEmail.split("@")[0]}`}: {card.quantity}×{card.foil ? " Foil" : ""}
+                </p>
+                {have && (
+                  <p className={`rounded-xl px-3 py-2 text-sm border ${have.any ? "bg-emerald-500/10 border-emerald-400/25 text-emerald-200" : "bg-white/[0.04] border-white/10 text-zinc-400"}`}>
+                    {have.any ? "✓ " : ""}{ownedText(have)}
+                  </p>
+                )}
+                {decks?.length ? (
+                  <div className="rounded-xl bg-indigo-500/10 border border-indigo-400/20 px-3 py-2.5 space-y-1.5">
+                    <p className="text-sm text-indigo-200">In deinen Decks</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {decks.map((u) => (
+                        <a key={u.deckId} href={`/decks/${u.deckId}`} className="rounded-full bg-white/[0.08] border border-white/10 px-2.5 py-1 text-xs hover:border-white/25">
+                          {u.deckName}
+                          {u.count > 1 && <span className="text-zinc-400"> ×{u.count}</span>}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </>
             );
           }}
         />

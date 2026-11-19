@@ -11,7 +11,8 @@ import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TradeComposer } from "@/components/TradeComposer";
-import { buildOwnIndex, myDeckUses, ownedFor, ownedText, type OwnIndex, type OwnRow } from "@/lib/ownedMatch";
+import { myDeckUses, ownedFor, ownedText } from "@/lib/ownedMatch";
+import { useMyCollection } from "@/lib/useMyCollection";
 import { addToBasket, basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type Basket } from "@/lib/tradeBasket";
 
 // Geteilte Sammlungen von Freunden – gleiche Darstellung wie die eigene
@@ -102,32 +103,9 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
 
   // Eigene Sammlung (einmal laden): zeigt in der Sammlung des Freundes, welche
   // Karten ich schon habe – damit ich keine Trades für eigene Karten anfrage.
-  const [own, setOwn] = useState<OwnIndex | null>(null);
+  const { own, myDecks } = useMyCollection();
   const [onlyMissing, setOnlyMissing] = useState(false);
-  const [myDecks, setMyDecks] = useState<{ cards: Array<{ deck_id: string; name: string }>; decks: Array<{ id: string; name: string }> } | null>(null);
   const deckUses = useMemo(() => (myDecks ? myDeckUses(cards, myDecks.cards, myDecks.decks) : undefined), [myDecks, cards]);
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth.user) return;
-      const uid = auth.user.id;
-      const [rows, deckRows, { data: deckList }] = await Promise.all([
-        selectAll<OwnRow>(() => supabase.from("cards").select("name, scryfall_id, quantity").eq("user_id", uid).order("id")).catch(() => null),
-        // in welchen meiner Decks steckt eine Karte (jede Version)?
-        selectAll<{ deck_id: string; name: string }>(() =>
-          supabase.from("deck_cards").select("deck_id, name").eq("user_id", uid).order("id"),
-        ).catch(() => []),
-        supabase.from("decks").select("id, name").eq("user_id", uid),
-      ]);
-      if (cancelled) return;
-      if (rows) setOwn(buildOwnIndex(rows));
-      setMyDecks({ cards: deckRows, decks: deckList ?? [] });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
   const ownedCounts = useMemo(() => {
     if (!own) return undefined;
     const out: Record<string, number> = {};
