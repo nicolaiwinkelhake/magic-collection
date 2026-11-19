@@ -108,6 +108,36 @@ export function warpToCanvas(
 
 const asIs = () => {};
 
+/** Namensbalken: normal unbearbeitet (liest am besten); nur bei dunklem Bild
+ *  (wenig Licht, schwarze Karte) den Kontrast strecken – ohne Umkehren. */
+export function brightenIfDim(data: Uint8ClampedArray, dimBelow = 75): void {
+  const n = data.length / 4;
+  const hist = new Uint32Array(256);
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const g = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+    hist[g]++;
+    sum += g;
+  }
+  if (sum / n >= dimBelow) return;
+  let lo = -1;
+  let hi = 255;
+  for (let v = 0, acc = 0; v < 256; v++) {
+    acc += hist[v];
+    if (lo < 0 && acc > n * 0.01) lo = v;
+    if (acc >= n * 0.99) {
+      hi = v;
+      break;
+    }
+  }
+  lo = Math.max(0, lo);
+  const k = 255 / Math.max(8, hi - lo);
+  for (let i = 0; i < data.length; i += 4) {
+    const g = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2] - lo) * k;
+    data[i] = data[i + 1] = data[i + 2] = g;
+  }
+}
+
 export type NameLines = {
   /** Lesarten, beste zuerst */
   names: string[];
@@ -117,7 +147,7 @@ export type NameLines = {
 
 /** Namensbalken der entzerrten Karte lesen. */
 export async function readName(source: CanvasImageSource, w: number, h: number, quad: Quad, worker?: Worker): Promise<NameLines> {
-  const canvas = warpToCanvas(source, w, h, quad, NAME_QUAD_AREA, NAME_QUAD_HEIGHT, asIs);
+  const canvas = warpToCanvas(source, w, h, quad, NAME_QUAD_AREA, NAME_QUAD_HEIGHT, brightenIfDim);
   const lines = await ocrLines(canvas, worker ?? (await getNameWorker()));
   return { names: nameCandidates(lines), late: lateStarts(lines) };
 }
