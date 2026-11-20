@@ -56,7 +56,8 @@ export type CardMarks = {
   groupDecks: number;
 };
 
-export type ListCard = CompactCard & CardMarks;
+/** Anteil/Synergie nur bei EDHREC-Listen: inclusion 0–1 (Anteil der Decks), synergy −1…1 */
+export type ListCard = CompactCard & CardMarks & { inclusion?: number; synergy?: number };
 
 export type ListFilters = {
   maxPrice: number | null; // € je Karte

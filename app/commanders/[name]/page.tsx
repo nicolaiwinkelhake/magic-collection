@@ -30,6 +30,7 @@ export default async function CommanderPage({
 
   return (
     <CommanderClient
+      key={`${name}|${searchParams.partner ?? ""}`}
       name={name}
       partner={searchParams.partner ?? null}
       decks={sorted.map((d) => ({ id: d.id as string, name: d.name as string }))}

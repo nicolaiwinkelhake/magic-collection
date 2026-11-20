@@ -22,6 +22,31 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-20",
+    date: "2026-11-20",
+    title: "Commander-Seite wie bei EDHREC",
+    items: [
+      {
+        icon: "📊",
+        title: "Statistik zum Commander",
+        text: "Tippst du einen Commander an, siehst du jetzt wie bei EDHREC Platz, Anzahl Decks, Mana-Kurve, Kartentypen, Brackets und Preisklassen.",
+        href: "/commanders",
+      },
+      {
+        icon: "🃏",
+        title: "Empfohlene Karten mit Anteil und Synergie",
+        text: "Neue Karten, Hohe Synergie, Top-Karten, Kreaturen, Spontanzauber, Länder und mehr – mit „% der Decks“ und Synergie. Dazu weiter, was du schon hast oder in welchem Deck die Karte steckt.",
+        href: "/commanders",
+      },
+      {
+        icon: "🎯",
+        title: "Themen und Budget",
+        text: "Wähle ein Thema (z. B. Infect) oder nur Budget- bzw. teure Decks – die Listen passen sich an. Ähnliche Commander sind direkt verlinkt.",
+        href: "/commanders",
+      },
+    ],
+  },
+  {
     id: "2026-11-19d",
     date: "2026-11-19",
     title: "Commander-Rangliste",
