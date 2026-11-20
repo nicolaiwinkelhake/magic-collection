@@ -74,3 +74,28 @@ describe("gepackte Gesamtdatei", () => {
     expect(out).toEqual(['{"id":"a"}', '{"id":"b"}']);
   });
 });
+
+import { catalogUsable, isTransient, CATALOG_VERSION } from "@/lib/catalogState";
+
+describe("Katalog: Nutzbarkeit", () => {
+  const ok = { lookup: { enabled: true }, defaults: { done: true } };
+  it("nutzbar, wenn vollständig, freigeschaltet und im aktuellen Aufbau", () => {
+    expect(catalogUsable({ ...ok, cards: { done: true, version: CATALOG_VERSION } })).toBe(true);
+  });
+  it("bleibt nutzbar, während ein neuer Abgleich läuft oder abgebrochen ist (Stand des letzten vollständigen Laufs)", () => {
+    expect(catalogUsable({ ...ok, cards: { done: false, finished_at: "2026-11-19T22:00:00Z", version: CATALOG_VERSION } })).toBe(true);
+  });
+  it("nicht nutzbar: nie vollständig, alter Aufbau, nicht freigeschaltet, ohne Standarddrucke", () => {
+    expect(catalogUsable({ ...ok, cards: { done: false, version: CATALOG_VERSION } })).toBe(false);
+    expect(catalogUsable({ ...ok, cards: { done: true, version: CATALOG_VERSION - 1 } })).toBe(false);
+    expect(catalogUsable({ ...ok, lookup: { enabled: false }, cards: { done: true, version: CATALOG_VERSION } })).toBe(false);
+    expect(catalogUsable({ lookup: { enabled: true }, defaults: { done: false }, cards: { done: true, version: CATALOG_VERSION } })).toBe(false);
+    expect(catalogUsable({})).toBe(false);
+  });
+  it("erkennt kurzfristige Fehler zum Wiederholen", () => {
+    expect(isTransient("Speichern: canceling statement due to statement timeout")).toBe(true);
+    expect(isTransient("fetch failed")).toBe(true);
+    expect(isTransient("Keine Download-Adresse für default-cards")).toBe(false);
+    expect(isTransient("Gesamtdatei: 404")).toBe(false);
+  });
+});

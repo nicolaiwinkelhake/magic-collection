@@ -2,8 +2,7 @@
 // Gesamtdatei in kompakte Zeilen für die Tabelle catalog_cards bringen,
 // gepackte JSONL-Dateien zeilenweise lesen und deutsche Namen bestimmen.
 
-/** Stand des Katalog-Aufbaus; höher = neue Spalten (Neuimport nötig, bis dahin wird er nicht genutzt). */
-export const CATALOG_VERSION = 2;
+export { CATALOG_VERSION } from "@/lib/catalogState";
 
 export type ScryCard = {
   id: string;
