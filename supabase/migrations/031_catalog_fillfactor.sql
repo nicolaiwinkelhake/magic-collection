@@ -1,0 +1,11 @@
+-- ============================================================
+-- Migration 031 – Katalog: Platz für schnelle Updates
+-- Der nächtliche Abgleich schreibt alle ~111.000 Drucke neu, meist ändert
+-- sich nur ein Preis. Ist auf der Seite kein Platz frei, muss Postgres die
+-- Zeile verschieben und alle 8 Indizes (darunter zwei aufwendige
+-- Namens-Suchindizes) neu schreiben – bisher nur bei 3 von 10 Updates ohne
+-- diesen Aufwand. Mit 20 % freiem Platz je Seite bleibt die neue Version auf
+-- derselben Seite, die Indizes bleiben unberührt. Gilt für neu beschriebene
+-- Seiten; bestehende füllen sich so mit der Zeit.
+-- ============================================================
+alter table public.catalog_cards set (fillfactor = 80);

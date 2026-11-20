@@ -6,6 +6,7 @@
 // antwortet. Lesbar für angemeldete Nutzer (RLS).
 import { createClient } from "@/lib/supabase/client";
 import type { ScanMatch } from "@/lib/scanStack";
+import { catalogUsable, type CatalogMetaRows } from "@/lib/catalogState";
 
 type Row = {
   id: string;
@@ -34,8 +35,7 @@ export function catalogReady(): Promise<boolean> {
   readyP ??= (async () => {
     try {
       const { data } = await db().from("catalog_meta").select("key, value").in("key", ["cards", "defaults", "lookup"]);
-      const m = Object.fromEntries((data ?? []).map((r) => [r.key, r.value as { done?: boolean; version?: number; enabled?: boolean }]));
-      return !!m.lookup?.enabled && !!m.cards?.done && (m.cards.version ?? 0) >= 2 && !!m.defaults?.done;
+      return catalogUsable(Object.fromEntries((data ?? []).map((r) => [r.key, r.value])) as CatalogMetaRows);
     } catch {
       return false;
     }

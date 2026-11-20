@@ -5,7 +5,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScryfallCard } from "@/lib/scryfall";
 import { pickDefaultPrint } from "@/lib/catalogPick";
-import { CATALOG_VERSION } from "@/lib/catalog";
+import { catalogUsable, type CatalogMetaRows } from "@/lib/catalogState";
 
 export type CatalogCardRow = {
   id: string;
@@ -90,9 +90,9 @@ export async function catalogDb(): Promise<SupabaseClient | null> {
   if (!admin) return null;
   if (!ready || Date.now() - ready.at > 10 * 60_000) {
     const { data } = await admin.from("catalog_meta").select("key, value").in("key", ["cards", "defaults", "lookup"]);
-    const m = Object.fromEntries((data ?? []).map((r) => [r.key, r.value as { done?: boolean; version?: number; enabled?: boolean }]));
+    const m = Object.fromEntries((data ?? []).map((r) => [r.key, r.value])) as CatalogMetaRows;
     // "lookup": Schalter, der nach einer Stichprobe gegen Scryfall gesetzt wird
-    ready = { ok: !!m.lookup?.enabled && !!m.cards?.done && (m.cards.version ?? 0) >= CATALOG_VERSION && !!m.defaults?.done, at: Date.now() };
+    ready = { ok: catalogUsable(m), at: Date.now() };
   }
   return ready.ok ? admin : null;
 }

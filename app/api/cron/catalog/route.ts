@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { CATALOG_VERSION, GermanNames, isPaper, parseLine, streamLines, toCatalogRow, type CatalogRow } from "@/lib/catalog";
+import { isTransient } from "@/lib/catalogState";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -19,6 +20,8 @@ export const dynamic = "force-dynamic";
 const BUDGET_MS = 240_000;
 const BATCH = 250;
 const PARALLEL = 2;
+const MAX_RETRIES = 6;
+const RETRY_PAUSE_MS = 15_000;
 const UA = { "User-Agent": "MagicCollectionApp/1.0", Accept: "application/json" };
 
 type Bulk = { updated_at: string; jsonl_download_uri?: string; download_uri?: string };
@@ -108,7 +111,8 @@ async function syncCards(db: SupabaseClient, origin: string, from: number, force
     if (Date.now() - started > BUDGET_MS) {
       await flush();
       await Promise.all(inFlight);
-      await setMeta(db, "cards", { updated_at: bulk.updated_at, done: false, next: line, rows, version: meta.version });
+      // finished_at/version vom letzten vollständigen Lauf bleiben stehen: Der Katalog bleibt nutzbar, solange er neu aufgebaut wird
+      await setMeta(db, "cards", { updated_at: bulk.updated_at, done: false, next: line, rows, version: meta.version, finished_at: meta.finished_at });
       await chain(origin, { part: "cards", from: String(line), ...(force ? { force: "1" } : {}) });
       return { continued: true, line, rows };
     }
@@ -177,8 +181,11 @@ async function syncNames(db: SupabaseClient, started: number) {
 
 export async function GET(request: Request) {
   if (!(await authorized(request))) return NextResponse.json({ error: "Nicht autorisiert" }, { status: 401 });
-  const started = Date.now();
   const url = new URL(request.url);
+  // Wiederholung nach einem Engpass der Datenbank: erst eine Pause (wächst mit jedem Versuch, bleibt unter dem Zeitlimit)
+  const retry = Math.max(0, Number(url.searchParams.get("retry") ?? 0) || 0);
+  if (retry) await new Promise((r) => setTimeout(r, Math.min(retry * RETRY_PAUSE_MS, 45_000)));
+  const started = Date.now();
   const part = url.searchParams.get("part") ?? "cards";
   const from = Math.max(0, Number(url.searchParams.get("from") ?? 0) || 0);
   const force = url.searchParams.get("force") === "1";
@@ -200,6 +207,12 @@ export async function GET(request: Request) {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await setMeta(db, `${part}_error`, { error: message, finished_at: new Date().toISOString() }).catch(() => {});
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Zeitüberschreitungen der Datenbank sind meist kurzfristig: vom zuletzt gemerkten Stand aus erneut versuchen,
+    // statt bis zur nächsten Nacht stehenzubleiben. Speichern ist wiederholbar (Upsert).
+    if (part === "cards" && retry < MAX_RETRIES && isTransient(message)) {
+      const meta = await getMeta(db, "cards").catch(() => ({}) as Meta);
+      await chain(url.origin, { part: "cards", from: String(meta.done ? 0 : meta.next ?? from), retry: String(retry + 1), ...(force ? { force: "1" } : {}) });
+    }
+    return NextResponse.json({ error: message, retry }, { status: 500 });
   }
 }
