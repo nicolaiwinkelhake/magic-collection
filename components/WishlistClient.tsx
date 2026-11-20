@@ -15,6 +15,7 @@ import { FolderPicker } from "@/components/ui/FolderPicker";
 import { ALL, UNSORTED, folderStats, inFolder, wishlistMeasure, withFolder, type FolderFilter } from "@/lib/folders";
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { filterByFriend, friendCounts, type FriendFilter } from "@/lib/wishlistFilter";
 
 type WishItem = {
   id: string;
@@ -65,7 +66,13 @@ export function WishlistClient({
     }
   }
   const stats = useMemo(() => folderStats(allItems, wishlistMeasure), [allItems]);
-  const items = useMemo(() => inFolder(allItems, folder), [allItems, folder]);
+  const inThisFolder = useMemo(() => inFolder(allItems, folder), [allItems, folder]);
+  // Filter "Hat ein Freund": Zahlen beziehen sich auf den gewählten Ordner
+  const [friendFilter, setFriendFilter] = useState<FriendFilter>(null);
+  const friends = useMemo(() => friendCounts(inThisFolder, ownership), [inThisFolder, ownership]);
+  // Ist der gewählte Freund im aktuellen Ordner nicht (mehr) dabei, gilt "irgendein Freund"
+  const activeFriend = friendFilter && friendFilter !== "any" && !friends.friends.some((f) => f.email === friendFilter) ? "any" : friendFilter;
+  const items = useMemo(() => filterByFriend(inThisFolder, ownership, activeFriend), [inThisFolder, ownership, activeFriend]);
   const activeFolder = folders.find((f) => f.id === folder);
   const folderNames = (it: WishItem) =>
     folders
@@ -165,6 +172,29 @@ export function WishlistClient({
         onFoldersChanged={() => router.refresh()}
       />
 
+      {(friends.any > 0 || friendFilter) && (
+        <div className="flex flex-wrap items-center gap-2" aria-label="Filter nach Freunden">
+          <button
+            onClick={() => setFriendFilter((f) => (f ? null : "any"))}
+            aria-pressed={!!activeFriend}
+            className={`chip h-9 text-sm ${activeFriend ? "chip-active" : ""}`}
+          >
+            👥 Hat ein Freund ({friends.any})
+          </button>
+          {activeFriend && friends.friends.length > 1 &&
+            friends.friends.map((f) => (
+              <button
+                key={f.email}
+                onClick={() => setFriendFilter(activeFriend === f.email ? "any" : f.email)}
+                aria-pressed={activeFriend === f.email}
+                className={`chip h-9 text-sm ${activeFriend === f.email ? "chip-active" : ""}`}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-zinc-500">
           {items.length} {items.length === 1 ? "Karte" : "Karten"} · {folder === ALL ? "Gesamtwert" : "Wert"}{" "}
@@ -187,7 +217,11 @@ export function WishlistClient({
 
       {items.length === 0 ? (
         <p className="text-zinc-500 text-center py-12">
-          {allItems.length === 0 ? "Deine Wunschliste ist leer." : "In diesem Ordner ist noch keine Wunschkarte."}
+          {allItems.length === 0
+            ? "Deine Wunschliste ist leer."
+            : activeFriend
+              ? "Keiner deiner Freunde hat eine Karte aus dieser Auswahl."
+              : "In diesem Ordner ist noch keine Wunschkarte."}
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
