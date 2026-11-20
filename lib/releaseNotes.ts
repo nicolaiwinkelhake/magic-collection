@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-20b",
+    date: "2026-11-20",
+    title: "Wunschliste: Hat ein Freund?",
+    items: [
+      {
+        icon: "👥",
+        title: "Filter „Hat ein Freund“",
+        text: "In der Wunschliste zeigst du mit einem Tipp nur die Karten, die mindestens ein Freund besitzt. Mit mehreren Freunden wählst du zusätzlich einen bestimmten aus. Zusammen mit „Auswählen“ lässt sich daraus schnell ein Tausch vorbereiten.",
+        href: "/wishlist",
+      },
+    ],
+  },
+  {
     id: "2026-11-20",
     date: "2026-11-20",
     title: "Commander-Seite wie bei EDHREC",

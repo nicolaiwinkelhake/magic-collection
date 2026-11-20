@@ -19,18 +19,17 @@ export default async function WishlistPage() {
     supabase.from("wishlist").select("*").order("name", { ascending: true }).order("id"),
   ).catch(() => [] as WishRow[]);
 
-  // Für jede Wunschkarte prüfen, welche Freunde sie besitzen – in kleinen
-  // parallelen Gruppen statt einzeln nacheinander (große Wunschlisten
-  // luden sonst sehr lange).
+  // Welche Freunde besitzen die Wunschkarten? Eine Abfrage je 150 Namen
+  // (statt je Karte eine – große Wunschlisten luden sonst sehr lange).
   const ownership: Record<string, string[]> = {};
   const names = Array.from(new Set(items.map((i) => i.name)));
-  for (let start = 0; start < names.length; start += 10) {
-    await Promise.all(
-      names.slice(start, start + 10).map(async (name) => {
-        const { data } = await supabase.rpc("friends_owning_card", { card_name: name });
-        if (data?.length) ownership[name] = data.map((r: { friend_email: string }) => r.friend_email);
-      }),
-    );
+  const chunks: string[][] = [];
+  for (let start = 0; start < names.length; start += 150) chunks.push(names.slice(start, start + 150));
+  const found = await Promise.all(chunks.map((chunk) => supabase.rpc("friends_owning_cards", { p_names: chunk })));
+  for (const { data } of found) {
+    for (const r of (data ?? []) as Array<{ name: string; friend_email: string }>) {
+      (ownership[r.name] ??= []).push(r.friend_email);
+    }
   }
 
   // Eigene Ordner (gemeinsam mit der Sammlung) + Zuordnungen der Wunschkarten
