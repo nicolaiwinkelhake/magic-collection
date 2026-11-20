@@ -9,6 +9,7 @@ import { edhrecCardLink } from "@/lib/edhrecLinks";
 import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
 import { formatEur } from "@/lib/format";
 import type { CommanderTheme } from "@/lib/commanderProfile";
+import { CommanderStats, type CommanderStatsData } from "@/components/CommanderStats";
 
 type Overview = {
   commander: {
@@ -24,6 +25,14 @@ type Overview = {
   themes: CommanderTheme[];
   lists: Array<{ key: string; label: string; description?: string; cards: ListCard[] }>;
   combos: Array<{ id: string; cards: string[]; produces: string[]; missing: string[]; bracketTag: string | null }>;
+  /** nur bei EDHREC-Daten: Statistik, Themen zum Umschalten, ähnliche Commander */
+  edhrec?: CommanderStatsData & {
+    sub: string;
+    numDecks: number;
+    salt: number | null;
+    themes: Array<{ slug: string; name: string; count: number }>;
+    similar: string[];
+  };
 };
 
 const COLOR_NAME: Record<string, string> = { W: "Weiß", U: "Blau", B: "Schwarz", R: "Rot", G: "Grün" };
@@ -45,20 +54,45 @@ export function CommanderClient({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{ list: string; index: number } | null>(null);
+  // Unterseite wie bei EDHREC: Thema (Slug), "budget" oder "expensive"; "" = alle Decks
+  const [sub, setSub] = useState("");
+  const [subLoading, setSubLoading] = useState(false);
 
+  // Zuerst die EDHREC-Seite; kennt EDHREC den Commander nicht, die Scryfall-Ansicht.
   useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams({ name });
     if (partner) params.set("partner", partner);
-    setData(null);
+    if (sub) params.set("sub", sub);
     setError(null);
-    fetch(`/api/commanders/overview?${params}`)
-      .then(async (r) => {
-        const d = await r.json().catch(() => ({}));
+    setSubLoading(true);
+    (async () => {
+      try {
+        let r = await fetch(`/api/commanders/edhrec?${params}`);
+        let d = await r.json().catch(() => ({}));
+        if (!r.ok && d.code === "no_edhrec" && !sub) {
+          r = await fetch(`/api/commanders/overview?${params}`);
+          d = await r.json().catch(() => ({}));
+        }
         if (!r.ok) throw new Error(d.error ?? `Fehler ${r.status}`);
-        setData(d);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Unbekannter Fehler"));
-  }, [name, partner]);
+        if (cancelled) return;
+        // Combos gibt es nur auf der Hauptseite – auf Unterseiten bleiben die vorhandenen
+        setData((prev) => (sub && prev ? { ...d, combos: prev.combos } : d));
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "Unbekannter Fehler";
+        if (sub) {
+          setNotice(msg);
+          setSub("");
+        } else setError(msg);
+      } finally {
+        if (!cancelled) setSubLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [name, partner, sub]);
 
   const lists = useMemo(
     () => (data?.lists ?? []).map((l) => ({ ...l, cards: filterCards(l.cards, filters) })),
@@ -122,8 +156,8 @@ export function CommanderClient({
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-2">
         <Link href="/commanders" className="text-sm text-zinc-400 hover:text-white">← Commander suchen</Link>
         <p className="text-zinc-400" aria-live="polite">
-          Lade Empfehlungen für {name}… Beim ersten Aufruf eines Commanders werden Themen und Kartenlisten ermittelt
-          (bis zu einer Minute), danach geht es schnell.
+          Lade Empfehlungen für {name}… Beim ersten Aufruf eines Commanders werden die Kartenlisten zusammengestellt
+          (kann einen Moment dauern), danach geht es schnell.
         </p>
       </main>
     );
@@ -149,7 +183,8 @@ export function CommanderClient({
           </h1>
           <p className="text-sm text-zinc-400">
             {c.identity.length ? c.identity.map((x) => COLOR_NAME[x] ?? x).join(" · ") : "Farblos"}
-            {c.rank && <> · Beliebtheitsrang #{c.rank.toLocaleString("de-DE")} (Scryfall)</>}
+            {c.rank && <> · Platz #{c.rank.toLocaleString("de-DE")} {data.edhrec ? "bei EDHREC" : "(Scryfall-Beliebtheit)"}</>}
+            {data.edhrec && data.edhrec.numDecks > 0 && <> · {data.edhrec.numDecks.toLocaleString("de-DE")} Decks{data.edhrec.sub ? " mit dieser Auswahl" : ""}</>}
           </p>
           <p className="text-sm text-zinc-300 whitespace-pre-line">{c.oracleText}</p>
           <div className="flex flex-wrap gap-3 text-sm">
@@ -169,7 +204,53 @@ export function CommanderClient({
         </div>
       </header>
 
-      {data.themes.length > 0 && (
+      {data.edhrec && <CommanderStats stats={data.edhrec} />}
+
+      {data.edhrec && (
+        <section className="space-y-3" aria-label="Auswahl">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-zinc-400">Decks</span>
+            {[
+              { k: "", label: "Alle" },
+              { k: "budget", label: "Budget" },
+              { k: "expensive", label: "Teuer" },
+            ].map((o) => (
+              <button key={o.k} onClick={() => setSub(o.k)} aria-pressed={sub === o.k} className={`chip h-9 text-sm ${sub === o.k ? "chip-active" : ""}`}>
+                {o.label}
+              </button>
+            ))}
+            {subLoading && <span className="text-xs text-zinc-500" aria-live="polite">Lade Auswahl…</span>}
+          </div>
+          {data.edhrec.themes.length > 0 && (
+            <div className="space-y-1.5">
+              <h2 className="font-medium">Themen</h2>
+              <div className="flex flex-wrap gap-2">
+                {data.edhrec.themes.map((t) => (
+                  <button
+                    key={t.slug}
+                    onClick={() => setSub(sub === t.slug ? "" : t.slug)}
+                    aria-pressed={sub === t.slug}
+                    className={`chip h-9 text-sm ${sub === t.slug ? "chip-active" : ""}`}
+                  >
+                    {t.name} <span className="text-zinc-500 tabular-nums">{t.count.toLocaleString("de-DE")}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <nav aria-label="Springe zu" className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            {lists
+              .filter((l) => l.cards.length > 0)
+              .map((l) => (
+                <a key={l.key} href={`#${l.key}`} className="shrink-0 rounded-full bg-zinc-800 hover:bg-zinc-700 px-3 py-1 text-sm">
+                  {l.label}
+                </a>
+              ))}
+          </nav>
+        </section>
+      )}
+
+      {!data.edhrec && data.themes.length > 0 && (
         <section className="space-y-2">
           <h2 className="font-medium">Themen</h2>
           <div className="flex flex-wrap gap-2">
@@ -274,6 +355,19 @@ export function CommanderClient({
         </section>
       ))}
 
+      {data.edhrec && data.edhrec.similar.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-medium text-lg">Ähnliche Commander</h2>
+          <div className="flex flex-wrap gap-2">
+            {data.edhrec.similar.map((n) => (
+              <Link key={n} href={`/commanders/${encodeURIComponent(n)}`} className="rounded-full bg-zinc-800 hover:bg-zinc-700 px-3 py-1 text-sm">
+                {n}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {data.combos.length > 0 && (
         <section className="space-y-2">
           <h2 className="font-medium text-lg">Combos mit {c.name}</h2>
@@ -304,6 +398,11 @@ export function CommanderClient({
             ))}
           </ul>
         </section>
+      )}
+      {data.edhrec && (
+        <p className="text-xs text-zinc-500">
+          Statistiken und Empfehlungen von EDHREC (Auswertung vieler Commander-Decks, wöchentlich aktualisiert). Karten, Bilder und Preise aus Scryfall, Besitz aus deiner Sammlung.
+        </p>
       )}
       {(() => {
         const list = viewing && lists.find((l) => l.key === viewing.list);
@@ -337,6 +436,12 @@ export function CommanderClient({
                     </p>
                   )}
                   <p className="text-indigo-300">{list.label}</p>
+                  {card.inclusion !== undefined && (
+                    <p className="text-zinc-300">
+                      In {Math.round(card.inclusion * 100)} % der Decks
+                      {card.synergy !== undefined && Math.abs(card.synergy) >= 0.005 && <> · Synergie {card.synergy > 0 ? "+" : "−"}{Math.abs(Math.round(card.synergy * 100))} %</>}
+                    </p>
+                  )}
                   {card.gameChanger && <p className="text-amber-400">Game Changer</p>}
                   {card.owned > 0 ? (
                     <p className="text-emerald-400">✔ {card.owned}× in deiner Sammlung</p>
@@ -413,6 +518,17 @@ function CardTile({
           <span className="text-zinc-300">{card.eur !== null ? formatEur(card.eur) : "–"}</span>
           {card.gameChanger && <span className="text-amber-400" title="Game Changer">GC</span>}
         </div>
+        {card.inclusion !== undefined && (
+          <p className="text-zinc-300 tabular-nums">
+            {Math.round(card.inclusion * 100)} % der Decks
+            {card.synergy !== undefined && Math.abs(card.synergy) >= 0.005 && (
+              <span className={`ml-1.5 ${card.synergy > 0 ? "text-emerald-400" : "text-rose-400"}`} title="Synergie: Anteil bei diesem Commander minus Anteil in allen Decks dieser Farben">
+                {card.synergy > 0 ? "+" : "−"}
+                {Math.abs(Math.round(card.synergy * 100))} %
+              </span>
+            )}
+          </p>
+        )}
         {card.owned > 0 ? (
           <p className="text-emerald-400">✔ {card.owned}× in Sammlung</p>
         ) : (

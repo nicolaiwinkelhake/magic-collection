@@ -1,15 +1,12 @@
 import { requireUser, unauthorized } from "@/lib/apiAuth";
 import { fetchCardByName } from "@/lib/scryfall";
 import { compactCard } from "@/lib/scryfallCache";
-import { type CardMarks } from "@/lib/commanderLists";
+import { loadCardMarks } from "@/lib/cardMarks";
 import { loadCommanderLists } from "@/lib/commanderData";
 import { edhrecLinks } from "@/lib/edhrecLinks";
 import { findCombosWithCard } from "@/lib/commanderSpellbook";
-import { selectAll } from "@/lib/supabase/selectAll";
 
 export const maxDuration = 120;
-
-const IN_CHUNK = 150;
 
 // GET /api/commanders/overview?name=...&partner=...
 // Liefert alles für die Commander-Seite: Commander-Daten, Themen, Kartenlisten
@@ -41,36 +38,7 @@ export async function GET(request: Request) {
   const names = Array.from(
     new Set([...lists.flatMap((l) => l.cards.map((c) => c.name)), ...combos.flatMap((c) => c.cards)])
   );
-  const marks = new Map<string, CardMarks>(names.map((n) => [n, { owned: 0, inDecks: [], friends: [], groupDecks: 0 }]));
-
-  for (let i = 0; i < names.length; i += IN_CHUNK) {
-    const chunk = names.slice(i, i + IN_CHUNK);
-    const owned = await selectAll<{ name: string; quantity: number }>(() =>
-      supabase.from("cards").select("name, quantity").eq("user_id", user.id).in("name", chunk).order("id")
-    );
-    for (const o of owned) marks.get(o.name)!.owned += o.quantity;
-
-    // Join liefert je nach Schema-Erkennung ein Objekt oder ein Array.
-    const inDecks = await selectAll<{ name: string; decks: { name: string } | { name: string }[] | null }>(() =>
-      supabase.from("deck_cards").select("name, decks(name)").eq("user_id", user.id).in("name", chunk).order("id")
-    );
-    for (const d of inDecks) {
-      const m = marks.get(d.name)!;
-      const deckNames = Array.isArray(d.decks) ? d.decks.map((x) => x.name) : d.decks ? [d.decks.name] : [];
-      for (const dn of deckNames) if (!m.inDecks.includes(dn)) m.inDecks.push(dn);
-    }
-
-    const { data: friends } = await supabase.rpc("friends_owning_cards", { p_names: chunk });
-    for (const f of (friends ?? []) as Array<{ name: string; friend_email: string; quantity: number }>) {
-      marks.get(f.name)?.friends.push({ friendEmail: f.friend_email, quantity: f.quantity });
-    }
-
-    const { data: group } = await supabase.rpc("group_card_counts", { p_names: chunk });
-    for (const g of (group ?? []) as Array<{ name: string; decks: number }>) {
-      const m = marks.get(g.name);
-      if (m) m.groupDecks = g.decks;
-    }
-  }
+  const marks = await loadCardMarks(supabase, user.id, names);
 
   const raw = main.card as unknown as { edhrec_rank?: number; game_changer?: boolean };
   return Response.json({
