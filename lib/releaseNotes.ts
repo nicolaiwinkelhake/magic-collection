@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-20c",
+    date: "2026-11-20",
+    title: "Trade direkt aus der Wunschliste",
+    items: [
+      {
+        icon: "🔁",
+        title: "Trade vorschlagen",
+        text: "Filtere die Wunschliste mit „Hat ein Freund“, wähle einen Freund und tippe auf „Trade mit …“. Die Karten, die er hat, landen direkt im Trade-Dialog – du suchst nur noch aus, was du dafür gibst. Auch in der Kartenansicht gibt es den Knopf. Das klappt bei Freunden, die ihre Sammlung für dich freigegeben haben.",
+        href: "/wishlist",
+      },
+    ],
+  },
+  {
     id: "2026-11-20b",
     date: "2026-11-20",
     title: "Wunschliste: Hat ein Freund?",

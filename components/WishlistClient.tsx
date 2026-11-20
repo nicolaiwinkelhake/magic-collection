@@ -15,7 +15,11 @@ import { FolderPicker } from "@/components/ui/FolderPicker";
 import { ALL, UNSORTED, folderStats, inFolder, wishlistMeasure, withFolder, type FolderFilter } from "@/lib/folders";
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { filterByFriend, friendCounts, type FriendFilter } from "@/lib/wishlistFilter";
+import { filterByFriend, friendCounts, friendLabel, type FriendFilter } from "@/lib/wishlistFilter";
+import { TradeComposer } from "@/components/TradeComposer";
+import { createClient } from "@/lib/supabase/client";
+import { basketFromFriendCopies } from "@/lib/wishlistTrade";
+import type { Basket, BasketCard } from "@/lib/tradeBasket";
 
 type WishItem = {
   id: string;
@@ -73,6 +77,54 @@ export function WishlistClient({
   // Ist der gewählte Freund im aktuellen Ordner nicht (mehr) dabei, gilt "irgendein Freund"
   const activeFriend = friendFilter && friendFilter !== "any" && !friends.friends.some((f) => f.email === friendFilter) ? "any" : friendFilter;
   const items = useMemo(() => filterByFriend(inThisFolder, ownership, activeFriend), [inThisFolder, ownership, activeFriend]);
+  // Trade vorschlagen: gilt für den gewählten Freund (oder den einzigen, der etwas hat)
+  const tradeFriend =
+    activeFriend && activeFriend !== "any" ? activeFriend : activeFriend === "any" && friends.friends.length === 1 ? friends.friends[0].email : null;
+  const [trade, setTrade] = useState<{ partner: { id: string; name: string }; basket: Basket } | null>(null);
+  const [tradeBusy, setTradeBusy] = useState(false);
+  const [tradeMsg, setTradeMsg] = useState<string | null>(null);
+
+  // Karten eines Freundes aus seiner freigegebenen Sammlung holen und den Trade-Dialog öffnen
+  async function startTrade(friendEmail: string, names: string[]) {
+    const label = friendLabel(friendEmail);
+    setTradeMsg(null);
+    if (!names.length) return;
+    setTradeBusy(true);
+    try {
+      const supabase = createClient();
+      const { data: owners } = await supabase.rpc("collections_shared_with_me");
+      const owner = ((owners ?? []) as Array<{ owner_id: string; owner_email: string }>).find(
+        (o) => o.owner_email.toLowerCase() === friendEmail.toLowerCase(),
+      );
+      if (!owner) {
+        setTradeMsg(`${label} hat seine Sammlung nicht mit dir geteilt. Bitte ihn, sie unter „Freunde“ für dich freizugeben – dann kannst du ihm hier einen Trade vorschlagen.`);
+        return;
+      }
+      const rows: BasketCard[] = [];
+      for (let i = 0; i < names.length; i += 100) {
+        const { data, error } = await (supabase
+          .rpc("shared_collection", { p_owner: owner.owner_id })
+          .select("id, name, image_url, foil, quantity, price_eur, price_eur_foil, set_code")
+          .in("name", names.slice(i, i + 100)) as unknown as PromiseLike<{ data: BasketCard[] | null; error: { message: string } | null }>);
+        if (error) throw new Error(error.message);
+        rows.push(...(data ?? []));
+      }
+      const { basket, missing } = basketFromFriendCopies(rows, names);
+      if (!basket.length) {
+        setTradeMsg(`${label} hat keine dieser Karten in der geteilten Sammlung.`);
+        return;
+      }
+      if (missing.length) {
+        setTradeMsg(`Nicht in ${label}s geteilter Sammlung: ${missing.join(", ")}.`);
+      }
+      setTrade({ partner: { id: owner.owner_id, name: label }, basket });
+    } catch {
+      setTradeMsg("Der Trade konnte nicht vorbereitet werden. Bitte versuche es erneut.");
+    } finally {
+      setTradeBusy(false);
+    }
+  }
+
   const activeFolder = folders.find((f) => f.id === folder);
   const folderNames = (it: WishItem) =>
     folders
@@ -114,6 +166,13 @@ export function WishlistClient({
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Auswahl gilt zuerst; sonst alle Karten der Liste, die der Freund hat
+  const tradeNames = tradeFriend
+    ? (selectMode && selected.size ? items.filter((i) => selected.has(i.id)) : items)
+        .filter((i) => ownership[i.name]?.includes(tradeFriend))
+        .map((i) => i.name)
+    : [];
   const [removing, setRemoving] = useState(false);
 
   const total = items.reduce((s, i) => s + (i.price_eur ?? 0), 0);
@@ -192,7 +251,20 @@ export function WishlistClient({
                 {f.label} ({f.count})
               </button>
             ))}
+          {tradeFriend && tradeNames.length > 0 && (
+            <button onClick={() => void startTrade(tradeFriend, tradeNames)} disabled={tradeBusy} className="btn-primary h-9 px-4 text-sm ml-auto">
+              {tradeBusy ? "Lade …" : `🔁 Trade mit ${friendLabel(tradeFriend)} (${tradeNames.length})`}
+            </button>
+          )}
         </div>
+      )}
+      {activeFriend === "any" && friends.friends.length > 1 && (
+        <p className="text-xs text-zinc-500">Wähle einen Freund, um ihm einen Trade für diese Karten vorzuschlagen.</p>
+      )}
+      {tradeMsg && (
+        <p className="text-sm text-amber-300" role="status">
+          {tradeMsg}
+        </p>
       )}
 
       <div className="flex items-center justify-between gap-3">
@@ -291,6 +363,19 @@ export function WishlistClient({
             const it = allItems.find((i) => i.id === c.key);
             return (
               <>
+                {(ownership[c.name] ?? []).map((email) => (
+                  <button
+                    key={email}
+                    onClick={() => {
+                      setViewIndex(null);
+                      void startTrade(email, [c.name]);
+                    }}
+                    disabled={tradeBusy}
+                    className={viewerButton.primary}
+                  >
+                    🔁 Trade mit {friendLabel(email)}
+                  </button>
+                ))}
                 <button onClick={() => setFolderIds([c.key])} className={viewerButton.secondary}>
                   📁 {(it && folderNames(it)) || "Ordner"}
                 </button>
@@ -306,6 +391,15 @@ export function WishlistClient({
               </>
             );
           }}
+        />
+      )}
+      {trade && (
+        <TradeComposer
+          partner={trade.partner}
+          receive={trade.basket}
+          onReceiveChange={(b) => setTrade((t) => (t ? { ...t, basket: b } : t))}
+          onClose={() => setTrade(null)}
+          onSent={() => setTrade((t) => (t ? { ...t, basket: [] } : t))}
         />
       )}
       {selectMode && (
