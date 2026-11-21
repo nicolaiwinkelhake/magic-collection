@@ -33,6 +33,7 @@ export function CardGrid({
   selectAction,
   deckUses = {},
   owned,
+  ownerLabels,
   decks = [],
 }: {
   cards: Card[];
@@ -42,6 +43,8 @@ export function CardGrid({
   deckUses?: Record<string, DeckUse[]>;
   /** Geteilte Sammlung: wie oft ich selbst die Karte habe (je Eintrag-ID) */
   owned?: Record<string, number>;
+  /** Geteilte Sammlungen aller Freunde: wem der Eintrag gehört (je Eintrag-ID) */
+  ownerLabels?: Record<string, string>;
   groupBy?: GroupKey;
   /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
   readOnly?: boolean;
@@ -248,6 +251,7 @@ export function CardGrid({
                       {card.foil && <span className="text-fuchsia-300">Foil</span>}
                       {card.condition && card.condition !== "NM" && <span className="text-amber-400">{card.condition}</span>}
                       {card.language && card.language !== "EN" && <span>{card.language}</span>}
+                      {ownerLabels?.[card.id] ? <span className="text-sky-300 shrink-0">· von {ownerLabels[card.id]}</span> : null}
                       {owned?.[card.id] ? <span className="text-emerald-400 shrink-0">· ✓ hast du {owned[card.id]}×</span> : null}
                       {deckUses[card.id]?.length ? (
                         <span className="text-indigo-300 truncate" title={deckUses[card.id].map((u) => u.deckName).join(", ")}>
@@ -305,6 +309,7 @@ export function CardGrid({
                 <QuantityBadge count={card.quantity} />
                 {deckUses[card.id]?.length ? <DeckBadge uses={deckUses[card.id]} /> : null}
                 {owned?.[card.id] ? <OwnedBadge count={owned[card.id]} /> : null}
+                {ownerLabels?.[card.id] ? <OwnerBadge name={ownerLabels[card.id]} shifted={selectMode} /> : null}
               </span>
               {selectMode && (
                 <span
@@ -409,7 +414,7 @@ export function CardGrid({
           ))}
         </div>
       )
-  ), [shown, groupBy, view, selectMode, selected, deckUses, owned]);
+  ), [shown, groupBy, view, selectMode, selected, deckUses, owned, ownerLabels]);
 
   if (!local.length) {
     return (
@@ -853,6 +858,18 @@ function PriceTile({ label, value, active }: { label: string; value: number | nu
 }
 
 /** Kleines Deck-Abzeichen auf der Kachel: in wie vielen Decks die Karte steckt. */
+/** Wem gehört der Eintrag (Sammlungen aller Freunde); in der Mehrfachauswahl rechts neben dem Auswahlkreis */
+function OwnerBadge({ name, shifted }: { name: string; shifted: boolean }) {
+  return (
+    <span
+      className={`absolute top-1.5 ${shifted ? "left-9" : "left-1.5"} max-w-[55%] truncate rounded-md bg-sky-600/90 px-1.5 py-0.5 text-[10px] font-semibold text-white ring-1 ring-white/20`}
+      title={`Gehört ${name}`}
+    >
+      {name}
+    </span>
+  );
+}
+
 function OwnedBadge({ count }: { count: number }) {
   const title = `Hast du selbst: ${count}×`;
   return (

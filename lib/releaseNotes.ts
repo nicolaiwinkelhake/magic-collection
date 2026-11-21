@@ -22,6 +22,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-21",
+    date: "2026-11-21",
+    title: "In allen Freunde-Sammlungen suchen",
+    items: [
+      {
+        icon: "👥",
+        title: "Alle Freunde auf einmal",
+        text: "Unter „Geteilt“ gibt es jetzt den Reiter „Alle Freunde“: Du durchsuchst und filterst die Sammlungen aller Freunde zusammen. An jeder Karte steht, wem sie gehört.",
+        href: "/shared",
+      },
+      {
+        icon: "🔁",
+        title: "Trades teilen sich automatisch auf",
+        text: "Wählst du Karten von mehreren Freunden, entsteht für jeden Freund ein eigener Trade. Du schickst sie einzeln ab und gibst jeweils an, was du dafür gibst.",
+        href: "/shared",
+      },
+    ],
+  },
+  {
     id: "2026-11-20c",
     date: "2026-11-20",
     title: "Trade direkt aus der Wunschliste",

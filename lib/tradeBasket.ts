@@ -28,6 +28,17 @@ export function addToBasket(basket: Basket, cards: BasketCard[]): Basket {
   return next;
 }
 
+/** Karten nach Besitzer trennen: aus einer Auswahl über mehrere Freunde wird je Freund ein eigener Trade. */
+export function groupByOwner<T extends { user_id: string }>(cards: T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const c of cards) {
+    const list = out.get(c.user_id);
+    if (list) list.push(c);
+    else out.set(c.user_id, [c]);
+  }
+  return out;
+}
+
 export function setBasketQty(basket: Basket, id: string, qty: number): Basket {
   if (qty <= 0) return basket.filter((b) => b.card.id !== id);
   return basket.map((b) => (b.card.id === id ? { ...b, qty: clamp(qty, b.card.quantity) } : b));
