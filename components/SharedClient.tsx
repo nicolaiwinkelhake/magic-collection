@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { TradeComposer } from "@/components/TradeComposer";
 import { myDeckUses, ownedFor, ownedText } from "@/lib/ownedMatch";
 import { useMyCollection } from "@/lib/useMyCollection";
-import { addToBasket, basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type Basket } from "@/lib/tradeBasket";
+import { addToBasket, basketCount, basketValue, groupByOwner, loadDrafts, saveDrafts, withDraft, type Basket } from "@/lib/tradeBasket";
 
 // Geteilte Sammlungen von Freunden – gleiche Darstellung wie die eigene
 // Sammlung (Wert-Kopf, Filter, Sortieren/Gruppieren, Liste/Raster/Details,
@@ -23,9 +23,11 @@ import { addToBasket, basketCount, basketValue, loadDrafts, saveDrafts, withDraf
 type Owner = { owner_id: string; owner_email: string };
 
 const LAST_KEY = "shared-owner";
+/** "Alle Freunde": die geteilten Sammlungen aller Freunde auf einmal durchsuchen */
+const ALL = "*";
 const displayName = (email: string) => email.split("@")[0];
 
-export function SharedClient({ owners }: { owners: Owner[] }) {
+export function SharedClient({ owners, notSharing = [] }: { owners: Owner[]; notSharing?: string[] }) {
   const supabase = useMemo(() => createClient(), []);
   const [selected, setSelected] = useState<string>("");
   const [cards, setCards] = useState<Card[]>([]);
@@ -36,17 +38,26 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
   // Wird im Browser gemerkt, damit der Korb beim Seitenwechsel nicht verloren
   // geht; die Trades-Seite zeigt ihn als angefangenen Trade an.
   const [baskets, setBaskets] = useState<Record<string, Basket>>({});
-  const [composerOpen, setComposerOpen] = useState(false);
+  // Für welchen Freund ist der Trade-Dialog offen?
+  const [composerFor, setComposerFor] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const basket = baskets[selected] ?? [];
-  const setBasket = (b: Basket) => {
-    setBaskets((all) => ({ ...all, [selected]: b }));
-    const o = owners.find((x) => x.owner_id === selected);
-    if (o) saveDrafts(withDraft(loadDrafts(), selected, displayName(o.owner_email), b, new Date().toISOString()));
+  const basketOf = (ownerId: string): Basket => baskets[ownerId] ?? [];
+  const setBasketFor = (ownerId: string, b: Basket) => {
+    setBaskets((all) => ({ ...all, [ownerId]: b }));
+    const o = owners.find((x) => x.owner_id === ownerId);
+    if (o) saveDrafts(withDraft(loadDrafts(), ownerId, displayName(o.owner_email), b, new Date().toISOString()));
   };
+  // Karten kommen in den Trade-Korb ihres Besitzers: Aus der Suche über alle
+  // Freunde entstehen so automatisch getrennte Trades je Person.
   function addCards(list: Card[]) {
-    setBasket(addToBasket(basket, list));
-    setToast(list.length === 1 ? `„${list[0].name}“ zum Trade hinzugefügt` : `${list.length} Karten zum Trade hinzugefügt`);
+    const byOwner = groupByOwner(list);
+    for (const [ownerId, cs] of byOwner) setBasketFor(ownerId, addToBasket(basketOf(ownerId), cs));
+    if (byOwner.size <= 1) {
+      setToast(list.length === 1 ? `„${list[0].name}“ zum Trade hinzugefügt` : `${list.length} Karten zum Trade hinzugefügt`);
+    } else {
+      const parts = Array.from(byOwner, ([id, cs]) => `${displayName(owners.find((o) => o.owner_id === id)?.owner_email ?? "?")} ${cs.length}`);
+      setToast(`${list.length} Karten auf ${byOwner.size} Trades verteilt (${parts.join(", ")})`);
+    }
   }
   useEffect(() => {
     if (!toast) return;
@@ -67,11 +78,18 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
     setError(null);
     setCards([]);
     // Seitenweise: auch RPC-Ergebnisse kappt Supabase bei 1000 Zeilen.
-    const data = await selectAll<Card>(() =>
-      supabase.rpc("shared_collection", { p_owner: ownerId }).order("name").order("id"),
-    ).catch(() => null);
-    if (data) setCards(data);
-    else setError("Sammlung konnte nicht geladen werden.");
+    const fetchOne = (id: string) =>
+      selectAll<Card>(() => supabase.rpc("shared_collection", { p_owner: id }).order("name").order("id")).catch(() => null);
+    if (ownerId === ALL) {
+      const lists = await Promise.all(owners.map((o) => fetchOne(o.owner_id)));
+      const failed = owners.filter((_, i) => !lists[i]).map((o) => displayName(o.owner_email));
+      setCards(lists.flatMap((l) => l ?? []));
+      if (failed.length) setError(`Nicht geladen: ${failed.join(", ")}. Bitte später erneut versuchen.`);
+    } else {
+      const data = await fetchOne(ownerId);
+      if (data) setCards(data);
+      else setError("Sammlung konnte nicht geladen werden.");
+    }
     setLoading(false);
   }
 
@@ -95,9 +113,10 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
       // ignorieren
     }
     const fromTrade = owners.find((o) => o.owner_id === wanted)?.owner_id;
-    const pick = fromTrade ?? owners.find((o) => o.owner_id === last)?.owner_id ?? (owners.length === 1 ? owners[0].owner_id : "");
+    const pick =
+      fromTrade ?? (last === ALL && owners.length > 1 ? ALL : owners.find((o) => o.owner_id === last)?.owner_id) ?? (owners.length === 1 ? owners[0].owner_id : "");
     if (pick) void load(pick);
-    if (fromTrade && drafts[fromTrade]) setComposerOpen(true);
+    if (fromTrade && drafts[fromTrade]) setComposerFor(fromTrade);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,6 +144,16 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
   const value = useMemo(() => totalValue(filtered), [filtered]);
   const count = (list: Card[]) => list.reduce((s, c) => s + (c.quantity ?? 1), 0);
   const owner = owners.find((o) => o.owner_id === selected);
+  const allMode = selected === ALL;
+  // je Eintrag: wem er gehört (nur in der Ansicht "Alle Freunde" gezeigt)
+  const ownerLabels = useMemo(() => {
+    if (!allMode) return undefined;
+    const names = new Map(owners.map((o) => [o.owner_id, displayName(o.owner_email)]));
+    return Object.fromEntries(cards.map((c) => [c.id, names.get(c.user_id) ?? "?"]));
+  }, [allMode, cards, owners]);
+  // Trades, die gerade vorbereitet sind: in "Alle Freunde" alle, sonst nur der des angesehenen Freundes
+  const barOwners = (allMode ? owners : owner ? [owner] : []).filter((o) => basketOf(o.owner_id).length > 0);
+  const composerOwner = owners.find((o) => o.owner_id === composerFor) ?? null;
 
   if (!owners.length) {
     return (
@@ -142,6 +171,16 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
       <PageHeader title="Geteilt" subtitle="Sammlungen, die Freunde mit dir teilen" />
       {/* Wessen Sammlung? */}
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Geteilte Sammlungen">
+        {owners.length > 1 && (
+          <button
+            role="tab"
+            aria-selected={allMode}
+            onClick={() => !allMode && void load(ALL)}
+            className={`chip h-10 ${allMode ? "chip-active" : ""}`}
+          >
+            <span aria-hidden>👥</span> Alle Freunde
+          </button>
+        )}
         {owners.map((o) => {
           const on = o.owner_id === selected;
           return (
@@ -170,7 +209,7 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
           <header className="relative isolate overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/25 via-zinc-900/80 to-fuchsia-500/10 p-5 shadow-card">
             <span className="pointer-events-none absolute -z-10 -right-16 -top-20 h-56 w-56 rounded-full bg-indigo-500/25 blur-3xl" aria-hidden />
             <h1 className="text-xs font-semibold uppercase tracking-[0.12em] text-indigo-200/80 truncate">
-              Sammlung von {owner ? displayName(owner.owner_email) : ""}
+              {allMode ? `Alle Freunde (${owners.length})` : `Sammlung von ${owner ? displayName(owner.owner_email) : ""}`}
               <span className="ml-2 normal-case tracking-normal font-normal text-zinc-400">· nur Ansicht</span>
             </h1>
             <p className="mt-1 text-[2.4rem] leading-none sm:text-5xl font-bold tracking-tight tabular-nums text-gradient">
@@ -188,6 +227,11 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
           </header>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
+          {allMode && notSharing.length > 0 && (
+            <p className="text-xs text-zinc-500">
+              Nicht dabei: {notSharing.join(", ")} – {notSharing.length === 1 ? "hat" : "haben"} die Sammlung noch nicht für dich freigegeben.
+            </p>
+          )}
 
           {loading ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-3" aria-label="Lade Sammlung">
@@ -237,13 +281,19 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
                 readOnly
                 owned={ownedCounts}
                 deckUses={deckUses}
+                ownerLabels={ownerLabels}
                 selectAction={{ label: "Zum Trade", onRun: addCards }}
                 detailActions={(card) => {
-                  const inBasket = basket.find((b) => b.card.id === card.id)?.qty ?? 0;
+                  const inBasket = basketOf(card.user_id).find((b) => b.card.id === card.id)?.qty ?? 0;
                   const full = inBasket >= card.quantity;
                   const mine = own ? ownedFor(own, card) : null;
                   return (
                     <>
+                    {ownerLabels && (
+                      <p className="w-full rounded-xl px-3 py-2 text-sm bg-sky-500/10 border border-sky-400/25 text-sky-200">
+                        Gehört {ownerLabels[card.id]} · {card.quantity}× · Trade geht an {ownerLabels[card.id]}
+                      </p>
+                    )}
                     {mine && (
                       <p className={`w-full rounded-xl px-3 py-2 text-sm ${mine.any ? "bg-emerald-500/10 border border-emerald-400/25 text-emerald-200" : "bg-white/[0.04] border border-white/10 text-zinc-400"}`}>
                         {mine.any ? "✓ " : ""}{ownedText(mine)}
@@ -260,38 +310,64 @@ export function SharedClient({ owners }: { owners: Owner[] }) {
           )}
         </>
       )}
-      {/* Trade-Leiste: was schon für den Trade gewählt ist */}
-      {owner && basket.length > 0 && !composerOpen && (
+      {/* Trade-Leiste: was schon für den Trade gewählt ist – je Freund ein eigener Trade */}
+      {barOwners.length === 1 && composerFor === null && (
         <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-40 mx-auto max-w-md animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]">
           <button
-            onClick={() => setComposerOpen(true)}
+            onClick={() => setComposerFor(barOwners[0].owner_id)}
             className="press w-full flex items-center gap-3 rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-600 px-4 py-3 text-left shadow-glow ring-1 ring-inset ring-white/20"
           >
             <span className="text-xl" aria-hidden>
               🔁
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold truncate">Trade mit {displayName(owner.owner_email)}</span>
+              <span className="block text-sm font-semibold truncate">Trade mit {displayName(barOwners[0].owner_email)}</span>
               <span className="block text-xs text-white/80 tabular-nums">
-                {basketCount(basket)} {basketCount(basket) === 1 ? "Karte" : "Karten"} · {formatEur(basketValue(basket))}
+                {basketCount(basketOf(barOwners[0].owner_id))} {basketCount(basketOf(barOwners[0].owner_id)) === 1 ? "Karte" : "Karten"} · {formatEur(basketValue(basketOf(barOwners[0].owner_id)))}
               </span>
             </span>
             <span className="text-sm font-semibold">Weiter ›</span>
           </button>
         </div>
       )}
+      {barOwners.length > 1 && composerFor === null && (
+        <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-40 mx-auto max-w-md rounded-2xl bg-zinc-900/95 backdrop-blur ring-1 ring-inset ring-white/15 shadow-glow p-2 space-y-1.5 animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]">
+          <p className="px-2 pt-1 text-xs text-zinc-300">
+            🔁 Auf {barOwners.length} Trades verteilt – je Freund einzeln abschicken
+          </p>
+          {barOwners.map((o) => {
+            const b = basketOf(o.owner_id);
+            return (
+              <button
+                key={o.owner_id}
+                onClick={() => setComposerFor(o.owner_id)}
+                className="press w-full flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-fuchsia-600 px-3 py-2 text-left ring-1 ring-inset ring-white/20"
+              >
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{displayName(o.owner_email)}</span>
+                <span className="text-xs text-white/85 tabular-nums whitespace-nowrap">
+                  {basketCount(b)} {basketCount(b) === 1 ? "Karte" : "Karten"} · {formatEur(basketValue(b))}
+                </span>
+                <span className="text-sm font-semibold">›</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {toast && (
-        <div className="fixed inset-x-0 bottom-[calc(10rem+env(safe-area-inset-bottom))] lg:bottom-24 z-[80] flex justify-center px-4 pointer-events-none" role="status">
+        <div
+          className={`fixed inset-x-0 ${barOwners.length > 1 ? "bottom-[calc(15rem+env(safe-area-inset-bottom))] lg:bottom-52" : "bottom-[calc(10rem+env(safe-area-inset-bottom))] lg:bottom-24"} z-[80] flex justify-center px-4 pointer-events-none`}
+          role="status"
+        >
           <span className="rounded-full bg-zinc-800 border border-white/10 px-4 py-2 text-sm shadow-lg animate-fade-up">{toast}</span>
         </div>
       )}
-      {composerOpen && owner && (
+      {composerOwner && (
         <TradeComposer
-          partner={{ id: owner.owner_id, name: displayName(owner.owner_email) }}
-          receive={basket}
-          onReceiveChange={setBasket}
-          onClose={() => setComposerOpen(false)}
-          onSent={() => setBasket([])}
+          partner={{ id: composerOwner.owner_id, name: displayName(composerOwner.owner_email) }}
+          receive={basketOf(composerOwner.owner_id)}
+          onReceiveChange={(b) => setBasketFor(composerOwner.owner_id, b)}
+          onClose={() => setComposerFor(null)}
+          onSent={() => setBasketFor(composerOwner.owner_id, [])}
         />
       )}
     </main>

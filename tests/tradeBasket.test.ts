@@ -56,3 +56,20 @@ describe("angefangene Trades", () => {
     expect(parseDrafts(JSON.stringify(ok))).toEqual(ok);
   });
 });
+
+import { groupByOwner } from "@/lib/tradeBasket";
+
+describe("Trades auf Freunde aufteilen", () => {
+  const c = (id: string, user_id: string) => ({ id, user_id });
+  it("trennt Karten nach Besitzer und behält die Reihenfolge", () => {
+    const g = groupByOwner([c("1", "nils"), c("2", "rene"), c("3", "nils"), c("4", "rene"), c("5", "jana")]);
+    expect(Array.from(g.keys())).toEqual(["nils", "rene", "jana"]);
+    expect(g.get("nils")!.map((x) => x.id)).toEqual(["1", "3"]);
+    expect(g.get("rene")!.map((x) => x.id)).toEqual(["2", "4"]);
+    expect(g.get("jana")!.map((x) => x.id)).toEqual(["5"]);
+  });
+  it("ein Besitzer ergibt einen Trade, leer ergibt keinen", () => {
+    expect(groupByOwner([c("1", "nils"), c("2", "nils")]).size).toBe(1);
+    expect(groupByOwner([]).size).toBe(0);
+  });
+});
