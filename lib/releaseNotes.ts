@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-24b",
+    date: "2026-11-24",
+    title: "Farbfilter: genau diese Farben",
+    items: [
+      {
+        icon: "🎨",
+        title: "Blau heißt jetzt nur blau",
+        text: "Der Farbfilter zeigt in Sammlung und Katalog genau die gewählten Farben: Blau nur einfarbig blaue Karten, Blau + Weiß nur blau-weiße.",
+        href: "/catalog",
+      },
+    ],
+  },
+  {
     id: "2026-11-24",
     date: "2026-11-24",
     title: "Neu: der Katalog",

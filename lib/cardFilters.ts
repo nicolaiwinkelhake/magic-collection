@@ -51,9 +51,10 @@ export function filterAndSortCards<T extends FilterableCard>(cards: T[], filters
     if (filters.rarity && card.rarity !== filters.rarity) return false;
     if (filters.set && card.set_code !== filters.set) return false;
     if (type && !card.type_line?.toLowerCase().includes(type)) return false;
+    // Farben: genau die gewählten (Blau = nur einfarbig blau; Blau + Weiß = nur blau-weiß)
     if (filters.colors.length) {
-      const cardColors = card.colors ?? [];
-      if (!filters.colors.every((c) => cardColors.includes(c))) return false;
+      const cardColors = new Set(card.colors ?? []);
+      if (cardColors.size !== filters.colors.length || !filters.colors.every((c) => cardColors.has(c))) return false;
     }
     return true;
   });
