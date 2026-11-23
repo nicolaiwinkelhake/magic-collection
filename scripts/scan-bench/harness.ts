@@ -16,6 +16,7 @@ import { buildGermanIndex, type GermanIndex } from "@/lib/germanIndex";
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
 import { printMatchesRead } from "@/lib/scryfallDirect";
 import { nameSimilarity } from "@/lib/textSimilarity";
+import { matchTemplate, readRegion, readStrip, WHOLE_CARD } from "@/lib/listIcon";
 
 export type Condition = {
   /** Kartenbreite relativ zum Hilfsrahmen (1 = füllt ihn genau) */
@@ -228,6 +229,37 @@ const api = {
     return { tone, detected: !!read.quad, cornerErr, quadMs: t1 - t0, nameMs: t2 - t0, totalMs: t3 - t0, ...name, info, printCheck, fuzzy: fuzzy.find(Boolean) ?? null };
   },
   /** Versuche: Ausschnitt/Größe/Sprache frei wählbar (zum Vergleichen von Varianten) */
+  /** The-List-Symbol: Ecke im künstlichen Kamerabild mit beiden Vorlagen vergleichen (Viereck wie in der App) */
+  async listJudge(camUrl: string, listUrl: string, origUrl: string, cond: Condition, seed: number, area?: Rect) {
+    const load = async (u: string) => {
+      const im = new Image();
+      im.src = u;
+      await im.decode();
+      return im;
+    };
+    const [img, li, oi] = await Promise.all([load(camUrl), load(listUrl), load(origUrl)]);
+    const { frame } = compose(img, cond, seed);
+    const qw = 180;
+    const qh = Math.round((qw * H) / W);
+    const dq = detectQuad(grayOf(frame, 0, 0, W, H, qw, qh), qw, qh);
+    if (!dq) return null;
+    const cam = readRegion(frame, W, H, dq.map((p) => ({ x: p.x / qw, y: p.y / qh })) as Quad, area);
+    // Vorlagen wie in der App über den Bild-Proxy: optional auf eine kleinere Breite heruntergerechnet
+    const refW = Number(new URLSearchParams(location.search).get("refW") ?? 0);
+    const asRef = (im: HTMLImageElement) => {
+      if (!refW) return im;
+      const c = document.createElement("canvas");
+      c.width = refW;
+      c.height = Math.round((refW * im.naturalHeight) / im.naturalWidth);
+      c.getContext("2d")!.drawImage(im, 0, 0, c.width, c.height);
+      return c;
+    };
+    const lr = asRef(li);
+    const or = asRef(oi);
+    const list = readStrip(lr, lr.width, lr.height, WHOLE_CARD, area);
+    const orig = readStrip(or, or.width, or.height, WHOLE_CARD, area);
+    return { sList: matchTemplate(cam, list), sOrig: matchTemplate(cam, orig) };
+  },
   async experiment(url: string, cond: Condition, seed: number, o: { rect: "truth" | "detect" | "quad" | "truthquad"; quadW?: number; nameH: number; infoH: number; langs: string; nameArea?: Rect; infoArea?: Rect; pre?: string; infoPre?: string; psm?: string }) {
     const img = new Image();
     img.src = url;

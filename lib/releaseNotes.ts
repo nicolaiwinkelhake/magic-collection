@@ -22,6 +22,31 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23b",
+    date: "2026-11-23",
+    title: "Scanner: The List und keine Doppelten",
+    items: [
+      {
+        icon: "🪐",
+        title: "Nachdrucke aus „The List“",
+        text: "Karten mit dem kleinen Planeswalker-Symbol unten links erkennt der Scanner jetzt als „The List“ statt als Original. Ist er sich nicht sicher, tippst du im Stapel auf „The List?“ – oder „Doch Original?“.",
+        href: "/scan",
+      },
+      {
+        icon: "✋",
+        title: "Keine doppelten Scans",
+        text: "Liegt dieselbe Karte noch da, zählt der Scanner sie nicht ein zweites Mal. Willst du sie wirklich zweimal: einmal aufs Kamerabild tippen. Der Auslöser zählt immer.",
+        href: "/scan",
+      },
+      {
+        icon: "🎯",
+        title: "Druck korrigiert sich selbst",
+        text: "Hat der Scanner die Nummer beim ersten Bild verlesen, korrigiert er den Druck, solange die Karte noch daliegt.",
+        href: "/scan",
+      },
+    ],
+  },
+  {
     id: "2026-11-23",
     date: "2026-11-23",
     title: "Trade aus mehreren Wunschkarten",

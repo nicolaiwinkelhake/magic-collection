@@ -28,6 +28,8 @@ export type ScanItem = ScanMatch & {
   pending?: boolean;
   /** Nachladen fehlgeschlagen – bitte korrigieren */
   failed?: boolean;
+  /** Anderer Druck mit gleichem Aufdruck: „The List“ ↔ Original (ein Tipp tauscht) */
+  alt?: ScanMatch;
 };
 
 /** Eindeutiger Schlüssel je Scan */
@@ -45,6 +47,19 @@ export function addScan(
   key = scanKey(now),
 ): ScanItem[] {
   return [{ ...match, key, foil, quantity: 1, scannedAt: now, ...(camHash ? { camHash } : {}) }, ...stack];
+}
+
+/**
+ * Ist das dieselbe Karte wie der oberste Eintrag? Die Automatik zählt sie dann
+ * nicht noch einmal (Hand bewegt, Licht wechselt – die Karte liegt aber noch da),
+ * bis man aufs Kamerabild tippt. Verglichen wird der Name, nicht der Druck: Der
+ * Druck des obersten Eintrags kann noch nachgeladen oder korrigiert werden.
+ */
+export function isRepeatOfLast(stack: ScanItem[], name: string): boolean {
+  const top = stack[0];
+  if (!top || !name) return false;
+  const norm = (n: string) => n.split(" // ")[0].trim().toLowerCase();
+  return norm(top.name) === norm(name);
 }
 
 /** Letzten Scan zurücknehmen (Menge −1 bzw. entfernen). */
@@ -66,7 +81,39 @@ export function updateItem(
   key: string,
   change: { foil?: boolean; print?: ScanMatch },
 ): ScanItem[] {
-  return stack.map((s) => (s.key === key ? { ...s, ...(change.print ?? {}), key: s.key, foil: change.foil ?? s.foil } : s));
+  // Druck von Hand gewählt: der Vorschlag „The List / Original“ ist dann erledigt
+  return stack.map((s) =>
+    s.key === key ? { ...s, ...(change.print ?? {}), ...(change.print ? { alt: undefined } : {}), key: s.key, foil: change.foil ?? s.foil } : s,
+  );
+}
+
+/** Druckfelder eines Eintrags (ohne Menge, Foil usw.) */
+export function printOf(s: ScanMatch): ScanMatch {
+  return {
+    id: s.id,
+    name: s.name,
+    imageUrl: s.imageUrl,
+    eur: s.eur,
+    eurFoil: s.eurFoil,
+    typeLine: s.typeLine,
+    set: s.set,
+    setName: s.setName,
+    collectorNumber: s.collectorNumber,
+    exact: s.exact,
+  };
+}
+
+/**
+ * Alternativen Druck merken (The List ↔ Original). `take`: gleich übernehmen –
+ * der bisherige Druck wird dann zur Alternative.
+ */
+export function setAlternative(stack: ScanItem[], key: string, alt: ScanMatch, take: boolean): ScanItem[] {
+  return stack.map((s) => (s.key !== key ? s : take ? { ...s, ...printOf(alt), alt: printOf(s), key: s.key } : { ...s, alt: printOf(alt) }));
+}
+
+/** Druck und Alternative tauschen (ein Tipp auf „The List?“ bzw. „Doch Original?“). */
+export function swapAlternative(stack: ScanItem[], key: string): ScanItem[] {
+  return stack.map((s) => (s.key === key && s.alt ? { ...s, ...printOf(s.alt), alt: printOf(s), key: s.key } : s));
 }
 
 export function unitPrice(item: Pick<ScanItem, "foil" | "eur" | "eurFoil">): number {
