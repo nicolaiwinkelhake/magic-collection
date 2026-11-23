@@ -29,7 +29,10 @@ describe("filterAndSortCards", () => {
 
   it("sucht deutsch und englisch, filtert Farbe, Seltenheit, Typ, Set", () => {
     expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, search: "blitz" }).map((x) => x.name)).toEqual(["Lightning Bolt"]);
-    expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, colors: ["U"] }).map((x) => x.name)).toEqual(["Counterspell", "Atraxa"]);
+    // Farben: genau die gewählten – Blau zeigt keine mehrfarbigen Karten mit Blau
+    expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, colors: ["U"] }).map((x) => x.name)).toEqual(["Counterspell"]);
+    expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, colors: ["G", "B", "U", "W"] }).map((x) => x.name)).toEqual(["Atraxa"]);
+    expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, colors: ["U", "W"] })).toHaveLength(0);
     expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, rarity: "mythic" })).toHaveLength(1);
     expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, type: "creature" })[0].name).toBe("Atraxa");
     expect(filterAndSortCards(cards, { ...DEFAULT_FILTERS, set: "c21" })[0].name).toBe("Sol Ring");
