@@ -133,10 +133,18 @@ async function syncDefaults(db: SupabaseClient, started: number) {
   const now = new Date().toISOString();
   let batch: Array<{ oracle_id: string; card_id: string; updated_at: string }> = [];
   let rows = 0;
+  let overviewError: string | null = null;
   const flush = async () => {
     if (!batch.length) return;
     const { error } = await db.from("catalog_defaults").upsert(batch, { onConflict: "oracle_id" });
     if (error) throw new Error(`Standarddrucke speichern: ${error.message}`);
+    // Kartenübersicht für die Seite „Katalog“ (eine Zeile je Karte) gleich mit auffrischen –
+    // in kleinen Paketen (Zeitgrenze der Datenbank). Fehler hier stoppen den Abgleich nicht.
+    const ids = batch.map((b) => b.card_id);
+    for (let i = 0; i < ids.length; i += 250) {
+      const { error: e } = await db.rpc("catalog_oracle_refresh", { p_card_ids: ids.slice(i, i + 250) });
+      if (e) overviewError = e.message;
+    }
     batch = [];
   };
   for await (const l of streamLines(res.body, uri.endsWith(".gz"))) {
@@ -150,7 +158,8 @@ async function syncDefaults(db: SupabaseClient, started: number) {
   }
   await flush();
   await setMeta(db, "defaults", { updated_at: bulk.updated_at, done: true, rows, finished_at: new Date().toISOString() });
-  return { defaults: rows };
+  if (overviewError) await setMeta(db, "overview_error", { error: `Kartenübersicht: ${overviewError}`, finished_at: new Date().toISOString() });
+  return { defaults: rows, ...(overviewError ? { overviewError } : {}) };
 }
 
 async function syncNames(db: SupabaseClient, started: number) {

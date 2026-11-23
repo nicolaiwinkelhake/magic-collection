@@ -22,6 +22,31 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-24",
+    date: "2026-11-24",
+    title: "Neu: der Katalog",
+    items: [
+      {
+        icon: "📚",
+        title: "Alle Magic-Karten durchsuchen",
+        text: "Unter „Mehr → Katalog“ findest du über 33.000 Karten – mit denselben Filtern wie in deiner Sammlung: Farben, Seltenheit, Typ, Set, Sortieren und Gruppieren. Standardmäßig die beliebtesten zuerst.",
+        href: "/catalog",
+      },
+      {
+        icon: "🔍",
+        title: "Auch im Kartentext suchen",
+        text: "Mit „Im Text“ findest du Karten nach ihrer Beschreibung, z. B. „draw a card“ – deutsch oder englisch beim Namen.",
+        href: "/catalog",
+      },
+      {
+        icon: "🃏",
+        title: "Versionen ansehen",
+        text: "Im Kartendetail zeigt „Versionen ansehen“ alle Drucke. Wählst du einen, legt „+ Sammlung“ oder „+ Wunschliste“ genau diesen an.",
+        href: "/catalog",
+      },
+    ],
+  },
+  {
     id: "2026-11-23d",
     date: "2026-11-23",
     title: "Scanner verbessern helfen",

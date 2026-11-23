@@ -19,7 +19,7 @@ const RARITIES = [
   { value: "mythic", label: "Mythic" },
 ];
 
-export type SortKey = "name" | "cmc" | "price" | "set" | "color";
+export type SortKey = "name" | "cmc" | "price" | "set" | "color" | "popular";
 
 export type FilterState = {
   search: string;
@@ -40,10 +40,16 @@ export function Filters({
   state,
   onChange,
   sets,
+  setLabels,
+  popularSort = false,
 }: {
   state: FilterState;
   onChange: (next: FilterState) => void;
   sets: string[];
+  /** Set-Namen für die Auswahl (Kürzel → Name), z. B. im Katalog */
+  setLabels?: Record<string, string>;
+  /** zusätzliche Sortierung „Beliebt“ (EDHREC), z. B. im Katalog */
+  popularSort?: boolean;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -143,6 +149,7 @@ export function Filters({
             onChange={(e) => onChange({ ...state, sort: e.target.value as SortKey })}
             className="appearance-none h-8 rounded-full bg-white/5 border border-white/10 pl-3 pr-7 text-xs font-medium text-zinc-300 outline-none"
           >
+            {popularSort && <option value="popular">Sortieren: Beliebt</option>}
             <option value="color">Sortieren: Farbe</option>
             <option value="name">Sortieren: Name</option>
             <option value="cmc">Sortieren: Manawert</option>
@@ -193,7 +200,7 @@ export function Filters({
               <option value="">Alle Sets</option>
               {sets.map((s) => (
                 <option key={s} value={s}>
-                  {s.toUpperCase()}
+                  {setLabels?.[s] ? `${setLabels[s]} (${s.toUpperCase()})` : s.toUpperCase()}
                 </option>
               ))}
             </select>
