@@ -77,7 +77,7 @@ export function CardSearch({
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Name (Anfang reicht) oder Set + Nr., z. B. mkm 94"
+          placeholder="Name oder Set + Nr."
           aria-label="Karte suchen: Name oder Set und Nummer"
           autoComplete="off"
           className="flex-1 min-w-0 h-11 rounded-xl bg-white/5 border border-white/10 px-3 outline-none focus:border-indigo-400/70"
@@ -90,6 +90,11 @@ export function CardSearch({
           Hinzufügen
         </button>
       </form>
+      {!value.trim() && (
+        <p className="px-1 text-xs text-zinc-500">
+          Der Anfang des Namens reicht – deutsch oder englisch. Oder Set + Nummer wie auf der Karte, z. B. „mkm 94“.
+        </p>
+      )}
 
       {results.length > 0 && (
         <ul className="surface divide-y divide-white/5 overflow-hidden" aria-label="Suchergebnisse">
