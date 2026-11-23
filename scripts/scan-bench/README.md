@@ -34,3 +34,21 @@ Stand nach den Scanner-Verbesserungen (130 Karten, je Bedingung), sofort richtig
 ideal 98,5 % · typisch 93,8 % · schwer 87,7 % · fern 89,2 % · dunkel 86,9 %
 (vorher 76,2 %), schwarze Karten bei wenig Licht 76 % (vorher 41 %);
 0 falsche Karten außer einem Grenzfall in `schwer` (unverändert).
+
+## „The List“ erkennen (`listicon.mjs`)
+
+Nachdrucke aus „The List“ tragen Set-Code und Nummer des Originals plus ein
+kleines Planeswalker-Symbol unten links. `lib/listIcon.ts` vergleicht diese Ecke
+im Kamerabild mit beiden Scryfall-Vorlagen (Suche in einem etwas größeren
+Bereich, weil die Kartenkanten ungenau sein können).
+
+```bash
+# <ordner>/pairs.json: [{ name, list: { id }, orig: { id, frame } }], Bilder unter <ordner>/img/<id>.jpg
+node scripts/scan-bench/listicon.mjs <ordner> [seeds]
+# Varianten: AREA='{"x":…,"y":…,"w":…,"h":…}' (Ausschnitt), REFW=146 (Vorlagen so klein wie über /api/card-image), TAG=name
+```
+
+Stand (60 Paare, alle Bedingungen, Vorlagen 146 px, Abstand 0,15): 74 % der
+The-List-Karten sicher erkannt, 0 von 297 Originalen fälschlich als The List,
+89 % der Originale sicher bestätigt. Unsichere Fälle bleiben beim Original und
+bekommen im Scan-Stapel den Umschalter „The List?“.

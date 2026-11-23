@@ -10,6 +10,7 @@ import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, regionToCanvas } from "@/lib/
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
 import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
+import { listVerdict, readRegion, referenceStrip, type SearchRegion } from "@/lib/listIcon";
 import { loadSetPrior, setPriorIfReady } from "@/lib/setPriorClient";
 import { germanIndexIfReady, loadGermanIndex } from "@/lib/germanIndexClient";
 import { type CardHash } from "@/lib/imageHash";
@@ -38,6 +39,9 @@ import {
   unresolved,
   stackTotals,
   undoLast,
+  isRepeatOfLast,
+  setAlternative,
+  swapAlternative,
   unitPrice,
   updateItem,
   type ScanItem,
@@ -168,6 +172,12 @@ export function ScanClient({
   const [manualName, setManualName] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [stack, setStack] = useState<ScanItem[]>([]);
+  // Für die Automatik: aktueller Stapel (in laufenden Scans) und ob dieselbe Karte erneut zählen darf
+  const stackRef = useRef<ScanItem[]>([]);
+  stackRef.current = stack;
+  const repeatOkRef = useRef(false);
+  // Einträge, für die „The List“ schon geprüft wurde (nicht bei jeder Wiederholung erneut)
+  const listCheckedRef = useRef(new Set<string>());
   const [loaded, setLoaded] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   // Aktuelle Einstellungen für die laufende Automatik (ohne Neustart der Schleife)
@@ -362,7 +372,69 @@ export function ScanClient({
     return { match: null, read: names[0] ?? "" };
   }
 
+  /**
+   * „The List“: Diese Nachdrucke tragen Set-Code und Nummer des Originals (z. B. „MKM 94“).
+   * Gibt es zu Set + Nummer auch den Druck aus The List, vergleicht der Scanner die linke
+   * untere Ecke des Kamerabilds mit beiden Vorlagen. Sicher erkannt → The List übernehmen,
+   * sonst bleibt das Original und der Eintrag bekommt den Umschalter „The List?“.
+   */
+  async function checkList(key: string, match: ScanMatch, info: CardInfo | null, region: SearchRegion | null) {
+    if (!info?.set || !info.number || !match.set || match.set.toLowerCase() !== info.set.toLowerCase()) return;
+    listCheckedRef.current.add(key);
+    const same = (a: string, b: string) => a.split(" // ")[0].toLowerCase() === b.split(" // ")[0].toLowerCase();
+    try {
+      const list = await directPrint("plst", `${info.set.toUpperCase()}-${info.number}`, null, [match.name], true);
+      if (!list || !same(list.name, match.name)) return;
+      let take = false;
+      if (region) {
+        const [lt, ot] = await Promise.all([referenceStrip(list.id, list.imageUrl), referenceStrip(match.id, match.imageUrl)]);
+        if (lt && ot) {
+          const v = listVerdict(region, lt, ot);
+          scanLog(`list ${match.name} ${v.verdict} ${v.diff.toFixed(2)}`);
+          take = v.verdict === "list";
+        }
+      }
+      setStack((s) => setAlternative(s, key, list, take));
+    } catch {
+      // Zugabe – ohne sie bleibt der gelesene Druck
+    }
+  }
+
+  // Automatik: dieselbe Karte wie eben erst nach einem Tipp aufs Kamerabild erneut zählen.
+  // Die neue Lesung ist trotzdem nützlich: Sie verbessert den Druck des obersten Eintrags.
+  function blockedRepeat(name: string, auto: boolean, info: Promise<CardInfo | null> | CardInfo | null, region: SearchRegion | null): boolean {
+    if (!auto || repeatOkRef.current || !isRepeatOfLast(stackRef.current, name)) return false;
+    scanLog(`repeat_blocked ${name}`);
+    setStatus("Gleiche Karte wie eben – zum erneuten Zählen aufs Kamerabild tippen.");
+    void improveRepeat(name, info, region);
+    return true;
+  }
+
+  /**
+   * Die Karte liegt noch da und wurde erneut gelesen: War der Druck des obersten Eintrags nur
+   * geschätzt (z. B. Nummer beim ersten Bild verlesen, weil die Karte gerade hingelegt wurde),
+   * mit der neuen Lesung von Set + Nummer korrigieren – und dann „The List“ prüfen.
+   */
+  async function improveRepeat(name: string, infoIn: Promise<CardInfo | null> | CardInfo | null, region: SearchRegion | null) {
+    const top = stackRef.current[0];
+    if (!top || top.pending || top.failed || !isRepeatOfLast([top], name)) return;
+    const info = await Promise.resolve(infoIn).catch(() => null);
+    if (!info?.set || !info.number) return;
+    const cur = stackRef.current.find((x) => x.key === top.key);
+    if (!cur) return;
+    if (!cur.exact) {
+      const better = await directPrint(info.set, info.number, info.lang, [name], true).catch(() => null);
+      if (!better || better.name.split(" // ")[0].toLowerCase() !== cur.name.split(" // ")[0].toLowerCase()) return;
+      scanLog(`repeat_improved ${cur.name} ${better.set} ${better.collectorNumber}`);
+      setStack((st) => updateItem(st, cur.key, { print: better }));
+      void checkList(cur.key, better, info, region);
+    } else if (!cur.alt && !listCheckedRef.current.has(cur.key)) {
+      void checkList(cur.key, cur, info, region);
+    }
+  }
+
   function feedbackOk() {
+    repeatOkRef.current = false;
     setSuggestions([]);
     setManualName("");
     setStatus(null);
@@ -373,16 +445,16 @@ export function ScanClient({
   }
 
   // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
-  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null) {
+  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null, listRegion: SearchRegion | null = null) {
     const foil = prefsRef.current.foil;
     const key = pendingKey();
     setStack((s) => addPending(s, name, foil, Date.now(), key).stack);
     feedbackOk();
-    void finishPending(key, name, info, readNames, camHash, foil);
+    void finishPending(key, name, info, readNames, camHash, foil, listRegion);
   }
 
   // Druck/Preis nachtragen; die Infozeile (Set/Nummer) wird evtl. noch gelesen.
-  async function finishPending(key: string, name: string, infoRead: Promise<CardInfo | null> | null, readNames: string[], camHash: CardHash | null, foil: boolean) {
+  async function finishPending(key: string, name: string, infoRead: Promise<CardInfo | null> | null, readNames: string[], camHash: CardHash | null, foil: boolean, listRegion: SearchRegion | null = null) {
     const info = infoRead ? await infoRead.catch(() => null) : null;
     let match: ScanMatch | null = null;
     try {
@@ -395,6 +467,7 @@ export function ScanClient({
     scanLog(`pending_resolved ${match ? match.name : "-"}`);
     const keep = match && !match.exact && camHash ? Array.from(camHash) : undefined;
     setStack((s) => (match ? resolvePending(s, key, match, keep) : failPending(s, key)));
+    if (match) void checkList(key, match, info, listRegion);
     if (match && !match.exact && camHash) void refinePrint(match, camHash, key, info);
   }
 
@@ -402,6 +475,7 @@ export function ScanClient({
     // Fingerabdruck nur merken, wenn der Druck nicht sicher ist (spart Speicher)
     const keep = !match.exact && camHash ? Array.from(camHash) : undefined;
     const key = scanKey();
+    repeatOkRef.current = false;
     setStack((s) => addScan(s, match, foil, Date.now(), keep, key));
     setSuggestions([]);
     setManualName("");
@@ -467,6 +541,13 @@ export function ScanClient({
       // Bild der Karte festhalten (für den Bildvergleich der Drucke)
       const card = read.quad ? quadBounds(read.quad, 1, 1) : detectedRef.current?.video ?? guide.video;
       const camHash = hashOf(snap, card.x * W, card.y * H, card.w * W, card.h * H);
+      // Ecke links unten festhalten (The-List-Symbol) – das Standbild wird beim nächsten Scan überschrieben
+      let listRegion: SearchRegion | null = null;
+      try {
+        listRegion = read.quad ? readRegion(snap, W, H, read.quad) : null;
+      } catch {
+        listRegion = null;
+      }
       const { names, sure, corrected, german } = await read.name;
       scanLog(`name_done names=${JSON.stringify(names)} sure=${sure?.name ?? "-"}`);
       const dimNow = auto && lightRef.current < DIM_LEVEL;
@@ -478,7 +559,8 @@ export function ScanClient({
           scanLog(`dim_wait ${sure.name}`);
           return false;
         }
-        acceptPending(sure.name, read.info, names, camHash);
+        if (blockedRepeat(sure.name, auto, read.info, listRegion)) return true;
+        acceptPending(sure.name, read.info, names, camHash, listRegion);
         return true;
       }
       const info = await read.info;
@@ -496,8 +578,10 @@ export function ScanClient({
         for (const raw of names.slice(0, 2)) match ??= await directByName(raw, dimNow ? 0.9 : 0.8).catch(() => null);
         scanLog(`resolved ${match ? match.name : "-"}`);
         if (match) {
+          if (blockedRepeat(match.name, auto, info, listRegion)) return true;
           const scanned = accept(match, prefsRef.current.foil, camHash);
           if (!match.exact) void refinePrint(match, camHash, scanned, info);
+          else void checkList(scanned, match, info, listRegion);
           return true;
         }
         if (!german?.length) return false;
@@ -510,8 +594,10 @@ export function ScanClient({
         for (const n of german.slice(0, 2)) match ??= await resolve(n, { set: null, number: null, lang: "DE" }, false).catch(() => null);
         scanLog(`resolved_de ${match ? match.name : "-"}`);
         if (match) {
+          if (blockedRepeat(match.name, auto, info, listRegion)) return true;
           const scanned = accept(match, prefsRef.current.foil, camHash);
           if (!match.exact) void refinePrint(match, camHash, scanned, info);
+          else void checkList(scanned, match, info, listRegion);
           return true;
         }
         return false;
@@ -520,8 +606,10 @@ export function ScanClient({
       const { match, read: readName } = await resolveCandidates(tryNames, info, !auto);
       scanLog(`resolved ${match ? match.name : "-"}`);
       if (match) {
+        if (blockedRepeat(match.name, auto, info, listRegion)) return true;
         const scanned = accept(match, prefsRef.current.foil, camHash);
         if (!match.exact) void refinePrint(match, camHash, scanned, info);
+        else void checkList(scanned, match, info, listRegion);
         return true;
       }
       if (!auto) {
@@ -882,6 +970,7 @@ export function ScanClient({
       stack={stack}
       onQty={(k, q) => setStack((s) => setQuantity(s, k, q))}
       onFoil={(k, f) => setStack((s) => updateItem(s, k, { foil: f }))}
+      onSwap={(k) => setStack((s) => swapAlternative(s, k))}
       onPrints={(item) => setPrintFor(item.key)}
       onFix={(item) => {
         setStack((st) => st.filter((x) => x.key !== item.key));
@@ -1026,7 +1115,19 @@ export function ScanClient({
       {/* Vollbild-Scanner */}
       {cameraOn && (
         <div className="fixed inset-0 z-[55] bg-black flex flex-col" role="dialog" aria-modal="true" aria-label="Scanner">
-          <div ref={viewRef} className="relative flex-1 overflow-hidden">
+          <div
+            ref={viewRef}
+            className="relative flex-1 overflow-hidden"
+            onClick={(e) => {
+              // Tipp aufs Kamerabild (nicht auf Knöpfe): dieselbe Karte darf noch einmal gezählt werden
+              const control = (e.target as HTMLElement).closest("button, a, select, input, label");
+              if (control && e.currentTarget.contains(control)) return;
+              repeatOkRef.current = true;
+              watchRef.current = { ...watchRef.current, armed: true, stillCount: 0 };
+              scanLog("repeat_ok");
+              setStatus(prefsRef.current.auto ? "Okay – die Karte wird noch einmal gezählt." : null);
+            }}
+          >
             <video ref={videoRef} playsInline muted className="absolute inset-0 w-full h-full object-cover" />
 
             {guide && (() => {
@@ -1151,6 +1252,14 @@ export function ScanClient({
                     {last.exact ? "" : " · Druck geschätzt"}
                     {last.foil && <span className="text-fuchsia-300"> · Foil</span>}
                   </p>
+                  {last.alt && (
+                    <button
+                      onClick={() => setStack((st) => swapAlternative(st, last.key))}
+                      className="mt-0.5 rounded-full px-2 h-5 text-[10px] border border-sky-400/50 bg-sky-500/10 text-sky-200"
+                    >
+                      {last.set === "plst" ? "Doch Original?" : "The List?"}
+                    </button>
+                  )}
                 </div>
                 <span className="text-sm font-semibold text-emerald-400 tabular-nums">{formatEur(unitPrice(last))}</span>
                 <button
@@ -1321,6 +1430,7 @@ function StackList({
   stack,
   onQty,
   onFoil,
+  onSwap,
   onPrints,
   onFix,
   selectMode = false,
@@ -1330,6 +1440,8 @@ function StackList({
   stack: ScanItem[];
   onQty: (key: string, q: number) => void;
   onFoil: (key: string, foil: boolean) => void;
+  /** The List ↔ Original tauschen */
+  onSwap: (key: string) => void;
   onPrints: (item: ScanItem) => void;
   /** nicht gefundene Karte korrigieren */
   onFix: (item: ScanItem) => void;
@@ -1385,6 +1497,15 @@ function StackList({
               >
                 Foil
               </button>
+              {s.alt && (
+                <button
+                  onClick={() => onSwap(s.key)}
+                  className="rounded-full px-2 h-6 text-[11px] border border-sky-400/50 bg-sky-500/10 text-sky-200"
+                  title={s.set === "plst" ? "Als Originaldruck zählen" : "Nachdruck aus „The List“ (kleines Planeswalker-Symbol unten links)"}
+                >
+                  {s.set === "plst" ? "Doch Original?" : "The List?"}
+                </button>
+              )}
               <span className="text-xs text-emerald-400 tabular-nums">{formatEur(unitPrice(s))}</span>
             </div>
             </>

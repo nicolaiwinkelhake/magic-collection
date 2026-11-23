@@ -131,8 +131,15 @@ export function snapSet(read: string, sets: SetPrior | undefined): string {
 
 /** Sammlernummer aus einer Zeile: "123/280", "U 0055", "M0167". */
 function numberIn(line: string): string | null {
-  const frac = line.match(/\b0*(\d{1,4})\s*\/\s*\d{1,4}\b/);
-  if (frac) return frac[1];
+  const frac = line.match(/(?:^|[^0-9])(\d{1,5})\s*\/\s*(\d{1,4})\b/);
+  if (frac) {
+    const [num, total] = [frac[1], frac[2]];
+    // Eine Stelle zu viel und größer als die Gesamtzahl: Davor stand ein Symbol, das als
+    // Ziffer gelesen wurde (z. B. das The-List-Symbol: „4138/269“ statt „138/269“).
+    // Sondernummern über der Gesamtzahl („305/281“) haben gleich viele Stellen und bleiben.
+    if (num.length === total.length + 1 && Number(num) > Number(total)) return String(Number(num.slice(1)));
+    return String(Number(num));
+  }
   // moderne Karten: vierstellig mit führenden Nullen, davor oft die Seltenheit
   const padded = line.match(/(?:^|[^0-9])(\d{4})(?!\d)/);
   if (padded) return String(Number(padded[1]));

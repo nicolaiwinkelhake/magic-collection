@@ -86,3 +86,15 @@ describe("parseCardInfo – robuste Lesung", () => {
     expect(parseCardInfo("U 0148\nFON EN J METZ", sets).set).toBe("fdn");
   });
 });
+
+describe("Sammlernummer neben dem The-List-Symbol", () => {
+  it("Symbol als Ziffer gelesen: überzählige erste Stelle fällt weg", () => {
+    expect(parseCardInfo("4138/269 C\nM15 • EN")).toEqual({ set: "m15", number: "138", lang: "EN" });
+    expect(parseCardInfo("1032/281 U\nAFR • EN")).toEqual({ set: "afr", number: "32", lang: "EN" });
+  });
+  it("Sondernummern über der Gesamtzahl bleiben, führende Nullen fallen weg", () => {
+    expect(parseCardInfo("305/281 M\nAFR • EN")).toEqual({ set: "afr", number: "305", lang: "EN" });
+    expect(parseCardInfo("032/281 U\nAFR • EN")).toEqual({ set: "afr", number: "32", lang: "EN" });
+    expect(parseCardInfo("W032/281 U\nAFR • EN")).toEqual({ set: "afr", number: "32", lang: "EN" });
+  });
+});

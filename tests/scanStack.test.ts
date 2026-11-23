@@ -96,3 +96,47 @@ describe("sofort bestätigen (vorläufige Einträge)", () => {
     expect(resolvePending([], key, bolt)).toEqual([]);
   });
 });
+
+import { isRepeatOfLast } from "@/lib/scanStack";
+
+describe("Doppelte Scans", () => {
+  const item = (name: string) => ({ id: "x", name, imageUrl: null, eur: null, eurFoil: null, key: "k", foil: false, quantity: 1, scannedAt: 0 });
+  it("dieselbe Karte wie oben auf dem Stapel (Groß/klein, Rückseite egal)", () => {
+    expect(isRepeatOfLast([item("Sol Ring")], "sol ring")).toBe(true);
+    expect(isRepeatOfLast([item("Delver of Secrets // Insectile Aberration")], "Delver of Secrets")).toBe(true);
+  });
+  it("andere Karte, leerer Stapel, nur der oberste zählt", () => {
+    expect(isRepeatOfLast([item("Sol Ring")], "Arcane Signet")).toBe(false);
+    expect(isRepeatOfLast([], "Sol Ring")).toBe(false);
+    expect(isRepeatOfLast([item("Arcane Signet"), item("Sol Ring")], "Sol Ring")).toBe(false);
+    expect(isRepeatOfLast([item("Sol Ring")], "")).toBe(false);
+  });
+});
+
+import { setAlternative, swapAlternative, updateItem as upd } from "@/lib/scanStack";
+
+describe("The List ↔ Original", () => {
+  const orig = { id: "o", name: "Crowd's Favor", imageUrl: "o.jpg", eur: 0.1, eurFoil: null, set: "m15", collectorNumber: "138", exact: true };
+  const list = { id: "l", name: "Crowd's Favor", imageUrl: "l.jpg", eur: 0.5, eurFoil: null, set: "plst", collectorNumber: "M15-138", exact: true };
+  const base = [{ ...orig, key: "k", foil: true, quantity: 2, scannedAt: 1 }, { ...orig, key: "x", foil: false, quantity: 1, scannedAt: 0 }];
+  it("merkt die Alternative, ohne den Druck zu ändern", () => {
+    const s = setAlternative(base, "k", list, false);
+    expect(s[0]).toMatchObject({ id: "o", set: "m15", alt: { id: "l", set: "plst" }, foil: true, quantity: 2 });
+    expect(s[1].alt).toBeUndefined();
+  });
+  it("übernimmt sicher erkannte The List direkt – das Original wird zur Alternative", () => {
+    const s = setAlternative(base, "k", list, true);
+    expect(s[0]).toMatchObject({ id: "l", set: "plst", collectorNumber: "M15-138", eur: 0.5, alt: { id: "o", set: "m15" }, key: "k", foil: true, quantity: 2 });
+  });
+  it("ein Tipp tauscht hin und zurück", () => {
+    const once = swapAlternative(setAlternative(base, "k", list, false), "k");
+    expect(once[0]).toMatchObject({ id: "l", alt: { id: "o" } });
+    expect(swapAlternative(once, "k")[0]).toMatchObject({ id: "o", alt: { id: "l" } });
+    expect(swapAlternative(base, "x")).toEqual(base);
+  });
+  it("Druck von Hand gewählt: Alternative entfällt", () => {
+    const s = upd(setAlternative(base, "k", list, false), "k", { print: { ...orig, id: "z", set: "sld" } });
+    expect(s[0].alt).toBeUndefined();
+    expect(upd(setAlternative(base, "k", list, false), "k", { foil: false })[0].alt).toBeDefined();
+  });
+});
