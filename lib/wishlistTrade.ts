@@ -27,3 +27,29 @@ export function basketFromFriendCopies(rows: BasketCard[], wanted: string[]): { 
   }
   return { basket: addToBasket([], picks), missing };
 }
+
+/**
+ * Markierte Wunschkarten auf Freunde verteilen – möglichst wenige Trades:
+ * Wer die meisten der noch offenen Karten hat, bekommt sie alle; dann der
+ * Nächste mit den übrigen (bei Gleichstand alphabetisch, damit es stabil ist).
+ * `owners` = Kartenname → Freunde (nur die, mit denen ein Trade möglich ist).
+ * `unassigned` = Karten, die keiner dieser Freunde hat.
+ */
+export function assignToFriends(
+  names: string[],
+  owners: Record<string, string[]>,
+): { byFriend: Map<string, string[]>; unassigned: string[] } {
+  const open = new Set(names);
+  const unassigned = Array.from(open).filter((n) => !owners[n]?.length);
+  for (const n of unassigned) open.delete(n);
+  const byFriend = new Map<string, string[]>();
+  while (open.size) {
+    const count = new Map<string, number>();
+    for (const n of open) for (const f of new Set(owners[n])) count.set(f, (count.get(f) ?? 0) + 1);
+    const [best] = Array.from(count).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    const mine = Array.from(open).filter((n) => owners[n].includes(best));
+    byFriend.set(best, mine);
+    for (const n of mine) open.delete(n);
+  }
+  return { byFriend, unassigned };
+}

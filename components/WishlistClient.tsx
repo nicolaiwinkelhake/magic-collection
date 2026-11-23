@@ -18,8 +18,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { filterByFriend, friendCounts, friendLabel, type FriendFilter } from "@/lib/wishlistFilter";
 import { TradeComposer } from "@/components/TradeComposer";
 import { createClient } from "@/lib/supabase/client";
-import { basketFromFriendCopies } from "@/lib/wishlistTrade";
-import type { Basket, BasketCard } from "@/lib/tradeBasket";
+import { assignToFriends, basketFromFriendCopies } from "@/lib/wishlistTrade";
+import { loadDrafts, saveDrafts, withDraft, basketCount, basketValue, type Basket, type BasketCard } from "@/lib/tradeBasket";
 
 type WishItem = {
   id: string;
@@ -80,44 +80,87 @@ export function WishlistClient({
   // Trade vorschlagen: gilt für den gewählten Freund (oder den einzigen, der etwas hat)
   const tradeFriend =
     activeFriend && activeFriend !== "any" ? activeFriend : activeFriend === "any" && friends.friends.length === 1 ? friends.friends[0].email : null;
-  const [trade, setTrade] = useState<{ partner: { id: string; name: string }; basket: Basket } | null>(null);
+  // Vorbereitete Trades – je Freund einer (aus einer Auswahl über mehrere Freunde entstehen mehrere)
+  type PreparedTrade = { partner: { id: string; name: string }; basket: Basket };
+  const [trades, setTrades] = useState<PreparedTrade[]>([]);
+  const [composerFor, setComposerFor] = useState<string | null>(null);
   const [tradeBusy, setTradeBusy] = useState(false);
   const [tradeMsg, setTradeMsg] = useState<string | null>(null);
+  const composerTrade = trades.find((t) => t.partner.id === composerFor) ?? null;
+  const openTrades = trades.filter((t) => t.basket.length > 0);
 
-  // Karten eines Freundes aus seiner freigegebenen Sammlung holen und den Trade-Dialog öffnen
-  async function startTrade(friendEmail: string, names: string[]) {
-    const label = friendLabel(friendEmail);
+  // Korb ändern und als angefangenen Trade merken (erscheint unter „Trades“)
+  function setTradeBasket(t: PreparedTrade, basket: Basket) {
+    setTrades((all) => all.map((x) => (x.partner.id === t.partner.id ? { ...x, basket } : x)));
+    saveDrafts(withDraft(loadDrafts(), t.partner.id, t.partner.name, basket, new Date().toISOString()));
+  }
+
+  /**
+   * Trade(s) für Wunschkarten vorbereiten. Jede Karte geht an einen Freund, der sie in
+   * seiner freigegebenen Sammlung hat – möglichst wenige Trades. Mit `onlyFriend` nur an ihn.
+   */
+  async function startTrade(names: string[], onlyFriend?: string) {
     setTradeMsg(null);
-    if (!names.length) return;
+    const wanted = Array.from(new Set(names));
+    if (!wanted.length) return;
     setTradeBusy(true);
     try {
       const supabase = createClient();
-      const { data: owners } = await supabase.rpc("collections_shared_with_me");
-      const owner = ((owners ?? []) as Array<{ owner_id: string; owner_email: string }>).find(
-        (o) => o.owner_email.toLowerCase() === friendEmail.toLowerCase(),
-      );
-      if (!owner) {
-        setTradeMsg(`${label} hat seine Sammlung nicht mit dir geteilt. Bitte ihn, sie unter „Freunde“ für dich freizugeben – dann kannst du ihm hier einen Trade vorschlagen.`);
+      const { data } = await supabase.rpc("collections_shared_with_me");
+      const sharing = new Map(((data ?? []) as Array<{ owner_id: string; owner_email: string }>).map((o) => [o.owner_email.toLowerCase(), o]));
+      if (onlyFriend && !sharing.has(onlyFriend.toLowerCase())) {
+        setTradeMsg(`${friendLabel(onlyFriend)} hat seine Sammlung nicht mit dir geteilt. Bitte ihn, sie unter „Freunde“ für dich freizugeben – dann kannst du ihm hier einen Trade vorschlagen.`);
         return;
       }
-      const rows: BasketCard[] = [];
-      for (let i = 0; i < names.length; i += 100) {
-        const { data, error } = await (supabase
-          .rpc("shared_collection", { p_owner: owner.owner_id })
-          .select("id, name, image_url, foil, quantity, price_eur, price_eur_foil, set_code")
-          .in("name", names.slice(i, i + 100)) as unknown as PromiseLike<{ data: BasketCard[] | null; error: { message: string } | null }>);
-        if (error) throw new Error(error.message);
-        rows.push(...(data ?? []));
+      // je Karte: Freunde, mit denen ein Trade möglich ist (freigegebene Sammlung)
+      const candidates: Record<string, string[]> = {};
+      const notSharing = new Set<string>();
+      for (const n of wanted) {
+        const emails = (ownership[n] ?? []).filter((e) => !onlyFriend || e === onlyFriend);
+        candidates[n] = emails.filter((e) => sharing.has(e.toLowerCase()));
+        for (const e of emails) if (!sharing.has(e.toLowerCase())) notSharing.add(friendLabel(e));
       }
-      const { basket, missing } = basketFromFriendCopies(rows, names);
-      if (!basket.length) {
-        setTradeMsg(`${label} hat keine dieser Karten in der geteilten Sammlung.`);
-        return;
+      const { byFriend, unassigned } = assignToFriends(wanted, candidates);
+      const without = [...unassigned];
+      const prepared: PreparedTrade[] = [];
+      for (const [email, cardNames] of byFriend) {
+        const owner = sharing.get(email.toLowerCase())!;
+        const rows: BasketCard[] = [];
+        for (let i = 0; i < cardNames.length; i += 100) {
+          const { data: part, error } = await (supabase
+            .rpc("shared_collection", { p_owner: owner.owner_id })
+            .select("id, name, image_url, foil, quantity, price_eur, price_eur_foil, set_code")
+            .in("name", cardNames.slice(i, i + 100)) as unknown as PromiseLike<{ data: BasketCard[] | null; error: { message: string } | null }>);
+          if (error) throw new Error(error.message);
+          rows.push(...(part ?? []));
+        }
+        const { basket, missing } = basketFromFriendCopies(rows, cardNames);
+        without.push(...missing);
+        if (basket.length) prepared.push({ partner: { id: owner.owner_id, name: friendLabel(email) }, basket });
       }
-      if (missing.length) {
-        setTradeMsg(`Nicht in ${label}s geteilter Sammlung: ${missing.join(", ")}.`);
+
+      if (without.length) {
+        const why = notSharing.size
+          ? ` – ${Array.from(notSharing).join(", ")} ${notSharing.size === 1 ? "hat" : "haben"} die Sammlung nicht für dich freigegeben`
+          : "";
+        setTradeMsg(`${prepared.length ? "Ohne Trade" : "Kein Trade möglich"}: ${without.join(", ")}${why}.`);
       }
-      setTrade({ partner: { id: owner.owner_id, name: label }, basket });
+      if (!prepared.length) return;
+
+      // Zu bereits angefangenen Trades mit demselben Freund hinzufügen (auch aus „Geteilt“)
+      const drafts = loadDrafts();
+      const merged = prepared.map((p) => {
+        const before = trades.find((t) => t.partner.id === p.partner.id)?.basket ?? drafts[p.partner.id]?.basket ?? [];
+        const basket = [...before, ...p.basket.filter((b) => !before.some((x) => x.card.id === b.card.id))];
+        saveDrafts(withDraft(loadDrafts(), p.partner.id, p.partner.name, basket, new Date().toISOString()));
+        return { ...p, basket };
+      });
+      setTrades((all) => [...all.filter((t) => !merged.some((m) => m.partner.id === t.partner.id)), ...merged]);
+      setSelectMode(false);
+      setSelected(new Set());
+      // Nur ein Freund und alles dabei: Dialog gleich öffnen. Sonst zeigt die Leiste je
+      // Freund einen Trade – und darüber, welche Karten nicht dabei sind.
+      if (merged.length === 1 && !without.length) setComposerFor(merged[0].partner.id);
     } catch {
       setTradeMsg("Der Trade konnte nicht vorbereitet werden. Bitte versuche es erneut.");
     } finally {
@@ -252,7 +295,7 @@ export function WishlistClient({
               </button>
             ))}
           {tradeFriend && tradeNames.length > 0 && (
-            <button onClick={() => void startTrade(tradeFriend, tradeNames)} disabled={tradeBusy} className="btn-primary h-9 px-4 text-sm ml-auto">
+            <button onClick={() => void startTrade(tradeNames, tradeFriend)} disabled={tradeBusy} className="btn-primary h-9 px-4 text-sm ml-auto">
               {tradeBusy ? "Lade …" : `🔁 Trade mit ${friendLabel(tradeFriend)} (${tradeNames.length})`}
             </button>
           )}
@@ -260,11 +303,6 @@ export function WishlistClient({
       )}
       {activeFriend === "any" && friends.friends.length > 1 && (
         <p className="text-xs text-zinc-500">Wähle einen Freund, um ihm einen Trade für diese Karten vorzuschlagen.</p>
-      )}
-      {tradeMsg && (
-        <p className="text-sm text-amber-300" role="status">
-          {tradeMsg}
-        </p>
       )}
 
       <div className="flex items-center justify-between gap-3">
@@ -368,7 +406,7 @@ export function WishlistClient({
                     key={email}
                     onClick={() => {
                       setViewIndex(null);
-                      void startTrade(email, [c.name]);
+                      void startTrade([c.name], email);
                     }}
                     disabled={tradeBusy}
                     className={viewerButton.primary}
@@ -393,13 +431,48 @@ export function WishlistClient({
           }}
         />
       )}
-      {trade && (
+      {/* Vorbereitete Trades: je Freund ein eigener, einzeln abschicken */}
+      {(tradeMsg || openTrades.length > 0) && !composerTrade && !selectMode && !folderIds && viewIndex == null && (
+        <div className="fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-40 mx-auto max-w-md space-y-2 animate-[sheet_280ms_cubic-bezier(.2,.8,.2,1)]">
+          {tradeMsg && (
+            <div className="flex items-start gap-2 rounded-2xl bg-zinc-900/95 backdrop-blur ring-1 ring-inset ring-amber-400/30 px-3 py-2 text-sm text-amber-200 shadow-lg" role="status">
+              <span className="flex-1">{tradeMsg}</span>
+              <button onClick={() => setTradeMsg(null)} aria-label="Hinweis schließen" className="shrink-0 text-amber-200/80 hover:text-white">
+                ✕
+              </button>
+            </div>
+          )}
+          {openTrades.length > 0 && (
+            <div className="rounded-2xl bg-zinc-900/95 backdrop-blur ring-1 ring-inset ring-white/15 shadow-glow p-2 space-y-1.5">
+              {openTrades.length > 1 && (
+                <p className="px-2 pt-1 text-xs text-zinc-300">🔁 Auf {openTrades.length} Trades verteilt – je Freund einzeln abschicken</p>
+              )}
+              {openTrades.map((t) => (
+                <button
+                  key={t.partner.id}
+                  onClick={() => setComposerFor(t.partner.id)}
+                  className="press w-full flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-fuchsia-600 px-3 py-2.5 text-left ring-1 ring-inset ring-white/20"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                    {openTrades.length === 1 ? `🔁 Trade mit ${t.partner.name}` : t.partner.name}
+                  </span>
+                  <span className="text-xs text-white/85 tabular-nums whitespace-nowrap">
+                    {basketCount(t.basket)} {basketCount(t.basket) === 1 ? "Karte" : "Karten"} · {formatEur(basketValue(t.basket))}
+                  </span>
+                  <span className="text-sm font-semibold">›</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {composerTrade && (
         <TradeComposer
-          partner={trade.partner}
-          receive={trade.basket}
-          onReceiveChange={(b) => setTrade((t) => (t ? { ...t, basket: b } : t))}
-          onClose={() => setTrade(null)}
-          onSent={() => setTrade((t) => (t ? { ...t, basket: [] } : t))}
+          partner={composerTrade.partner}
+          receive={composerTrade.basket}
+          onReceiveChange={(b) => setTradeBasket(composerTrade, b)}
+          onClose={() => setComposerFor(null)}
+          onSent={() => setTradeBasket(composerTrade, [])}
         />
       )}
       {selectMode && (
@@ -417,7 +490,10 @@ export function WishlistClient({
             actionLabel="Entfernen"
             confirmText="{n} Karten von der Wunschliste entfernen?"
             busy={removing}
-            secondary={{ label: "Ordner", onClick: () => setFolderIds([...selected]) }}
+            secondary={[
+              { label: "Ordner", onClick: () => setFolderIds([...selected]) },
+              { label: tradeBusy ? "…" : "🔁 Trade", onClick: () => void startTrade(items.filter((i) => selected.has(i.id)).map((i) => i.name)) },
+            ]}
           />
         </>
       )}
