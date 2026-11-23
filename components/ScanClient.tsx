@@ -48,6 +48,7 @@ import {
   type ScanMatch,
 } from "@/lib/scanStack";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { CardSearch } from "@/components/CardSearch";
 
 // Scanner im Stil von Sammel-Apps:
 // - Vollbild-Kamera, Rahmen, Taschenlampe
@@ -777,6 +778,12 @@ export function ScanClient({
     }
   }
 
+  // Karte aus der Suche (Katalog) übernehmen; auf Wunsch gleich den Druck wählen
+  function pickManual(match: ScanMatch, choosePrint: boolean) {
+    const key = accept(match);
+    if (choosePrint) setPrintFor(key);
+  }
+
   async function searchManual(name: string) {
     if (name.trim().length < 3) return;
     setScanning(true);
@@ -1078,10 +1085,11 @@ export function ScanClient({
         </p>
       )}
       {!cameraOn && (
-        <ManualSearch
+        <CardSearch
           value={manualName}
           onChange={setManualName}
-          onSearch={searchManual}
+          onPick={pickManual}
+          onFallback={searchManual}
           busy={scanning}
           suggestions={suggestions}
           onSuggestion={searchManual}
@@ -1316,10 +1324,11 @@ export function ScanClient({
                     {selectButton}
                   </div>
                 </div>
-                <ManualSearch
+                <CardSearch
                   value={manualName}
                   onChange={setManualName}
-                  onSearch={searchManual}
+                  onPick={pickManual}
+                  onFallback={searchManual}
                   busy={scanning}
                   suggestions={suggestions}
                   onSuggestion={searchManual}
@@ -1370,59 +1379,6 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
     >
       {label}
     </button>
-  );
-}
-
-function ManualSearch({
-  value,
-  onChange,
-  onSearch,
-  busy,
-  suggestions,
-  onSuggestion,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSearch: (v: string) => void;
-  busy: boolean;
-  suggestions: string[];
-  onSuggestion: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSearch(value);
-        }}
-        className="flex gap-2"
-      >
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Kartenname eintippen (deutsch oder englisch)"
-          aria-label="Kartenname"
-          className="flex-1 min-w-0 h-11 rounded-xl bg-white/5 border border-white/10 px-3 outline-none focus:border-indigo-400/70"
-        />
-        <button
-          type="submit"
-          disabled={busy || value.trim().length < 3}
-          className="rounded-xl bg-white/10 hover:bg-white/15 px-4 text-sm disabled:opacity-40"
-        >
-          Hinzufügen
-        </button>
-      </form>
-      {suggestions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <span className="text-xs text-zinc-500 self-center">Meintest du:</span>
-          {suggestions.map((s) => (
-            <button key={s} onClick={() => onSuggestion(s)} className="rounded-full bg-white/10 hover:bg-white/15 px-3 py-1 text-xs">
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 

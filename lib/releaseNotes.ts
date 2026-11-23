@@ -22,6 +22,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23c",
+    date: "2026-11-23",
+    title: "Karten schneller von Hand hinzufügen",
+    items: [
+      {
+        icon: "🔎",
+        title: "Suchen beim Tippen",
+        text: "Im Scanner reicht der Anfang des Namens – deutsch oder englisch. Die Treffer erscheinen sofort mit Bild, Set-Symbol, Nummer und Preis. Ein Tipp legt die Karte in den Stapel, „Druck…“ lässt dich gleich den Druck wählen.",
+        href: "/scan",
+      },
+      {
+        icon: "🔢",
+        title: "Set + Nummer wie auf der Karte",
+        text: "„mkm 94“, „94 mkm“ oder „MKM-94“ findet genau diesen Druck – mit Bindestrich auch den aus „The List“.",
+        href: "/scan",
+      },
+    ],
+  },
+  {
     id: "2026-11-23b",
     date: "2026-11-23",
     title: "Scanner: The List und keine Doppelten",
