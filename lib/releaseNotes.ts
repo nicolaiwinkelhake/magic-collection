@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23d",
+    date: "2026-11-23",
+    title: "Scanner verbessern helfen",
+    items: [
+      {
+        icon: "🧪",
+        title: "Fehlschläge freiwillig teilen",
+        text: "Auf der Scanner-Seite gibt es den Haken „Scanner verbessern helfen“. Eingeschaltet wird bei nicht erkannten oder korrigierten Karten ein kleines Bild nur der Karte gespeichert – damit lässt sich die Erkennung an echten Fällen verbessern.",
+        href: "/scan",
+      },
+    ],
+  },
+  {
     id: "2026-11-23c",
     date: "2026-11-23",
     title: "Karten schneller von Hand hinzufügen",
