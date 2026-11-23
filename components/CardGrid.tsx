@@ -34,6 +34,7 @@ export function CardGrid({
   deckUses = {},
   owned,
   ownerLabels,
+  noStock = false,
   decks = [],
 }: {
   cards: Card[];
@@ -45,6 +46,8 @@ export function CardGrid({
   owned?: Record<string, number>;
   /** Geteilte Sammlungen aller Freunde: wem der Eintrag gehört (je Eintrag-ID) */
   ownerLabels?: Record<string, string>;
+  /** Kein Bestand (z. B. Katalog): Detail ohne Anzahl/Zustand/Bestandswert */
+  noStock?: boolean;
   groupBy?: GroupKey;
   /** nur ansehen (z. B. geteilte Sammlung eines Freundes): kein Bearbeiten */
   readOnly?: boolean;
@@ -66,6 +69,8 @@ export function CardGrid({
   const [view, setView] = useCardView(true);
   const [editing, setEditing] = useState<Card | null>(null);
   const [preview, setPreview] = useState<Card | null>(null);
+  // Ändert sich die Karte von außen (z. B. andere Version im Katalog), das offene Detail mitziehen
+  useEffect(() => setEditing((e) => (e ? local.find((c) => c.id === e.id) ?? e : e)), [local]);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [printFor, setPrintFor] = useState<Card | null>(null);
@@ -559,19 +564,21 @@ export function CardGrid({
                 </div>
 
                 {/* Preise */}
-                <div className="grid grid-cols-3 gap-2 text-center">
+                <div className={`grid ${noStock ? "grid-cols-2" : "grid-cols-3"} gap-2 text-center`}>
                   <PriceTile label="Normal" value={editing.price_eur} active={!editing.foil} />
                   <PriceTile label="Foil" value={editing.price_eur_foil} active={editing.foil} />
-                  <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-2 py-2">
-                    <p className="text-sm font-semibold tabular-nums text-emerald-400">{formatEur(cardValue(editing))}</p>
-                    <p className="text-[11px] text-zinc-400">{readOnly ? "Bestandswert" : "Dein Bestand"}</p>
-                  </div>
+                  {!noStock && (
+                    <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-2 py-2">
+                      <p className="text-sm font-semibold tabular-nums text-emerald-400">{formatEur(cardValue(editing))}</p>
+                      <p className="text-[11px] text-zinc-400">{readOnly ? "Bestandswert" : "Dein Bestand"}</p>
+                    </div>
+                  )}
                 </div>
-                {editing.condition !== "NM" && (
+                {!noStock && editing.condition !== "NM" && (
                   <p className="text-[11px] text-amber-400 -mt-2">Bestandswert zustandsbereinigt ({editing.condition}).</p>
                 )}
 
-                {readOnly ? (
+                {noStock ? null : readOnly ? (
                   <dl className="rounded-xl bg-white/5 divide-y divide-white/5 text-sm">
                     {[
                       ["Anzahl", `${editing.quantity}×`],

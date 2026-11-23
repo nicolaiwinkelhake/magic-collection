@@ -26,6 +26,7 @@ const MAIN: NavLink[] = [
 const MORE: NavLink[] = [
   { href: "/wishlist", label: "Wunschliste", icon: "star" },
   { href: "/ai-deck-generator", label: "AI Deck Generator", icon: "sparkles" },
+  { href: "/catalog", label: "Katalog", icon: "book" },
   { href: "/sets", label: "Sets", icon: "box" },
   { href: "/sell", label: "Extern verkaufen", icon: "tag" },
   { href: "/trades", label: "Trades", icon: "swap" },
@@ -332,6 +333,7 @@ type IconName =
   | "bell"
   | "star"
   | "box"
+  | "book"
   | "swap"
   | "hand"
   | "chart"
@@ -354,6 +356,7 @@ const PATHS: Record<IconName, string> = {
   sparkles: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
   star: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z",
   box: "M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8",
+  book: "M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5zM4 19.5A2.5 2.5 0 006.5 22H20v-5",
   swap: "M7 7h13l-4-4M17 17H4l4 4",
   hand: "M8 13V5.5a1.5 1.5 0 013 0V11m0-1.5v-6a1.5 1.5 0 013 0V11m0-4.5a1.5 1.5 0 013 0V14a7 7 0 01-7 7h-1a6 6 0 01-5-2.7L4 16a1.5 1.5 0 012.5-1.6L8 16",
   chart: "M4 20V4M4 20h16M8 15l4-4 3 3 5-6",
