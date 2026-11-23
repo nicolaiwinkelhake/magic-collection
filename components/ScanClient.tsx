@@ -6,7 +6,7 @@ import Image from "next/image";
 import type { Worker } from "tesseract.js";
 import { getGermanWorker, getNameWorker, NAME_PSM, terminateAll, warmUp } from "@/lib/ocrEngine";
 import { detectCard } from "@/lib/cardDetect";
-import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, regionToCanvas } from "@/lib/scanRead";
+import { DETECT_W, INFO_AREA, NAME_AREA, ocrLines, rectToQuad, regionToCanvas } from "@/lib/scanRead";
 import { bestGuess, recognizeFrame } from "@/lib/scanRecognize";
 import { buzz } from "@/lib/haptics";
 import { quadBounds } from "@/lib/cardQuad";
@@ -49,6 +49,7 @@ import {
 } from "@/lib/scanStack";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CardSearch } from "@/components/CardSearch";
+import { cardCrop, printInfo, rememberAttempt, reportScan, type Attempt, type ReportKind } from "@/lib/scanReports";
 
 // Scanner im Stil von Sammel-Apps:
 // - Vollbild-Kamera, Rahmen, Taschenlampe
@@ -77,8 +78,8 @@ const STACK_KEY = "scan-stack-v1";
 const PREFS_KEY = "scan-prefs-v1";
 
 type Target = { kind: "collection"; folderId?: string | null } | { kind: "wishlist" } | { kind: "deck"; deckId: string };
-type Prefs = { auto: boolean; foil: boolean; sound: boolean; german: boolean; target: Target };
-const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, german: false, target: { kind: "collection" } };
+type Prefs = { auto: boolean; foil: boolean; sound: boolean; german: boolean; target: Target; /** Fehlschläge zum Verbessern speichern */ learn?: boolean };
+const DEFAULT_PREFS: Prefs = { auto: true, foil: false, sound: true, german: false, target: { kind: "collection" }, learn: false };
 
 // Zeitmessung für die Optimierung: nur aktiv mit localStorage "scan-debug" = "1"
 let debugT0 = 0;
@@ -179,6 +180,15 @@ export function ScanClient({
   const repeatOkRef = useRef(false);
   // Einträge, für die „The List“ schon geprüft wurde (nicht bei jeder Wiederholung erneut)
   const listCheckedRef = useRef(new Set<string>());
+  // „Scanner verbessern“: letzter Leseversuch und Versuche je Stapel-Eintrag (nur wenn eingeschaltet)
+  const lastAttemptRef = useRef<Attempt | null>(null);
+  const attemptsRef = useRef(new Map<string, Attempt>());
+  function learnFix(kind: ReportKind, key: string, from: ScanMatch, to: ScanMatch) {
+    if (!prefsRef.current.learn) return;
+    const att = attemptsRef.current.get(key);
+    if (!att) return; // nur gescannte Karten, nicht von Hand hinzugefügte
+    void reportScan(kind, { read: att.read, scanned: printInfo(from), corrected: printInfo(to), image: att.image });
+  }
   const [loaded, setLoaded] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   // Aktuelle Einstellungen für die laufende Automatik (ohne Neustart der Schleife)
@@ -446,12 +456,13 @@ export function ScanClient({
   }
 
   // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
-  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null, listRegion: SearchRegion | null = null) {
+  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null, listRegion: SearchRegion | null = null): string {
     const foil = prefsRef.current.foil;
     const key = pendingKey();
     setStack((s) => addPending(s, name, foil, Date.now(), key).stack);
     feedbackOk();
     void finishPending(key, name, info, readNames, camHash, foil, listRegion);
+    return key;
   }
 
   // Druck/Preis nachtragen; die Infozeile (Set/Nummer) wird evtl. noch gelesen.
@@ -549,7 +560,14 @@ export function ScanClient({
       } catch {
         listRegion = null;
       }
+      // Scanner verbessern (eingeschaltet): Karte als kleines Bild merken, Lesung folgt unten
+      const attempt: Attempt | null = prefsRef.current.learn
+        ? { image: cardCrop(snap, W, H, read.quad ?? rectToQuad(card)), read: { names: [], info: null } }
+        : null;
+      lastAttemptRef.current = attempt;
+      if (attempt) void read.info.then((i) => (attempt.read.info = i)).catch(() => {});
       const { names, sure, corrected, german } = await read.name;
+      if (attempt) attempt.read.names = names;
       scanLog(`name_done names=${JSON.stringify(names)} sure=${sure?.name ?? "-"}`);
       const dimNow = auto && lightRef.current < DIM_LEVEL;
       if (sure) {
@@ -561,7 +579,8 @@ export function ScanClient({
           return false;
         }
         if (blockedRepeat(sure.name, auto, read.info, listRegion)) return true;
-        acceptPending(sure.name, read.info, names, camHash, listRegion);
+        const pk = acceptPending(sure.name, read.info, names, camHash, listRegion);
+        if (attempt) rememberAttempt(attemptsRef.current, pk, attempt);
         return true;
       }
       const info = await read.info;
@@ -581,6 +600,7 @@ export function ScanClient({
         if (match) {
           if (blockedRepeat(match.name, auto, info, listRegion)) return true;
           const scanned = accept(match, prefsRef.current.foil, camHash);
+          if (attempt) rememberAttempt(attemptsRef.current, scanned, attempt);
           if (!match.exact) void refinePrint(match, camHash, scanned, info);
           else void checkList(scanned, match, info, listRegion);
           return true;
@@ -597,6 +617,7 @@ export function ScanClient({
         if (match) {
           if (blockedRepeat(match.name, auto, info, listRegion)) return true;
           const scanned = accept(match, prefsRef.current.foil, camHash);
+          if (attempt) rememberAttempt(attemptsRef.current, scanned, attempt);
           if (!match.exact) void refinePrint(match, camHash, scanned, info);
           else void checkList(scanned, match, info, listRegion);
           return true;
@@ -609,6 +630,7 @@ export function ScanClient({
       if (match) {
         if (blockedRepeat(match.name, auto, info, listRegion)) return true;
         const scanned = accept(match, prefsRef.current.foil, camHash);
+          if (attempt) rememberAttempt(attemptsRef.current, scanned, attempt);
         if (!match.exact) void refinePrint(match, camHash, scanned, info);
         else void checkList(scanned, match, info, listRegion);
         return true;
@@ -706,6 +728,8 @@ export function ScanClient({
             // und erst nach Kartenwechsel wieder versuchen.
             misses = 0;
             watchRef.current = markScanned(watchRef.current, frame);
+            const miss = lastAttemptRef.current;
+            if (prefsRef.current.learn && miss) void reportScan("miss", { read: miss.read, image: miss.image });
             setStatus("Nicht erkannt – Karte ausrichten, Licht verbessern oder Auslöser/Namen nutzen.");
             if (prefsRef.current.sound) beep(false);
           }
@@ -977,7 +1001,11 @@ export function ScanClient({
       stack={stack}
       onQty={(k, q) => setStack((s) => setQuantity(s, k, q))}
       onFoil={(k, f) => setStack((s) => updateItem(s, k, { foil: f }))}
-      onSwap={(k) => setStack((s) => swapAlternative(s, k))}
+      onSwap={(k) => {
+        const it = stack.find((x) => x.key === k);
+        if (it?.alt) learnFix("list_swap", k, it, it.alt);
+        setStack((s) => swapAlternative(s, k));
+      }}
       onPrints={(item) => setPrintFor(item.key)}
       onFix={(item) => {
         setStack((st) => st.filter((x) => x.key !== item.key));
@@ -1077,6 +1105,18 @@ export function ScanClient({
         <input ref={fileRef} type="file" accept="image/*" onChange={scanFromFile} className="hidden" disabled={scanning} />
       </label>
       {cameraError && <p className="text-sm text-amber-400">{cameraError}</p>}
+      <label className="flex items-start gap-2.5 text-xs text-zinc-400">
+        <input
+          type="checkbox"
+          checked={!!prefs.learn}
+          onChange={(e) => setPrefs((p) => ({ ...p, learn: e.target.checked }))}
+          className="mt-0.5 accent-indigo-500"
+        />
+        <span>
+          <span className="text-zinc-300">Scanner verbessern helfen:</span> Wird eine Karte nicht erkannt oder korrigierst du den Druck, wird ein kleines Bild nur
+          der Karte mit dem Gelesenen gespeichert. So lässt sich die Erkennung an echten Fällen verbessern.
+        </span>
+      </label>
 
 
       {!cameraOn && status && (
@@ -1262,7 +1302,10 @@ export function ScanClient({
                   </p>
                   {last.alt && (
                     <button
-                      onClick={() => setStack((st) => swapAlternative(st, last.key))}
+                      onClick={() => {
+                        if (last.alt) learnFix("list_swap", last.key, last, last.alt);
+                        setStack((st) => swapAlternative(st, last.key));
+                      }}
                       className="mt-0.5 rounded-full px-2 h-5 text-[10px] border border-sky-400/50 bg-sky-500/10 text-sky-200"
                     >
                       {last.set === "plst" ? "Doch Original?" : "The List?"}
@@ -1358,6 +1401,8 @@ export function ScanClient({
             return h ? Uint8Array.from(h) : undefined;
           })()}
           onPick={(p) => {
+            const item = stack.find((x) => x.key === printFor);
+            if (item && p.id !== item.id) learnFix("print_fix", printFor, item, p);
             setStack((s) => updateItem(s, printFor, { print: p }));
             setPrintFor(null);
           }}
