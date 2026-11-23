@@ -32,3 +32,33 @@ describe("Wunschliste: Trade-Korb", () => {
     expect(basketFromFriendCopies([card("a", "Sol Ring")], ["Sol Ring", "Sol Ring"]).basket).toHaveLength(1);
   });
 });
+
+import { assignToFriends } from "@/lib/wishlistTrade";
+
+describe("Wunschliste: Karten auf Freunde verteilen", () => {
+  it("jede Karte geht an den einzigen Besitzer", () => {
+    const r = assignToFriends(["A", "B"], { A: ["nils"], B: ["rene"] });
+    expect(Object.fromEntries(r.byFriend)).toEqual({ nils: ["A"], rene: ["B"] });
+    expect(r.unassigned).toEqual([]);
+  });
+  it("möglichst wenige Trades: gemeinsame Karten gehen an den, der ohnehin die meisten hat", () => {
+    const r = assignToFriends(["A", "B", "C", "D"], { A: ["nils", "rene"], B: ["nils"], C: ["nils"], D: ["rene"] });
+    expect(Object.fromEntries(r.byFriend)).toEqual({ nils: ["A", "B", "C"], rene: ["D"] });
+  });
+  it("hat ein Freund alles, wird es ein einziger Trade", () => {
+    const r = assignToFriends(["A", "B"], { A: ["nils", "rene"], B: ["rene"] });
+    expect(Object.fromEntries(r.byFriend)).toEqual({ rene: ["A", "B"] });
+  });
+  it("Gleichstand: alphabetisch, damit das Ergebnis stabil ist", () => {
+    const r = assignToFriends(["A"], { A: ["rene", "nils"] });
+    expect(Array.from(r.byFriend.keys())).toEqual(["nils"]);
+  });
+  it("Karten ohne möglichen Freund und doppelte Namen", () => {
+    const r = assignToFriends(["A", "X", "A"], { A: ["nils"], X: [] });
+    expect(Object.fromEntries(r.byFriend)).toEqual({ nils: ["A"] });
+    expect(r.unassigned).toEqual(["X"]);
+  });
+  it("nichts gewählt", () => {
+    expect(assignToFriends([], {}).byFriend.size).toBe(0);
+  });
+});

@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-23",
+    date: "2026-11-23",
+    title: "Trade aus mehreren Wunschkarten",
+    items: [
+      {
+        icon: "🔁",
+        title: "Markieren und Trade anfragen",
+        text: "In der Wunschliste „Auswählen“, Karten markieren, „🔁 Trade“ – egal von welchen Freunden. Die App verteilt die Karten auf möglichst wenige Trades, je Freund einen, und sagt dir, welche Karten keiner deiner Freunde mit freigegebener Sammlung hat.",
+        href: "/wishlist",
+      },
+    ],
+  },
+  {
     id: "2026-11-21",
     date: "2026-11-21",
     title: "In allen Freunde-Sammlungen suchen",
