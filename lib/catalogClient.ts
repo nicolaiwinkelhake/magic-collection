@@ -112,6 +112,21 @@ export async function catalogPrints(name: string): Promise<CatalogPrint[]> {
   }
 }
 
+/**
+ * Karten für die Handeingabe: Name beginnt mit (englisch oder deutsch), bei
+ * längerer Eingabe auch Wortanfang – je Karte der Standarddruck, beliebte zuerst
+ * (Datenbankfunktion catalog_search, Migration 032).
+ */
+export async function catalogSearch(query: string, limit = 8): Promise<CatalogPrint[]> {
+  if (query.trim().length < 2 || !(await catalogReady())) return [];
+  try {
+    const { data } = await db().rpc("catalog_search", { p_query: query, p_limit: limit }).select(COLS);
+    return ((data ?? []) as Row[]).map((r) => rowToMatch(r, true));
+  } catch {
+    return [];
+  }
+}
+
 /** Alle Drucke eines Sets, nach Sammlernummer (Set-Vollständigkeit). */
 export async function catalogSetPrints(set: string): Promise<CatalogPrint[]> {
   if (!(await catalogReady())) return [];
