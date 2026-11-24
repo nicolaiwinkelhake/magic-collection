@@ -27,3 +27,15 @@ describe("Wunschliste exportieren", () => {
     expect(csv).toBe('Name,Quantity,Price EUR,Folder\nCultivate,1,0.45,"buff; Elfen"\n"Say ""Hi"", Bob",1,,\n');
   });
 });
+
+import { splitLines } from "@/lib/wishlistExport";
+
+describe("Cardmarket-Export", () => {
+  it("teilt in Wants-Listen à 150 Einträge", () => {
+    const text = Array.from({ length: 320 }, (_, i) => `1 Karte ${i}`).join("\n");
+    const parts = splitLines(text);
+    expect(parts.map((p) => p.split("\n").length)).toEqual([150, 150, 20]);
+    expect(parts[1].split("\n")[0]).toBe("1 Karte 150");
+    expect(splitLines("")).toEqual([]);
+  });
+});
