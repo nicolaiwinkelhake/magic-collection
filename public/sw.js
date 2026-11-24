@@ -12,7 +12,7 @@
 // Karten- und Preisdaten werden bewusst NICHT dauerhaft gecacht, da sie
 // sich ändern – die App ist online gedacht, offline gibt es einen Hinweis.
 
-const CACHE = "magic-collection-v6"; // v6: Logo Amethyst
+const CACHE = "magic-collection-v7"; // v7: Push-Mitteilungen
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/icon-512.png"];
 
@@ -71,4 +71,45 @@ self.addEventListener("fetch", (event) => {
       })
     );
   }
+});
+
+// ---- Push-Mitteilungen ----
+// Nachricht vom Server: { kind, title, body, url, tag }. Offene Fenster der
+// App bekommen zusätzlich Bescheid (Ton + Vibration in der App).
+self.addEventListener("push", (event) => {
+  let msg = {};
+  try {
+    msg = event.data ? event.data.json() : {};
+  } catch {
+    msg = { title: "Magic Collection", body: event.data ? event.data.text() : "" };
+  }
+  const title = msg.title || "Magic Collection";
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, {
+        body: msg.body || "",
+        icon: "/icon-192.png",
+        tag: msg.tag || undefined,
+        renotify: !!msg.tag,
+        vibrate: [60, 40, 120],
+        data: { url: msg.url || "/" },
+      }),
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) =>
+        list.forEach((c) => c.postMessage({ type: "push", kind: msg.kind, title, body: msg.body || "" }))
+      ),
+    ])
+  );
+});
+
+// Antippen öffnet die passende Seite – in einem offenen Fenster, sonst neu.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => new URL(c.url).origin === self.location.origin);
+      if (open) return open.focus().then((c) => (c && "navigate" in c ? c.navigate(url) : null)).catch(() => self.clients.openWindow(url));
+      return self.clients.openWindow(url);
+    })
+  );
 });

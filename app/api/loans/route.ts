@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notify } from "@/lib/push";
+import { messages, nameOf } from "@/lib/pushMessages";
 
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -34,6 +36,7 @@ export async function POST(request: Request) {
     note: note?.trim() || null,
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (borrowerId && borrowerId !== user.id) await notify([borrowerId], messages.loan(nameOf(user.email), cardName.trim()));
   return NextResponse.json({ ok: true });
 }
 

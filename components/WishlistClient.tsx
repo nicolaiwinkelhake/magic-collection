@@ -20,6 +20,7 @@ import { TradeComposer } from "@/components/TradeComposer";
 import { createClient } from "@/lib/supabase/client";
 import { assignToFriends, basketFromFriendCopies } from "@/lib/wishlistTrade";
 import { loadDrafts, saveDrafts, withDraft, basketCount, basketValue, type Basket, type BasketCard } from "@/lib/tradeBasket";
+import { haptic } from "@/lib/haptics";
 
 type WishItem = {
   id: string;
@@ -238,9 +239,11 @@ export function WishlistClient({
     }).catch(() => null);
     setRemoving(false);
     if (!res?.ok) {
+      haptic("error");
       alert("Entfernen fehlgeschlagen – bitte erneut versuchen.");
       return;
     }
+    haptic("tap");
     setSelected(new Set());
     setSelectMode(false);
     router.refresh();

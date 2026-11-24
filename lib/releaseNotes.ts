@@ -22,6 +22,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-25",
+    date: "2026-11-25",
+    title: "Mitteilungen, Töne & Vibration",
+    items: [
+      {
+        icon: "🔔",
+        title: "Mitteilungen aufs Handy",
+        text: "Erfahre sofort von Trade-Anfragen, angenommenen Trades, Freundschaftsanfragen, geteilten Sammlungen und geliehenen Karten – auch wenn die App zu ist. Einschalten unter Konto → Mitteilungen & Feedback. Auf dem iPhone in der App vom Homescreen.",
+        href: "/account",
+      },
+      {
+        icon: "🎵",
+        title: "Eigene Töne und Vibration",
+        text: "Ist die App offen, hat jede Mitteilung ihren eigenen kleinen Ton. Dazu kurze Vibration beim Hinzufügen, Senden, Annehmen und bei Fehlern – beides abschaltbar.",
+        href: "/account",
+      },
+    ],
+  },
+  {
     id: "2026-11-24b",
     date: "2026-11-24",
     title: "Farbfilter: genau diese Farben",

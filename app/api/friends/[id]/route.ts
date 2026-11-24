@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notify } from "@/lib/push";
+import { messages, nameOf } from "@/lib/pushMessages";
 
 export async function POST(
   request: Request,
@@ -44,5 +46,6 @@ export async function POST(
     status: "accepted",
   });
 
+  await notify([request_row.user_id], messages.friendAccepted(nameOf(user.email)));
   return NextResponse.json({ status: "accepted" });
 }

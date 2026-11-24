@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { openRequests, uniqueFriends } from "@/lib/friends";
+import { haptic } from "@/lib/haptics";
 
 type FriendshipRow = {
   id: string;
@@ -64,10 +65,12 @@ export function FriendsClient({
     setLoading(false);
 
     if (!res.ok) {
+      haptic("error");
       setMessage(`Fehler: ${data.error}`);
       return;
     }
 
+    haptic("success");
     setMessage(
       data.status === "accepted"
         ? "Ihr seid jetzt Freunde!"
@@ -83,6 +86,7 @@ export function FriendsClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
+    haptic(action === "accept" ? "success" : "tap");
     router.refresh();
   }
 

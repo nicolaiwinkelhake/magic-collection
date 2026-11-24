@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notify } from "@/lib/push";
+import { messages, nameOf } from "@/lib/pushMessages";
 
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
       status: "accepted",
     });
 
+    await notify([friendId], messages.friendAccepted(nameOf(user.email)));
     return NextResponse.json({ status: "accepted" });
   }
 
@@ -71,5 +74,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  await notify([friendId], messages.friendRequest(nameOf(user.email)));
   return NextResponse.json({ status: "pending" });
 }

@@ -10,6 +10,7 @@ import { CardViewer, type ViewerCard } from "@/components/ui/CardViewer";
 import { myDeckUses, ownedFor, ownedText, type OwnIndex } from "@/lib/ownedMatch";
 import { useMyCollection, type MyDecks } from "@/lib/useMyCollection";
 import { basketCount, basketValue, loadDrafts, saveDrafts, withDraft, type TradeDrafts } from "@/lib/tradeBasket";
+import { haptic } from "@/lib/haptics";
 
 type TradeItem = {
   name: string;
@@ -84,10 +85,12 @@ export function TradesClient({
     setLoading(false);
 
     if (!res.ok) {
+      haptic("error");
       setMessage(`Fehler: ${data.error}`);
       return;
     }
 
+    haptic("success");
     setGive("");
     setReceive("");
     setNote("");
@@ -107,9 +110,11 @@ export function TradesClient({
     });
     const data = await res.json();
     if (!res.ok) {
+      haptic("error");
       setMessage(`Fehler: ${data.error}`);
       return;
     }
+    haptic(action === "accept" ? "success" : "tap");
     router.refresh();
   }
 

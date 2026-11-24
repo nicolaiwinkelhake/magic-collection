@@ -15,6 +15,7 @@ import {
   type Basket,
   type BasketCard,
 } from "@/lib/tradeBasket";
+import { haptic } from "@/lib/haptics";
 
 // Trade direkt aus der geteilten Sammlung zusammenstellen: links, was man
 // vom Freund bekommt (aus seiner Sammlung ausgewählt), rechts, was man aus
@@ -90,9 +91,11 @@ export function TradeComposer({
     const data = await res?.json().catch(() => null);
     setSending(false);
     if (!res?.ok) {
+      haptic("error");
       setError(data?.error ?? "Trade konnte nicht gesendet werden.");
       return;
     }
+    haptic("success");
     setSent(true);
     onSent();
   }

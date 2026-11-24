@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { haptic } from "@/lib/haptics";
 
 type Loan = {
   id: string;
@@ -37,6 +38,7 @@ export function LoansClient({ loans }: { loans: Loan[] }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cardName, borrowerName, borrowerEmail, quantity, note }),
     });
+    haptic(res.ok ? "success" : "error");
     if (res.ok) {
       setCardName("");
       setBorrowerName("");
