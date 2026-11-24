@@ -42,3 +42,14 @@ export function wishlistToCsv(items: ExportItem[], folderName: (id: string) => s
   }
   return rows.join("\n") + "\n";
 }
+
+/** Cardmarket: höchstens so viele Einträge je Wants-Liste (Cardmarket-Hilfe „Wants List“). */
+export const CARDMARKET_MAX_ENTRIES = 150;
+
+/** Text in Teile mit höchstens `max` Zeilen aufteilen (eine Wants-Liste je Teil). */
+export function splitLines(text: string, max = CARDMARKET_MAX_ENTRIES): string[] {
+  const lines = text.split("\n").filter(Boolean);
+  const parts: string[] = [];
+  for (let i = 0; i < lines.length; i += max) parts.push(lines.slice(i, i + max).join("\n"));
+  return parts;
+}

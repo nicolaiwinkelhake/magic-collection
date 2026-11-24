@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Folder } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { loadDrafts } from "@/lib/tradeBasket";
-import { selectForExport, wishlistToCsv, wishlistToText, type ExportItem } from "@/lib/wishlistExport";
+import { CARDMARKET_MAX_ENTRIES, selectForExport, splitLines, wishlistToCsv, wishlistToText, type ExportItem } from "@/lib/wishlistExport";
 import { formatEur } from "@/lib/format";
 import { haptic } from "@/lib/haptics";
 
@@ -17,7 +17,8 @@ export function WishlistExport({ items, folders, onClose }: { items: ExportItem[
   const [checked, setChecked] = useState<Set<string>>(() => new Set([...folders.map((f) => f.id), UNSORTED_KEY]));
   const [excludeTrades, setExcludeTrades] = useState(false);
   const [requested, setRequested] = useState<Set<string> | null>(null);
-  const [format, setFormat] = useState<"text" | "csv">("text");
+  const [format, setFormat] = useState<"cardmarket" | "text" | "csv">("cardmarket");
+  const [copiedPart, setCopiedPart] = useState<number | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   // Karten, die ich per Trade angefragt habe (offen) oder in einem Trade-Entwurf stehen
@@ -48,7 +49,21 @@ export function WishlistExport({ items, folders, onClose }: { items: ExportItem[
   const requestedInList = requested ? items.filter((i) => requested.has(i.name)).length : 0;
   const value = picked.reduce((s, i) => s + (i.price_eur ?? 0), 0);
   const folderName = (id: string) => folders.find((f) => f.id === id)?.name;
-  const content = () => (format === "text" ? wishlistToText(picked) : wishlistToCsv(picked, folderName));
+  const content = () => (format === "csv" ? wishlistToCsv(picked, folderName) : wishlistToText(picked));
+  // Cardmarket: höchstens 150 Einträge je Wants-Liste → in Teile aufteilen
+  const parts = format === "cardmarket" ? splitLines(wishlistToText(picked)) : [];
+  useEffect(() => setCopiedPart(null), [picked, format]);
+
+  async function copyPart(i: number) {
+    try {
+      await navigator.clipboard.writeText(parts[i]);
+      haptic("success");
+      setCopiedPart(i);
+      setMsg(null);
+    } catch {
+      setMsg("Kopieren hat nicht geklappt – nutze „Als Datei“.");
+    }
+  }
 
   function toggle(id: string) {
     setChecked((c) => {
@@ -169,15 +184,22 @@ export function WishlistExport({ items, folders, onClose }: { items: ExportItem[
         <section className="space-y-1.5">
           <span className="text-xs text-zinc-400">Format</span>
           <div className="segmented" role="group" aria-label="Format">
+            <button type="button" onClick={() => setFormat("cardmarket")} aria-pressed={format === "cardmarket"} className={`segment ${format === "cardmarket" ? "segment-active" : ""}`}>
+              Cardmarket
+            </button>
             <button type="button" onClick={() => setFormat("text")} aria-pressed={format === "text"} className={`segment ${format === "text" ? "segment-active" : ""}`}>
-              Text (1 Name)
+              Text
             </button>
             <button type="button" onClick={() => setFormat("csv")} aria-pressed={format === "csv"} className={`segment ${format === "csv" ? "segment-active" : ""}`}>
               CSV
             </button>
           </div>
           <p className="text-xs text-zinc-500">
-            {format === "text" ? "Eine Zeile je Karte – passt für Cardmarket-Wants, Moxfield, Archidekt und Co." : "Tabelle mit Name, Anzahl, Preis und Ordnern – z. B. für Excel."}
+            {format === "cardmarket"
+              ? `„1 Kartenname“ je Zeile, englische Namen. Cardmarket erlaubt höchstens ${CARDMARKET_MAX_ENTRIES} Karten je Wants-Liste – längere Listen werden aufgeteilt.`
+              : format === "text"
+                ? "„1 Kartenname“ je Zeile – z. B. für Moxfield, Archidekt und Co."
+                : "Tabelle mit Name, Anzahl, Preis und Ordnern – z. B. für Excel."}
           </p>
         </section>
 
@@ -186,10 +208,34 @@ export function WishlistExport({ items, folders, onClose }: { items: ExportItem[
         </p>
         {msg && <p className="text-sm text-emerald-300" aria-live="polite">{msg}</p>}
 
-        <div className="grid grid-cols-2 gap-2">
+        {format === "cardmarket" && picked.length > 0 && (
+          <section className="space-y-2">
+            <ol className="list-decimal pl-5 text-xs text-zinc-400 space-y-0.5">
+              <li>Bei Cardmarket: <b>Kaufen → Wants</b> (engl. „Buying → My Wants“), eine neue Liste anlegen{parts.length > 1 ? " (für jeden Teil eine eigene)" : ""}.</li>
+              <li>Die Liste öffnen, Karten unten kopieren und in das Feld für Decklisten einfügen.</li>
+              <li>Den grünen Knopf <b>„Add“</b> drücken.</li>
+            </ol>
+            <div className="grid gap-2">
+              {parts.map((p, i) => {
+                const n = p.split("\n").length;
+                const from = i * CARDMARKET_MAX_ENTRIES + 1;
+                return (
+                  <button key={i} type="button" onClick={() => void copyPart(i)} className={copiedPart === i ? "btn-secondary" : "btn-primary"}>
+                    {copiedPart === i ? "✓ Kopiert – " : "Kopieren – "}
+                    {parts.length > 1 ? `Teil ${i + 1} (Karte ${from}–${from + n - 1})` : `${n} ${n === 1 ? "Karte" : "Karten"}`}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        <div className={`grid gap-2 ${format === "cardmarket" ? "grid-cols-1" : "grid-cols-2"}`}>
+          {format !== "cardmarket" && (
           <button type="button" onClick={() => void copy()} disabled={!picked.length} className="btn-primary">
             Kopieren
           </button>
+          )}
           <button type="button" onClick={() => void save()} disabled={!picked.length} className="btn-secondary">
             Als Datei
           </button>
