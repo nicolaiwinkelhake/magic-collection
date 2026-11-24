@@ -7,7 +7,8 @@ import { formatEur } from "@/lib/format";
 import { CardViewer } from "@/components/ui/CardViewer";
 import { catalogSetPrints, type CatalogPrint } from "@/lib/catalogClient";
 import { PageHeader } from "@/components/ui/PageHeader";
-import type { UpcomingSet } from "@/lib/setsView";
+import type { SetMove, UpcomingSet } from "@/lib/setsView";
+import { formatPercent } from "@/lib/priceChange";
 
 type CardRow = {
   scryfall_id: string;
@@ -29,7 +30,36 @@ type Row = {
   cards: CardRow[];
 };
 
-export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: UpcomingSet[] }) {
+const signedEur = (v: number) => `${v > 0 ? "+" : "−"}${formatEur(Math.abs(v))}`;
+
+function MoveBadge({ move, up }: { move: SetMove; up: boolean }) {
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+        up ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300" : "border-rose-400/40 bg-rose-500/15 text-rose-300"
+      }`}
+    >
+      <span aria-hidden>{up ? "📈" : "📉"}</span>
+      <span className="truncate">{up ? "Größter Wertzuwachs" : "Größter Wertverlust"} · 7 Tage</span>
+      <span className="shrink-0 tabular-nums">
+        {signedEur(move.delta)} ({formatPercent(move.percent)})
+      </span>
+    </span>
+  );
+}
+
+export function SetsClient({
+  rows,
+  upcoming = [],
+  topUp = null,
+  topDown = null,
+}: {
+  rows: Row[];
+  upcoming?: UpcomingSet[];
+  /** Set mit dem größten Wertzuwachs bzw. -verlust der letzten 7 Tage */
+  topUp?: SetMove | null;
+  topDown?: SetMove | null;
+}) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [viewing, setViewing] = useState<{ code: string; index: number } | null>(null);
@@ -50,6 +80,38 @@ export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: Up
       <p className="text-sm text-zinc-400 -mt-2">
         Sortiert nach Vollständigkeit – das Set, das du am vollständigsten hast, steht oben. Antippen zeigt deine Karten daraus.
       </p>
+
+      {(topUp || topDown) && (
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2">
+          {[topUp && { m: topUp, up: true }, topDown && { m: topDown, up: false }]
+            .filter((x): x is { m: SetMove; up: boolean } => !!x)
+            .map(({ m, up }) => {
+              const row = rows.find((r) => r.code === m.code);
+              return (
+                <button
+                  key={m.code + up}
+                  type="button"
+                  onClick={() => {
+                    setSearch(m.code);
+                    setExpanded(m.code);
+                  }}
+                  className={`press min-w-0 text-left rounded-2xl border p-3 ${
+                    up ? "border-emerald-400/30 bg-emerald-500/10" : "border-rose-400/30 bg-rose-500/10"
+                  }`}
+                >
+                  <span className={`block text-xs font-medium ${up ? "text-emerald-300" : "text-rose-300"}`}>
+                    {up ? "📈 Größter Wertzuwachs" : "📉 Größter Wertverlust"} · 7 Tage
+                  </span>
+                  <span className="mt-1 flex items-center gap-2 min-w-0">
+                    <SetIcon src={row?.icon ?? null} code={m.code} />
+                    <span className="min-w-0 flex-1 truncate font-medium">{row?.name ?? m.code.toUpperCase()}</span>
+                    <span className={`shrink-0 text-sm font-semibold tabular-nums ${up ? "text-emerald-400" : "text-rose-400"}`}>{signedEur(m.delta)}</span>
+                  </span>
+                </button>
+              );
+            })}
+        </div>
+      )}
 
       <input
         placeholder="Set suchen…"
@@ -77,6 +139,16 @@ export function SetsClient({ rows, upcoming = [] }: { rows: Row[]; upcoming?: Up
                       <div className="min-w-0">
                         <span className="font-medium">{r.name}</span>{" "}
                         <span className="text-xs text-zinc-500 uppercase">{r.code}</span>
+                        {topUp?.code === r.code && (
+                          <span className="block mt-1">
+                            <MoveBadge move={topUp} up />
+                          </span>
+                        )}
+                        {topDown?.code === r.code && (
+                          <span className="block mt-1">
+                            <MoveBadge move={topDown} up={false} />
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
