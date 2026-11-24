@@ -35,7 +35,7 @@ const signedEur = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${formatE
 function MoverList({ title, items, tone, empty, onOpen }: { title: string; items: Mover<Card>[]; tone: "up" | "down"; empty: string; onOpen: (card: Card) => void }) {
   const color = tone === "up" ? "text-emerald-400" : "text-rose-400";
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <h3 className={`text-sm font-semibold ${color}`}>{title}</h3>
       {items.length === 0 ? (
         <p className="text-sm text-zinc-500">{empty}</p>
@@ -186,7 +186,7 @@ export function StatsClient({
             </span>
           )}
         </div>
-        <dl className="grid grid-cols-2 gap-2 text-sm">
+        <dl className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2 text-sm [&>div]:min-w-0">
           {totalDelta !== null && (
             <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-2.5">
               <dt className="text-xs text-zinc-500">Gesamtwert {sinceLabel}</dt>
@@ -249,7 +249,7 @@ export function StatsClient({
           <CardGrid
             cards={moverCards}
             renderList={(open) => (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <MoverList title="Top 5 Wertgewinner" items={movers.gainers} tone="up" empty="Keine Karte ist in diesem Zeitraum im Preis gestiegen." onOpen={open} />
                 <MoverList title="Top 5 Wertverlierer" items={movers.losers} tone="down" empty="Keine Karte ist in diesem Zeitraum im Preis gefallen." onOpen={open} />
               </div>
