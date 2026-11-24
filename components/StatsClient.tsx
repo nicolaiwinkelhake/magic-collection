@@ -60,7 +60,6 @@ function MoverList({ title, items, tone, empty, onOpen }: { title: string; items
                 <span className="block text-xs text-zinc-500 truncate">
                   {m.set_code ? `${m.set_code.toUpperCase()} · ` : ""}
                   {formatEur(m.before)} → {formatEur(m.now)}
-                  {m.quantity > 1 ? ` · ${m.quantity}×` : ""}
                 </span>
               </span>
               <span className="shrink-0 text-right">
@@ -239,7 +238,7 @@ export function StatsClient({
         <div>
           <h2 className="font-medium">Wertsteigerung je Karte</h2>
           <p className="text-xs text-zinc-500">
-            Welche deiner Karten {rangeDef.days === 1 ? "seit gestern" : `im Zeitraum ${rangeDef.label}`} im Preis gestiegen oder gefallen sind – für deine Exemplare, Menge und Zustand eingerechnet. Antippen öffnet die Karte.
+            Welche deiner Karten {rangeDef.days === 1 ? "seit gestern" : `im Zeitraum ${rangeDef.label}`} im Preis gestiegen oder gefallen sind – Änderung je Karte. Antippen öffnet die Karte.
             {shortHistory && ` Der Preisverlauf beginnt am ${formatDate(baselineFrom[range]!)}.`}
           </p>
         </div>

@@ -53,7 +53,7 @@ describe("Gewinner & Verlierer", () => {
   });
   const baseline: Baseline = { a: [10, 30], b: [2, null], c: [5, null], d: [1, null], e: [3, null] };
 
-  it("sortiert nach Euro-Änderung der eigenen Exemplare, mit Menge und Zustand", () => {
+  it("sortiert nach Euro-Änderung je Exemplar, unabhängig von Menge und Zustand", () => {
     const { gainers, losers } = topMovers(
       [
         card("a", "Sol Ring", 12, { quantity: 2 }),
@@ -67,7 +67,7 @@ describe("Gewinner & Verlierer", () => {
       baseline,
     );
     expect(gainers.map((m) => m.name)).toEqual(["Sol Ring", "Opt"]);
-    expect(gainers[0]).toMatchObject({ quantity: 3, before: 10, now: 12, delta: 5.2 });
+    expect(gainers[0]).toMatchObject({ quantity: 3, before: 10, now: 12, delta: 2 });
     expect(Math.round(gainers[0].percent)).toBe(20);
     expect(losers.map((m) => [m.name, m.foil, m.delta])).toEqual([["Sol Ring", true, -5], ["Rift", false, -1]]);
   });
