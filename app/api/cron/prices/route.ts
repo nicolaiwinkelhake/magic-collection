@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { COLLECTION_PACE_MS, fetchCollectionWithRetry, getPrices, sleep } from "@/lib/scryfall";
 import { cardValue } from "@/lib/valuation";
-import { catalogPrices } from "@/lib/catalogLookup";
+import { catalogCardmarketIds, catalogPrices } from "@/lib/catalogLookup";
+import { applyTrendPrices, fetchPriceGuide } from "@/lib/cardmarket";
 
 export const maxDuration = 300;
 
@@ -65,7 +66,8 @@ export async function GET(request: Request) {
       new Set([...cards.map((c) => c.scryfall_id), ...deckIds.map((d) => d.scryfall_id), ...wishIds.map((w) => w.scryfall_id)].filter((x): x is string => !!x)),
     );
 
-    // 2) Preise: zuerst aus dem eigenen Katalog (täglich aus Scryfalls
+    // 2) Preise: Cardmarket-Trendpreise direkt aus Cardmarkets Preisliste
+    //    (tagesaktuell). Was dort fehlt: aus dem eigenen Katalog (täglich aus Scryfalls
     //    Gesamtdatei – derselbe Tagesstand wie die Einzelabfrage); nur was
     //    dort fehlt (oder wenn der Katalog nicht frisch ist), gebündelt bei
     //    Scryfall – im erlaubten Tempo (≈2/s), fehlgeschlagene Blöcke ein
@@ -75,6 +77,14 @@ export async function GET(request: Request) {
     for (const id of uniqueIds) {
       const p = fromCatalog.get(id.toLowerCase());
       if (p) prices.set(id, p);
+    }
+    // Cardmarket-Preisliste parallel laden; Produktnummern aus dem Katalog
+    const guidePromise = fetchPriceGuide().catch((e: unknown) => e as Error);
+    const cardmarketIds = new Map<string, number>();
+    const cmFromCatalog = await catalogCardmarketIds(uniqueIds);
+    for (const id of uniqueIds) {
+      const cm = cmFromCatalog.get(id.toLowerCase());
+      if (cm) cardmarketIds.set(id, cm);
     }
     const restIds = uniqueIds.filter((id) => !prices.has(id));
     const chunks: string[][] = [];
@@ -86,12 +96,23 @@ export async function GET(request: Request) {
       for (let i = 0; i < todo.length; i++) {
         const found = await fetchCollectionWithRetry(todo[i].map((id) => ({ id })));
         if (found === null) failed.push(todo[i]);
-        for (const card of found ?? []) prices.set(card.id, getPrices(card));
+        for (const card of found ?? []) {
+          prices.set(card.id, getPrices(card));
+          if (card.cardmarket_id && !cardmarketIds.has(card.id)) cardmarketIds.set(card.id, card.cardmarket_id);
+        }
         if (i + 1 < todo.length) await sleep(COLLECTION_PACE_MS);
       }
       if (!failed.length) break;
     }
     const scryfallFailures = failed.length;
+
+    // Trendpreise von Cardmarket drüberlegen (ohne Preisliste bleibt es beim
+    // Scryfall-Stand vom Vortag)
+    const guide = await guidePromise;
+    let fromCardmarket = 0;
+    let cardmarketError: string | null = null;
+    if (guide instanceof Error) cardmarketError = guide.message;
+    else fromCardmarket = applyTrendPrices(prices, cardmarketIds, guide.prices);
 
     // 3) Gesammelt schreiben (Preisverlauf, cards, deck_cards)
     const updates = Array.from(prices, ([id, p]) => ({ id, eur: p.eur, eur_foil: p.eurFoil }));
@@ -138,6 +159,8 @@ export async function GET(request: Request) {
       prints: uniqueIds.length,
       fromCatalog: uniqueIds.length - restIds.length,
       fromScryfall: restIds.length,
+      fromCardmarket,
+      cardmarketError,
       updatedPrints: updates.length,
       scryfallFailures,
       users: byUser.size,
