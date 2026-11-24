@@ -14,6 +14,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { formatEur, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { CardGrid } from "@/components/CardGrid";
+import type { Card } from "@/lib/types";
 import {
   STATS_RANGES,
   dayString,
@@ -22,7 +24,6 @@ import {
   topMovers,
   type Baseline,
   type Mover,
-  type MoverCard,
   type StatsRangeKey,
 } from "@/lib/priceChange";
 
@@ -31,7 +32,7 @@ type CardPoint = { captured_on: string; price_eur: number | null; price_eur_foil
 
 const signedEur = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${formatEur(Math.abs(v))}`;
 
-function MoverList({ title, items, tone, empty }: { title: string; items: Mover[]; tone: "up" | "down"; empty: string }) {
+function MoverList({ title, items, tone, empty, onOpen }: { title: string; items: Mover<Card>[]; tone: "up" | "down"; empty: string; onOpen: (card: Card) => void }) {
   const color = tone === "up" ? "text-emerald-400" : "text-rose-400";
   return (
     <div className="space-y-2">
@@ -41,7 +42,12 @@ function MoverList({ title, items, tone, empty }: { title: string; items: Mover[
       ) : (
         <ol className="space-y-1.5">
           {items.map((m, i) => (
-            <li key={`${m.scryfall_id}-${m.foil}`} className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/[0.06] p-2">
+            <li key={`${m.scryfall_id}-${m.foil}`}>
+              <button
+                type="button"
+                onClick={() => onOpen(m.card)}
+                className="press w-full text-left flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/[0.06] p-2 hover:border-white/15"
+              >
               <span className="w-4 shrink-0 text-xs text-zinc-500 text-right">{i + 1}</span>
               <span className="shrink-0 w-8 h-11 rounded overflow-hidden bg-white/5">
                 {m.image_url && <Image src={m.image_url} alt="" width={32} height={44} className="w-full h-full object-cover" />}
@@ -61,6 +67,7 @@ function MoverList({ title, items, tone, empty }: { title: string; items: Mover[
                 <span className={`block text-sm font-semibold ${color}`}>{signedEur(m.delta)}</span>
                 <span className={`block text-xs ${color} opacity-80`}>{formatPercent(m.percent)}</span>
               </span>
+              </button>
             </li>
           ))}
         </ol>
@@ -76,7 +83,7 @@ export function StatsClient({
 }: {
   totalHistory: TotalPoint[];
   cards: { scryfall_id: string; name: string }[];
-  owned: MoverCard[];
+  owned: Card[];
 }) {
   const supabase = createClient();
   const [range, setRange] = useState<StatsRangeKey>("1m");
@@ -114,6 +121,7 @@ export function StatsClient({
   const movers = useMemo(() => topMovers(owned, baselines[range]), [owned, baselines, range]);
   const change = useMemo(() => priceChange(owned, baselines[range]), [owned, baselines, range]);
   const shortHistory = baselineFrom[range] && baselineFrom[range]! > since;
+  const moverCards = useMemo(() => [...movers.gainers, ...movers.losers].map((m) => m.card), [movers]);
   const [selected, setSelected] = useState<string>(cards[0]?.scryfall_id ?? "");
   const [cardHistory, setCardHistory] = useState<CardPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,6 +153,9 @@ export function StatsClient({
   }));
 
   const latestTotal = totalHistory.at(-1)?.total_value_eur ?? null;
+  const firstInRange = chartHistory[0];
+  const totalDelta = firstInRange && latestTotal !== null && chartHistory.length >= 2 ? Number(latestTotal) - Number(firstInRange.total_value_eur) : null;
+  const sinceLabel = rangeDef.days === 1 ? "seit gestern" : `seit ${formatDate(firstInRange?.captured_on ?? since)}`;
 
   return (
     <main className="page max-w-4xl">
@@ -175,14 +186,24 @@ export function StatsClient({
             </span>
           )}
         </div>
-        {change && (
-          <p className="text-sm text-zinc-400 -mt-1">
-            Preisentwicklung {rangeDef.days === 1 ? "seit gestern" : `seit ${formatDate(baselineFrom[range] ?? since)}`}:{" "}
-            <span className={`whitespace-nowrap ${change.delta > 0 ? "text-emerald-400" : change.delta < 0 ? "text-rose-400" : "text-zinc-300"}`}>
-              {signedEur(change.delta)} ({formatPercent(change.percent)})
-            </span>
-          </p>
-        )}
+        <dl className="grid grid-cols-2 gap-2 text-sm">
+          {totalDelta !== null && (
+            <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-2.5">
+              <dt className="text-xs text-zinc-500">Gesamtwert {sinceLabel}</dt>
+              <dd className="font-semibold tabular-nums">{signedEur(totalDelta)}</dd>
+              <dd className="text-[11px] text-zinc-500">inkl. neu hinzugefügter Karten</dd>
+            </div>
+          )}
+          {change && (
+            <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-2.5">
+              <dt className="text-xs text-zinc-500">Wertsteigerung deiner Karten</dt>
+              <dd className={`font-semibold tabular-nums whitespace-nowrap ${change.delta > 0 ? "text-emerald-400" : change.delta < 0 ? "text-rose-400" : "text-zinc-300"}`}>
+                {signedEur(change.delta)} ({formatPercent(change.percent)})
+              </dd>
+              <dd className="text-[11px] text-zinc-500">nur durch Preise, ohne neue Karten</dd>
+            </div>
+          )}
+        </dl>
 
         {totalData.length < 2 ? (
           <p className="text-sm text-zinc-500">
@@ -216,19 +237,24 @@ export function StatsClient({
       {/* Gewinner & Verlierer */}
       <section className="surface p-4 space-y-4">
         <div>
-          <h2 className="font-medium">Gewinner & Verlierer</h2>
+          <h2 className="font-medium">Wertsteigerung je Karte</h2>
           <p className="text-xs text-zinc-500">
-            Deine Karten {rangeDef.days === 1 ? "seit gestern" : `im Zeitraum ${rangeDef.label}`} – dieselben Exemplare, Menge und Zustand eingerechnet.
+            Welche deiner Karten {rangeDef.days === 1 ? "seit gestern" : `im Zeitraum ${rangeDef.label}`} im Preis gestiegen oder gefallen sind – für deine Exemplare, Menge und Zustand eingerechnet. Antippen öffnet die Karte.
             {shortHistory && ` Der Preisverlauf beginnt am ${formatDate(baselineFrom[range]!)}.`}
           </p>
         </div>
         {moversLoading && !baselines[range] ? (
           <p className="text-sm text-zinc-500">Lade Preise…</p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <MoverList title="Top 5 Gewinner" items={movers.gainers} tone="up" empty="Keine Karte ist in diesem Zeitraum gestiegen." />
-            <MoverList title="Top 5 Verlierer" items={movers.losers} tone="down" empty="Keine Karte ist in diesem Zeitraum gefallen." />
-          </div>
+          <CardGrid
+            cards={moverCards}
+            renderList={(open) => (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <MoverList title="Top 5 Wertgewinner" items={movers.gainers} tone="up" empty="Keine Karte ist in diesem Zeitraum im Preis gestiegen." onOpen={open} />
+                <MoverList title="Top 5 Wertverlierer" items={movers.losers} tone="down" empty="Keine Karte ist in diesem Zeitraum im Preis gefallen." onOpen={open} />
+              </div>
+            )}
+          />
         )}
       </section>
 
