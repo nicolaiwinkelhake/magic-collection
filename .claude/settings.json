@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__github__pull_request_read",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx vitest run)",
+      "Bash(npx vitest run *)",
+      "mcp__Supabase__query_logs",
+      "mcp__Vercel__list_deployments",
+      "mcp__claude-code-remote__get_environment"
+    ]
+  }
+}
