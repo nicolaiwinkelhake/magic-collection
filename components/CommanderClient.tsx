@@ -122,6 +122,12 @@ export function CommanderClient({
   const [view, setViewState] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState<"popular" | "synergy" | "price">("popular");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // gerade hinzugefügt (Deck-ID|Name bzw. Name), damit der Knopf sofort zum Haken wird
+  const [addedToDeck, setAddedToDeck] = useState<Set<string>>(new Set());
+  const [wished, setWished] = useState<Set<string>>(new Set());
+  const targetDeckName = decks.find((d) => d.id === targetDeck)?.name ?? null;
+  const inTargetDeck = (card: ListCard) =>
+    !!targetDeck && ((targetDeckName !== null && card.inDecks.includes(targetDeckName)) || addedToDeck.has(`${targetDeck}|${card.name}`));
   useEffect(() => {
     try {
       if (localStorage.getItem("commander-view") === "list") setViewState("list");
@@ -190,6 +196,7 @@ export function CommanderClient({
       body: JSON.stringify({ names: card.name }),
     });
     setBusy(null);
+    if (res.ok) setWished((w) => new Set(w).add(card.name));
     setNotice(res.ok ? `„${card.name}“ auf die Wunschliste gesetzt.` : `Wunschliste: Fehler ${res.status}`);
   }
 
@@ -203,6 +210,7 @@ export function CommanderClient({
       body: JSON.stringify({ names: [card.name], addToCollection: false }),
     });
     setBusy(null);
+    if (res.ok) setAddedToDeck((a) => new Set(a).add(`${targetDeck}|${card.name}`));
     const deckName = decks.find((d) => d.id === targetDeck)?.name ?? "Deck";
     setNotice(res.ok ? `„${card.name}“ zu „${deckName}“ hinzugefügt.` : `Deck: Fehler ${res.status}`);
   }
@@ -487,6 +495,8 @@ export function CommanderClient({
                     }}
                     busy={busy === card.name}
                     canAddToDeck={Boolean(targetDeck)}
+                  inDeck={inTargetDeck(card)}
+                  wished={wished.has(card.name)}
                     onWishlist={() => addToWishlist(card)}
                     onDeck={() => addToDeck(card)}
                   />
@@ -504,6 +514,8 @@ export function CommanderClient({
                   }}
                   busy={busy === card.name}
                   canAddToDeck={Boolean(targetDeck)}
+                  inDeck={inTargetDeck(card)}
+                  wished={wished.has(card.name)}
                   onWishlist={() => addToWishlist(card)}
                   onDeck={() => addToDeck(card)}
                 />
@@ -619,12 +631,12 @@ export function CommanderClient({
               if (!card) return null;
               return (
                 <>
-                  {targetDeck && card.owned > 0 && (
+                  {targetDeck && card.owned > 0 && !inTargetDeck(card) && (
                     <button onClick={() => addToDeck(card)} disabled={busy === card.name} className={viewerButton.primary}>
                       + Deck
                     </button>
                   )}
-                  {card.owned === 0 && (
+                  {card.owned === 0 && !wished.has(card.name) && (
                     <button onClick={() => addToWishlist(card)} disabled={busy === card.name} className={viewerButton.primary}>
                       + Wunschliste
                     </button>
@@ -648,6 +660,8 @@ function CardLine({
   onOpen,
   busy,
   canAddToDeck,
+  inDeck,
+  wished,
   onWishlist,
   onDeck,
 }: {
@@ -656,6 +670,10 @@ function CardLine({
   onOpen: () => void;
   busy: boolean;
   canAddToDeck: boolean;
+  /** steckt schon im gewählten Deck */
+  inDeck: boolean;
+  /** gerade auf die Wunschliste gesetzt */
+  wished: boolean;
   onWishlist: () => void;
   onDeck: () => void;
 }) {
@@ -683,7 +701,11 @@ function CardLine({
           </span>
         </span>
       </button>
-      {canAddToDeck && card.owned > 0 ? (
+      {inDeck ? (
+        <span className="shrink-0 text-xs font-medium text-emerald-400">✔ im Deck</span>
+      ) : wished ? (
+        <span className="shrink-0 text-xs font-medium text-emerald-400">✔ gemerkt</span>
+      ) : canAddToDeck && card.owned > 0 ? (
         <button onClick={onDeck} disabled={busy} aria-label={`${card.name} ins Deck`} className="press shrink-0 h-9 rounded-lg px-2.5 text-xs font-medium bg-indigo-500/20 border border-indigo-400/40 text-indigo-100 disabled:opacity-50">
           ＋ Deck
         </button>
@@ -701,6 +723,8 @@ function CardTile({
   onOpen,
   busy,
   canAddToDeck,
+  inDeck,
+  wished,
   onWishlist,
   onDeck,
 }: {
@@ -708,6 +732,10 @@ function CardTile({
   onOpen: () => void;
   busy: boolean;
   canAddToDeck: boolean;
+  /** steckt schon im gewählten Deck */
+  inDeck: boolean;
+  /** gerade auf die Wunschliste gesetzt */
+  wished: boolean;
   onWishlist: () => void;
   onDeck: () => void;
 }) {
@@ -755,12 +783,14 @@ function CardTile({
         )}
         {card.groupDecks > 0 && <p className="text-zinc-400">in {card.groupDecks} Gruppen-Deck(s)</p>}
         <div className="mt-auto pt-1.5">
-          {canAddToDeck && card.owned > 0 && (
+          {inDeck && <p className="h-8 grid place-items-center rounded-lg bg-emerald-500/10 text-emerald-400 font-medium">✔ im Deck</p>}
+          {!inDeck && wished && <p className="h-8 grid place-items-center rounded-lg bg-emerald-500/10 text-emerald-400 font-medium">✔ auf der Wunschliste</p>}
+          {!inDeck && canAddToDeck && card.owned > 0 && (
             <button onClick={onDeck} disabled={busy} className="press w-full h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-100 font-medium disabled:opacity-50">
               ＋ Deck
             </button>
           )}
-          {card.owned === 0 && (
+          {!inDeck && !wished && card.owned === 0 && (
             <button onClick={onWishlist} disabled={busy} className="press w-full h-8 rounded-lg bg-white/[0.06] border border-white/10 text-zinc-200 font-medium disabled:opacity-50">
               ＋ Wunschliste
             </button>
