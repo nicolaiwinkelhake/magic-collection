@@ -85,10 +85,10 @@ function HowTo({ name, decks }: { name: string; decks: number | null }) {
             {decks ? <> – ausgewertet aus {decks.toLocaleString("de-DE")} Decks bei EDHREC</> : null}. Die Prozentzahl an jeder Karte sagt, in wie vielen dieser Decks sie steckt.
           </li>
           <li>
-            Oben kannst du ein <b>Thema</b> wählen (z. B. Tokens) – dann zeigen die Listen nur Karten aus Decks mit diesem Schwerpunkt. „Budget“ zeigt, was günstige Decks spielen.
+            In der <b>Leiste oben</b> wählst du ein Thema (z. B. Tokens) oder Budget-Decks – dann zeigen die Listen nur Karten aus solchen Decks. Daneben springst du direkt zu einer Liste.
           </li>
           <li>
-            Mit den <b>Filtern</b> siehst du z. B. nur Karten, die dir noch fehlen, oder nur günstige.
+            Darunter schaltest du zwischen <b>Bildern</b> und einer kompakten <b>Liste</b> um, sortierst nach Beliebtheit, Synergie oder Preis und filterst z. B. auf Karten, die dir noch fehlen.
           </li>
           <li>
             Antippen öffnet eine Karte. <b>＋ Deck</b> legt eine Karte, die du hast, in dein gewähltes Deck. <b>＋ Wunschliste</b> merkt dir eine fehlende Karte vor. Noch kein Deck? „Neues Deck mit diesem Commander“ legt eins an.
@@ -119,6 +119,21 @@ export function CommanderClient({
   // Unterseite wie bei EDHREC: Thema (Slug), "budget" oder "expensive"; "" = alle Decks
   const [sub, setSub] = useState("");
   const [subLoading, setSubLoading] = useState(false);
+  const [view, setViewState] = useState<"grid" | "list">("grid");
+  const [sort, setSort] = useState<"popular" | "synergy" | "price">("popular");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("commander-view") === "list") setViewState("list");
+    } catch {}
+  }, []);
+  const setView = (v: "grid" | "list") => {
+    setViewState(v);
+    try {
+      localStorage.setItem("commander-view", v);
+    } catch {}
+  };
+  const activeFilters = (filters.ownership !== "all" ? 1 : 0) + (filters.maxPrice !== null ? 1 : 0) + (filters.noGameChangers ? 1 : 0);
 
   // Zuerst die EDHREC-Seite; kennt EDHREC den Commander nicht, die Scryfall-Ansicht.
   useEffect(() => {
@@ -157,8 +172,14 @@ export function CommanderClient({
   }, [name, partner, sub]);
 
   const lists = useMemo(
-    () => (data?.lists ?? []).map((l) => ({ ...l, label: l.key === "highliftcards" ? "Geheimtipps" : l.label, cards: filterCards(l.cards, filters) })),
-    [data, filters]
+    () =>
+      (data?.lists ?? []).map((l) => {
+        const cards = filterCards(l.cards, filters);
+        if (sort === "synergy") cards.sort((a, b) => (b.synergy ?? -9) - (a.synergy ?? -9));
+        if (sort === "price") cards.sort((a, b) => (b.eur ?? -1) - (a.eur ?? -1));
+        return { ...l, label: l.key === "highliftcards" ? "Geheimtipps" : l.label, cards };
+      }),
+    [data, filters, sort]
   );
 
   async function addToWishlist(card: ListCard) {
@@ -270,57 +291,6 @@ export function CommanderClient({
 
       {data.edhrec && <CommanderStats stats={data.edhrec} />}
 
-      {data.edhrec && (
-        <section className="space-y-3" aria-label="Auswahl">
-          <div className="space-y-1.5">
-            <h2 className="font-medium">Empfehlungen aus</h2>
-            <div className="flex flex-wrap items-center gap-2">
-            {[
-              { k: "", label: "Alle" },
-              { k: "budget", label: "Budget" },
-              { k: "expensive", label: "Teuer" },
-            ].map((o) => (
-              <button key={o.k} onClick={() => setSub(o.k)} aria-pressed={sub === o.k} className={`chip h-9 text-sm ${sub === o.k ? "chip-active" : ""}`}>
-                {o.label}
-              </button>
-            ))}
-            {subLoading && <span className="text-xs text-zinc-500" aria-live="polite">Lade Auswahl…</span>}
-            </div>
-            <p className="text-xs text-zinc-500">Alle Decks, nur günstige oder nur teure Decks mit diesem Commander.</p>
-          </div>
-          {data.edhrec.themes.length > 0 && (
-            <div className="space-y-1.5">
-              <h2 className="font-medium">Themen</h2>
-              <p className="text-xs text-zinc-500 -mt-1">Antippen zeigt nur Empfehlungen aus Decks mit diesem Schwerpunkt (Zahl = Anzahl Decks). Nochmal antippen hebt es auf.</p>
-              <div className="flex flex-wrap gap-2">
-                {data.edhrec.themes.map((t) => (
-                  <button
-                    key={t.slug}
-                    onClick={() => setSub(sub === t.slug ? "" : t.slug)}
-                    aria-pressed={sub === t.slug}
-                    className={`chip h-9 text-sm ${sub === t.slug ? "chip-active" : ""}`}
-                  >
-                    {t.name} <span className="text-zinc-500 tabular-nums">{t.count.toLocaleString("de-DE")}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <nav aria-label="Springe zu" className="space-y-1.5">
-            <h2 className="font-medium">Springe zu</h2>
-            <div className="flex flex-wrap gap-2">
-              {lists
-                .filter((l) => l.cards.length > 0)
-                .map((l) => (
-                  <a key={l.key} href={`#${l.key}`} className="chip h-9 text-sm">
-                    {l.label}
-                  </a>
-                ))}
-            </div>
-          </nav>
-        </section>
-      )}
-
       {!data.edhrec && data.themes.length > 0 && (
         <section className="space-y-2">
           <h2 className="font-medium">Themen</h2>
@@ -340,60 +310,143 @@ export function CommanderClient({
         </section>
       )}
 
-      <section aria-label="Filter" className="surface p-3 space-y-3 text-sm sm:sticky sm:top-14 sm:z-10">
-        <div className="space-y-1.5">
-          <span className="text-xs text-zinc-400">Karten anzeigen</span>
-          <div className="segmented" role="group" aria-label="Besitz">
-            {(["all", "owned", "missing"] as const).map((o) => (
+      {/* Werkzeugleiste wie bei EDHREC: Auswahl, Springe zu, Ansicht, Sortierung, Filter */}
+      <section
+        aria-label="Werkzeugleiste"
+        className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 px-4 py-2 space-y-2 bg-[var(--bg)]/95 backdrop-blur border-b border-white/[0.06]"
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {data.edhrec ? (
+            <label className="min-w-0">
+              <span className="sr-only">Decks bzw. Thema</span>
+              <select value={sub} onChange={(e) => setSub(e.target.value)} className="input h-10 w-full py-0 text-sm">
+                <option value="">Alle Decks{data.edhrec.numDecks ? ` (${data.edhrec.numDecks.toLocaleString("de-DE")})` : ""}</option>
+                <option value="budget">Budget-Decks</option>
+                <option value="expensive">Teure Decks</option>
+                {data.edhrec.themes.length > 0 && (
+                  <optgroup label="Thema">
+                    {data.edhrec.themes.map((t) => (
+                      <option key={t.slug} value={t.slug}>
+                        {t.name} ({t.count.toLocaleString("de-DE")})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+          ) : (
+            <span />
+          )}
+          <label className="min-w-0">
+            <span className="sr-only">Springe zu</span>
+            <select
+              value=""
+              onChange={(e) => {
+                const el = document.getElementById(e.target.value);
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="input h-10 w-full py-0 text-sm"
+            >
+              <option value="">Springe zu …</option>
+              {lists
+                .filter((l) => l.cards.length > 0)
+                .map((l) => (
+                  <option key={l.key} value={l.key}>
+                    {l.label} ({l.cards.length})
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="segmented shrink-0 p-0.5" role="group" aria-label="Ansicht">
+            {(["grid", "list"] as const).map((v) => (
               <button
-                key={o}
+                key={v}
                 type="button"
-                onClick={() => setFilters({ ...filters, ownership: o })}
-                aria-pressed={filters.ownership === o}
-                className={`segment ${filters.ownership === o ? "segment-active" : ""}`}
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={`segment flex-none h-8 px-3 ${view === v ? "segment-active" : ""}`}
               >
-                {o === "all" ? "Alle" : o === "owned" ? "Habe ich" : "Fehlen mir"}
+                {v === "grid" ? "Bilder" : "Liste"}
               </button>
             ))}
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <label className="relative chip h-9 text-sm pr-7">
-            <span className="sr-only">Höchstpreis je Karte</span>
-            <select
-              value={filters.maxPrice ?? ""}
-              onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? Number(e.target.value) : null })}
-              className="appearance-none bg-transparent outline-none"
-            >
-              <option value="">Preis: egal</option>
-              <option value="1">bis 1 € je Karte</option>
-              <option value="5">bis 5 € je Karte</option>
-              <option value="15">bis 15 € je Karte</option>
-              <option value="40">bis 40 € je Karte</option>
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Sortieren</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="input h-9 w-full py-0 text-sm">
+              <option value="popular">Beliebtheit</option>
+              <option value="synergy">Synergie</option>
+              <option value="price">Preis</option>
             </select>
-            <span className="pointer-events-none absolute right-2.5 text-[10px] text-zinc-500">▼</span>
           </label>
           <button
             type="button"
-            onClick={() => setFilters({ ...filters, noGameChangers: !filters.noGameChangers })}
-            aria-pressed={filters.noGameChangers}
-            className={`chip h-9 text-sm ${filters.noGameChangers ? "chip-active" : ""}`}
-            title="Game Changer sind besonders starke Karten – für entspannte Runden (Bracket 1–2) weglassen"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            className={`chip h-9 text-sm shrink-0 ${activeFilters ? "chip-active" : ""}`}
           >
-            {filters.noGameChangers ? "✓ " : ""}Ohne Game Changer
+            Filter{activeFilters ? ` (${activeFilters})` : ""}
           </button>
         </div>
-        {decks.length > 0 && (
-          <label className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-zinc-400">＋ Deck legt Karten in</span>
-            <select value={targetDeck} onChange={(e) => setTargetDeck(e.target.value)} className="input h-10 min-w-0 flex-1 py-0">
-              {decks.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        {subLoading && <p className="text-xs text-zinc-500" aria-live="polite">Lade Auswahl…</p>}
+        {filtersOpen && (
+          <div className="surface p-3 space-y-3 text-sm">
+            <div className="space-y-1.5">
+              <span className="text-xs text-zinc-400">Karten anzeigen</span>
+              <div className="segmented" role="group" aria-label="Besitz">
+                {(["all", "owned", "missing"] as const).map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => setFilters({ ...filters, ownership: o })}
+                    aria-pressed={filters.ownership === o}
+                    className={`segment ${filters.ownership === o ? "segment-active" : ""}`}
+                  >
+                    {o === "all" ? "Alle" : o === "owned" ? "Habe ich" : "Fehlen mir"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <label className="relative chip h-9 text-sm pr-7">
+                <span className="sr-only">Höchstpreis je Karte</span>
+                <select
+                  value={filters.maxPrice ?? ""}
+                  onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? Number(e.target.value) : null })}
+                  className="appearance-none bg-transparent outline-none"
+                >
+                  <option value="">Preis: egal</option>
+                  <option value="1">bis 1 € je Karte</option>
+                  <option value="5">bis 5 € je Karte</option>
+                  <option value="15">bis 15 € je Karte</option>
+                  <option value="40">bis 40 € je Karte</option>
+                </select>
+                <span className="pointer-events-none absolute right-2.5 text-[10px] text-zinc-500">▼</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setFilters({ ...filters, noGameChangers: !filters.noGameChangers })}
+                aria-pressed={filters.noGameChangers}
+                className={`chip h-9 text-sm ${filters.noGameChangers ? "chip-active" : ""}`}
+                title="Game Changer sind besonders starke Karten – für entspannte Runden (Bracket 1–2) weglassen"
+              >
+                {filters.noGameChangers ? "✓ " : ""}Ohne Game Changer
+              </button>
+            </div>
+            {decks.length > 0 && (
+              <label className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-zinc-400">＋ Deck legt Karten in</span>
+                <select value={targetDeck} onChange={(e) => setTargetDeck(e.target.value)} className="input h-10 min-w-0 flex-1 py-0">
+                  {decks.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
         )}
       </section>
 
@@ -404,7 +457,7 @@ export function CommanderClient({
       )}
 
       {lists.map((list) => (
-        <section key={list.key} id={list.key} className="space-y-2 scroll-mt-20">
+        <section key={list.key} id={list.key} className="space-y-2 scroll-mt-44">
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="font-medium text-lg min-w-0">{list.label}</h2>
             <span className="text-xs text-zinc-500 shrink-0">
@@ -421,6 +474,25 @@ export function CommanderClient({
           {list.cards.length === 0 ? (
             <p className="text-sm text-zinc-500">Keine Karten für die aktuellen Filter.</p>
           ) : (
+            view === "list" ? (
+              <ul className="surface divide-y divide-white/[0.06] overflow-hidden">
+                {list.cards.map((card, i) => (
+                  <CardLine
+                    key={card.id}
+                    card={card}
+                    numDecks={data.edhrec?.numDecks ?? null}
+                    onOpen={() => {
+                      setNotice(null);
+                      setViewing({ list: list.key, index: i });
+                    }}
+                    busy={busy === card.name}
+                    canAddToDeck={Boolean(targetDeck)}
+                    onWishlist={() => addToWishlist(card)}
+                    onDeck={() => addToDeck(card)}
+                  />
+                ))}
+              </ul>
+            ) : (
             <ul className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
               {list.cards.map((card, i) => (
                 <CardTile
@@ -437,6 +509,7 @@ export function CommanderClient({
                 />
               ))}
             </ul>
+            )
           )}
         </section>
       ))}
@@ -566,6 +639,60 @@ export function CommanderClient({
         );
       })()}
     </main>
+  );
+}
+
+function CardLine({
+  card,
+  numDecks,
+  onOpen,
+  busy,
+  canAddToDeck,
+  onWishlist,
+  onDeck,
+}: {
+  card: ListCard;
+  numDecks: number | null;
+  onOpen: () => void;
+  busy: boolean;
+  canAddToDeck: boolean;
+  onWishlist: () => void;
+  onDeck: () => void;
+}) {
+  const pct = card.inclusion !== undefined ? Math.round(card.inclusion * 100) : null;
+  const syn = card.synergy !== undefined && Math.abs(card.synergy) >= 0.005 ? Math.round(card.synergy * 100) : null;
+  return (
+    <li className="flex items-center gap-3 p-2">
+      <button type="button" onClick={onOpen} className="press flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`${card.name} ansehen`}>
+        <span className="shrink-0 w-9 h-[50px] rounded overflow-hidden bg-white/5">
+          {card.image && <Image src={card.image} alt="" width={36} height={50} className="w-full h-full object-cover" />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate text-sm font-medium">{card.name}</span>
+            {card.gameChanger && <span className="shrink-0 text-[10px] text-amber-400" title="Game Changer">GC</span>}
+          </span>
+          <span className="block truncate text-xs text-zinc-400 tabular-nums">
+            {pct !== null && <>in {pct} % der Decks</>}
+            {syn !== null && <span className={syn > 0 ? "text-emerald-400" : "text-rose-400"}> · {syn > 0 ? "+" : "−"}{Math.abs(syn)} % Synergie</span>}
+          </span>
+          <span className="block truncate text-xs">
+            <span className="text-zinc-300 tabular-nums">{card.eur !== null ? formatEur(card.eur) : "–"}</span>
+            {card.owned > 0 ? <span className="text-emerald-400"> · ✔ {card.owned}× hast du</span> : <span className="text-zinc-500"> · fehlt dir</span>}
+            {card.friends.length > 0 && <span className="text-sky-400"> · 👥 {card.friends.map((f) => f.friendEmail.split("@")[0]).join(", ")}</span>}
+          </span>
+        </span>
+      </button>
+      {canAddToDeck && card.owned > 0 ? (
+        <button onClick={onDeck} disabled={busy} aria-label={`${card.name} ins Deck`} className="press shrink-0 h-9 rounded-lg px-2.5 text-xs font-medium bg-indigo-500/20 border border-indigo-400/40 text-indigo-100 disabled:opacity-50">
+          ＋ Deck
+        </button>
+      ) : card.owned === 0 ? (
+        <button onClick={onWishlist} disabled={busy} aria-label={`${card.name} auf die Wunschliste`} className="press shrink-0 h-9 rounded-lg px-2.5 text-xs font-medium bg-white/[0.06] border border-white/10 text-zinc-200 disabled:opacity-50">
+          ＋ Wunsch
+        </button>
+      ) : null}
+    </li>
   );
 }
 
