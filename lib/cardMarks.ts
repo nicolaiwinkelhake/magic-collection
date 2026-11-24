@@ -36,5 +36,19 @@ export async function loadCardMarks(supabase: SupabaseClient, userId: string, na
       if (m) m.groupDecks = g.decks;
     }
   }
+
+  // Offene Trades, die ich angefragt habe: Karten, die ich bekommen soll
+  const { data: trades } = await supabase.rpc("my_trades");
+  for (const t of (trades ?? []) as Array<{ status: string; i_am_proposer: boolean; partner_email: string; items: Array<{ name: string; from_user_id: string }> }>) {
+    if (t.status !== "pending" || !t.i_am_proposer) continue;
+    const who = (t.partner_email ?? "").split("@")[0] || "Freund";
+    for (const it of t.items ?? []) {
+      if (it.from_user_id === userId) continue;
+      const m = marks.get(it.name);
+      if (!m) continue;
+      m.requestedFrom ??= [];
+      if (!m.requestedFrom.includes(who)) m.requestedFrom.push(who);
+    }
+  }
   return marks;
 }

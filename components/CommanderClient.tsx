@@ -10,6 +10,7 @@ import { CardViewer, viewerButton } from "@/components/ui/CardViewer";
 import { formatEur } from "@/lib/format";
 import type { CommanderTheme } from "@/lib/commanderProfile";
 import { CommanderStats, type CommanderStatsData } from "@/components/CommanderStats";
+import { loadDrafts } from "@/lib/tradeBasket";
 
 type Overview = {
   commander: {
@@ -126,6 +127,18 @@ export function CommanderClient({
   const [addedToDeck, setAddedToDeck] = useState<Set<string>>(new Set());
   const [wished, setWished] = useState<Set<string>>(new Set());
   const targetDeckName = decks.find((d) => d.id === targetDeck)?.name ?? null;
+  // Trade-Entwürfe (noch nicht abgeschickt): Kartenname → Freunde
+  const [drafted, setDrafted] = useState<Map<string, string[]>>(new Map());
+  useEffect(() => {
+    const m = new Map<string, string[]>();
+    for (const d of Object.values(loadDrafts())) for (const b of d.basket) m.set(b.card.name, [...(m.get(b.card.name) ?? []), d.name]);
+    setDrafted(m);
+  }, []);
+  const tradeNote = (card: ListCard): string | null => {
+    if (card.requestedFrom?.length) return `⇄ angefragt bei ${card.requestedFrom.join(", ")}`;
+    const d = drafted.get(card.name);
+    return d?.length ? `⇄ im Trade-Entwurf (${d.join(", ")})` : null;
+  };
   const inTargetDeck = (card: ListCard) =>
     !!targetDeck && ((targetDeckName !== null && card.inDecks.includes(targetDeckName)) || addedToDeck.has(`${targetDeck}|${card.name}`));
   useEffect(() => {
@@ -495,6 +508,7 @@ export function CommanderClient({
                     }}
                     busy={busy === card.name}
                     canAddToDeck={Boolean(targetDeck)}
+                  trade={tradeNote(card)}
                   inDeck={inTargetDeck(card)}
                   wished={wished.has(card.name)}
                     onWishlist={() => addToWishlist(card)}
@@ -514,6 +528,7 @@ export function CommanderClient({
                   }}
                   busy={busy === card.name}
                   canAddToDeck={Boolean(targetDeck)}
+                  trade={tradeNote(card)}
                   inDeck={inTargetDeck(card)}
                   wished={wished.has(card.name)}
                   onWishlist={() => addToWishlist(card)}
@@ -620,6 +635,7 @@ export function CommanderClient({
                     <p className="text-zinc-500">Nicht in deiner Sammlung</p>
                   )}
                   {card.inDecks.length > 0 && <p className="text-zinc-400">In Decks: {card.inDecks.join(", ")}</p>}
+                  {tradeNote(card) && <p className="text-amber-300">{tradeNote(card)}</p>}
                   {card.friends.length > 0 && (
                     <p className="text-sky-400">👥 {card.friends.map((f) => f.friendEmail.split("@")[0]).join(", ")}</p>
                   )}
@@ -636,7 +652,7 @@ export function CommanderClient({
                       + Deck
                     </button>
                   )}
-                  {card.owned === 0 && !wished.has(card.name) && (
+                  {card.owned === 0 && !wished.has(card.name) && !tradeNote(card) && (
                     <button onClick={() => addToWishlist(card)} disabled={busy === card.name} className={viewerButton.primary}>
                       + Wunschliste
                     </button>
@@ -662,6 +678,7 @@ function CardLine({
   canAddToDeck,
   inDeck,
   wished,
+  trade,
   onWishlist,
   onDeck,
 }: {
@@ -674,6 +691,8 @@ function CardLine({
   inDeck: boolean;
   /** gerade auf die Wunschliste gesetzt */
   wished: boolean;
+  /** für einen Trade vorgemerkt bzw. angefragt (Hinweistext) */
+  trade: string | null;
   onWishlist: () => void;
   onDeck: () => void;
 }) {
@@ -699,12 +718,15 @@ function CardLine({
             {card.owned > 0 ? <span className="text-emerald-400"> · ✔ {card.owned}× hast du</span> : <span className="text-zinc-500"> · fehlt dir</span>}
             {card.friends.length > 0 && <span className="text-sky-400"> · 👥 {card.friends.map((f) => f.friendEmail.split("@")[0]).join(", ")}</span>}
           </span>
+          {trade && <span className="block truncate text-xs font-medium text-amber-300">{trade}</span>}
         </span>
       </button>
       {inDeck ? (
         <span className="shrink-0 text-xs font-medium text-emerald-400">✔ im Deck</span>
       ) : wished ? (
         <span className="shrink-0 text-xs font-medium text-emerald-400">✔ gemerkt</span>
+      ) : trade && card.owned === 0 ? (
+        <span className="shrink-0 text-xs font-medium text-amber-300">⇄ Trade</span>
       ) : canAddToDeck && card.owned > 0 ? (
         <button onClick={onDeck} disabled={busy} aria-label={`${card.name} ins Deck`} className="press shrink-0 h-9 rounded-lg px-2.5 text-xs font-medium bg-indigo-500/20 border border-indigo-400/40 text-indigo-100 disabled:opacity-50">
           ＋ Deck
@@ -725,6 +747,7 @@ function CardTile({
   canAddToDeck,
   inDeck,
   wished,
+  trade,
   onWishlist,
   onDeck,
 }: {
@@ -736,6 +759,8 @@ function CardTile({
   inDeck: boolean;
   /** gerade auf die Wunschliste gesetzt */
   wished: boolean;
+  /** für einen Trade vorgemerkt bzw. angefragt (Hinweistext) */
+  trade: string | null;
   onWishlist: () => void;
   onDeck: () => void;
 }) {
@@ -784,13 +809,14 @@ function CardTile({
         {card.groupDecks > 0 && <p className="text-zinc-400">in {card.groupDecks} Gruppen-Deck(s)</p>}
         <div className="mt-auto pt-1.5">
           {inDeck && <p className="h-8 grid place-items-center rounded-lg bg-emerald-500/10 text-emerald-400 font-medium">✔ im Deck</p>}
+          {!inDeck && trade && card.owned === 0 && <p className="min-h-8 py-1 px-1 grid place-items-center rounded-lg bg-amber-500/10 text-amber-300 font-medium text-center leading-tight">{trade}</p>}
           {!inDeck && wished && <p className="h-8 grid place-items-center rounded-lg bg-emerald-500/10 text-emerald-400 font-medium">✔ auf der Wunschliste</p>}
           {!inDeck && canAddToDeck && card.owned > 0 && (
             <button onClick={onDeck} disabled={busy} className="press w-full h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-100 font-medium disabled:opacity-50">
               ＋ Deck
             </button>
           )}
-          {!inDeck && !wished && card.owned === 0 && (
+          {!inDeck && !wished && !trade && card.owned === 0 && (
             <button onClick={onWishlist} disabled={busy} className="press w-full h-8 rounded-lg bg-white/[0.06] border border-white/10 text-zinc-200 font-medium disabled:opacity-50">
               ＋ Wunschliste
             </button>
