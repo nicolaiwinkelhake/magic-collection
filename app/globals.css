@@ -15,6 +15,14 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Handy: die Seite nie seitlich verschieben lassen, auch wenn ein Element
+   einmal zu breit ist (clip statt hidden: kein Scroll-Container, sticky
+   Kopfzeilen funktionieren weiter). */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   /* Farbschimmer oben als normales Hintergrundbild: keine fixierten,
      gefilterten Ebenen – die bremsten das Scrollen auf dem Handy. */
