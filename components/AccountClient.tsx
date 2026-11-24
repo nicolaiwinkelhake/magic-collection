@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { NotificationSettings } from "@/components/NotificationSettings";
 
-export function AccountClient({ email, admin = null }: { email: string; admin?: React.ReactNode }) {
+export function AccountClient({ email, userId, admin = null }: { email: string; userId: string; admin?: React.ReactNode }) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -73,6 +74,8 @@ export function AccountClient({ email, admin = null }: { email: string; admin?: 
         <p className="text-sm text-zinc-400">Angemeldet als</p>
         <p className="font-medium">{email}</p>
       </div>
+
+      <NotificationSettings userId={userId} />
 
       {/* Passwort ändern */}
       <form

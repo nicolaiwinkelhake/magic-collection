@@ -22,6 +22,7 @@ import { SelectionBar } from "@/components/ui/SelectionBar";
 import { prune, toggleAll } from "@/lib/selection";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { DeckPicker, type DeckOption } from "@/components/ui/DeckPicker";
+import { haptic } from "@/lib/haptics";
 
 export function CardGrid({
   cards,
@@ -87,6 +88,7 @@ export function CardGrid({
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   function revert(message: string) {
+    haptic("error");
     setLocal(cards);
     setErrorMsg(message);
     router.refresh();
@@ -164,9 +166,11 @@ export function CardGrid({
     const data = await res?.json().catch(() => null);
     setPrintBusy(false);
     if (!res?.ok) {
+      haptic("error");
       setPrintError(data?.error ?? "Druck konnte nicht geändert werden – bitte erneut versuchen.");
       return;
     }
+    haptic("success");
     applyServerCard(card.id, data);
     setPrintFor(null);
     router.refresh();
@@ -190,6 +194,7 @@ export function CardGrid({
       revert("Löschen fehlgeschlagen – Stand zurückgesetzt.");
       return;
     }
+    haptic("tap");
     router.refresh();
   }
 

@@ -1,6 +1,9 @@
 "use client";
 import { BrandEmblem } from "@/components/ui/Brand";
 import { installIosViewportFix } from "@/lib/iosViewportFix";
+import { refreshPush } from "@/lib/pushClient";
+import { chime, type Chime } from "@/lib/sounds";
+import { haptic } from "@/lib/haptics";
 
 import { useEffect, useState } from "react";
 
@@ -17,6 +20,21 @@ export function PWAProvider() {
 
   // iOS: Bildschirmhöhe nach dem Schließen der Tastatur zurücksetzen
   useEffect(() => installIosViewportFix(), []);
+
+  // Push: Abo dem angemeldeten Nutzer zuordnen; kommt eine Mitteilung, während
+  // die App offen ist, eigener Ton + Vibration je Art.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    void refreshPush();
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type !== "push") return;
+      const kind = (["trades", "friends", "shares", "loans"].includes(e.data.kind) ? e.data.kind : "success") as Chime;
+      chime(kind);
+      haptic("success");
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, []);
 
   useEffect(() => {
     // Service Worker registrieren

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notify } from "@/lib/push";
+import { messages, nameOf } from "@/lib/pushMessages";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,6 +43,7 @@ export async function POST(
     // Werte-Snapshots beider Seiten werden beim nächsten Preis-Update
     // ohnehin neu berechnet; den eigenen aktualisieren wir direkt.
     await supabase.rpc("snapshot_collection_value");
+    await notifyProposer(supabase, params.id, user.id, messages.tradeAccepted(nameOf(user.email)));
     return NextResponse.json({ status: "accepted" });
   }
 
@@ -51,8 +54,21 @@ export async function POST(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+    await notifyProposer(supabase, params.id, user.id, messages.tradeDeclined(nameOf(user.email)));
     return NextResponse.json({ status: "resolved" });
   }
 
   return NextResponse.json({ error: "Unbekannte Aktion" }, { status: 400 });
+}
+
+// Der Anfragende erfährt, wie sein Partner entschieden hat (nicht, wenn er
+// seinen eigenen Trade zurückzieht).
+async function notifyProposer(
+  supabase: ReturnType<typeof createClient>,
+  tradeId: string,
+  actorId: string,
+  msg: Parameters<typeof notify>[1],
+) {
+  const { data } = await supabase.from("trades").select("proposer_id, partner_id").eq("id", tradeId).maybeSingle();
+  if (data && data.partner_id === actorId && data.proposer_id !== actorId) await notify([data.proposer_id], msg);
 }

@@ -22,5 +22,5 @@ export default async function AccountPage() {
     catalog = { cards: m.cards ?? null, names: m.names ?? null, defaults: m.defaults ?? null, error: m.cards_error ?? m.defaults_error ?? m.names_error ?? null, count: count ?? null };
   }
 
-  return <AccountClient email={user.email ?? ""} admin={catalog ? <CatalogAdmin {...catalog} /> : null} />;
+  return <AccountClient email={user.email ?? ""} userId={user.id} admin={catalog ? <CatalogAdmin {...catalog} /> : null} />;
 }

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notify } from "@/lib/push";
+import { messages, nameOf } from "@/lib/pushMessages";
 
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -24,6 +26,7 @@ export async function POST(request: Request) {
     .from("collection_shares")
     .upsert({ owner_id: user.id, viewer_id: viewerId }, { onConflict: "owner_id,viewer_id" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await notify([viewerId], messages.shared(nameOf(user.email)));
   return NextResponse.json({ ok: true });
 }
 

@@ -10,6 +10,7 @@ import { DEFAULT_FILTERS } from "@/lib/cardFilters";
 import { fetchCatalogPage, PAGE_SIZE, withPrint } from "@/lib/catalogBrowse";
 import { ownedFor, ownedText } from "@/lib/ownedMatch";
 import { useMyCollection } from "@/lib/useMyCollection";
+import { haptic } from "@/lib/haptics";
 
 // Alle Magic-Karten durchsuchen – gleiche Filter und Darstellung wie die
 // Sammlung (Suche deutsch/englisch oder im Kartentext, Farben, Seltenheit,
@@ -98,6 +99,7 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
       }),
     }).catch(() => null);
     if (!res?.ok) {
+      haptic("error");
       setToast("Hinzufügen hat nicht geklappt – bitte erneut versuchen.");
       return;
     }
@@ -108,8 +110,12 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
         for (const c of list) next[c.name] = (next[c.name] ?? 0) + 1;
         return next;
       });
+      haptic("success");
       setToast(`${what} zur Sammlung hinzugefügt`);
-    } else setToast(`${what} auf die Wunschliste gesetzt`);
+    } else {
+      haptic("success");
+      setToast(`${what} auf die Wunschliste gesetzt`);
+    }
   }
 
   const setCodes = useMemo(() => sets.map((s) => s.code), [sets]);

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCardByName, getPrices, sleep } from "@/lib/scryfall";
 import { parseDeckList } from "@/lib/parseDeckList";
+import { notify } from "@/lib/push";
+import { messages, nameOf } from "@/lib/pushMessages";
 
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
   if (structured) {
     const built = await buildFromCollections(supabase, user.id, partnerId, body.giveCards, body.receiveCards);
     if ("error" in built) return NextResponse.json({ error: built.error }, { status: built.status });
-    return insertTrade(supabase, user.id, partnerId, note, built.items, []);
+    return insertTrade(supabase, user.id, partnerId, note, built.items, [], user.email);
   }
 
   const giveEntries = parseDeckList(give ?? "");
@@ -128,7 +130,7 @@ export async function POST(request: Request) {
     );
   }
 
-  return insertTrade(supabase, user.id, partnerId, note, items, notFound);
+  return insertTrade(supabase, user.id, partnerId, note, items, notFound, user.email);
 }
 
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -153,6 +155,7 @@ async function insertTrade(
   note: unknown,
   items: TradeItemRow[],
   notFound: string[],
+  fromEmail?: string,
 ) {
   const { data: trade, error: tradeError } = await supabase
     .from("trades")
@@ -176,6 +179,9 @@ async function insertTrade(
     await supabase.from("trades").delete().eq("id", trade.id);
     return NextResponse.json({ error: itemsError.message }, { status: 500 });
   }
+
+  const count = (from: string) => items.filter((i) => i.from_user_id === from).reduce((n, i) => n + i.quantity, 0);
+  await notify([partnerId], messages.tradeRequest(nameOf(fromEmail), count(userId), count(partnerId)));
 
   return NextResponse.json({ tradeId: trade.id, notFound });
 }
