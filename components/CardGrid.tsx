@@ -37,7 +37,10 @@ export function CardGrid({
   ownerLabels,
   noStock = false,
   decks = [],
+  renderList,
 }: {
+  /** eigene Darstellung statt Raster (z. B. Gewinner/Verlierer); Antippen öffnet das gewohnte Kartendetail */
+  renderList?: (open: (card: Card) => void) => ReactNode;
   cards: Card[];
   /** eigene Decks – Karten lassen sich hineinlegen */
   decks?: DeckOption[];
@@ -438,6 +441,13 @@ export function CardGrid({
 
   return (
     <>
+      {renderList ? (
+        <>
+          {errorMsg && <p className="text-sm text-red-400 mb-2">{errorMsg}</p>}
+          {renderList(setEditing)}
+        </>
+      ) : (
+      <>
       {/* Werkzeugleiste: Ansicht + Auswahl */}
       <div className="flex items-center justify-between gap-3 mb-3 min-h-[32px]">
         <div aria-live="polite" className="min-w-0">
@@ -466,6 +476,9 @@ export function CardGrid({
         <div ref={moreRef} className="py-6 text-center text-xs text-zinc-500" aria-live="polite">
           {limit} von {total} Karten – weitere werden beim Scrollen geladen
         </div>
+      )}
+
+      </>
       )}
 
       {/* Platz, damit die letzten Karten nicht unter der Auswahlleiste liegen */}

@@ -75,7 +75,9 @@ export const STATS_RANGES = [
 export type StatsRangeKey = (typeof STATS_RANGES)[number]["key"];
 
 export type MoverCard = Card & { name: string; set_code?: string | null; image_url?: string | null };
-export type Mover = {
+export type Mover<T extends MoverCard = MoverCard> = {
+  /** ein Sammlungseintrag dieses Drucks (zum Öffnen des Kartendetails) */
+  card: T;
   name: string;
   scryfall_id: string;
   foil: boolean;
@@ -95,9 +97,9 @@ export type Mover = {
  * gegenüber dem Preis zu Beginn des Zeitraums. Sortiert nach Euro-Änderung
  * der eigenen Exemplare; unveränderte Karten fehlen (rein).
  */
-export function topMovers(cards: MoverCard[], baseline: Baseline | undefined, limit = 5): { gainers: Mover[]; losers: Mover[] } {
+export function topMovers<T extends MoverCard>(cards: T[], baseline: Baseline | undefined, limit = 5): { gainers: Mover<T>[]; losers: Mover<T>[] } {
   if (!baseline) return { gainers: [], losers: [] };
-  const byPrint = new Map<string, Mover>();
+  const byPrint = new Map<string, Mover<T>>();
   for (const c of cards) {
     if (!c.scryfall_id || c.quantity <= 0) continue;
     const b = baseline[c.scryfall_id];
@@ -107,6 +109,7 @@ export function topMovers(cards: MoverCard[], baseline: Baseline | undefined, li
     if (before == null || !before || !now) continue;
     const key = `${c.scryfall_id}|${c.foil ? 1 : 0}`;
     const m = byPrint.get(key) ?? {
+      card: c,
       name: c.name,
       scryfall_id: c.scryfall_id,
       foil: !!c.foil,
