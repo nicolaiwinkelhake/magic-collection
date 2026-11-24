@@ -2,7 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { fetchSets } from "@/lib/scryfall";
 import { SetsClient } from "@/components/SetsClient";
-import { sortByPercent, upcomingSets } from "@/lib/setsView";
+import { setValueMoves, sortByPercent, upcomingSets } from "@/lib/setsView";
+import { dayString } from "@/lib/priceChange";
 import { selectAll } from "@/lib/supabase/selectAll";
 import { catalogSetCounts } from "@/lib/catalogLookup";
 
@@ -21,11 +22,12 @@ export default async function SetsPage() {
     quantity: number;
     foil: boolean;
     price_eur: number | null;
+    price_eur_foil: number | null;
     type_line: string | null;
   }>(() =>
     supabase
       .from("cards")
-      .select("set_code, scryfall_id, name, image_url, quantity, foil, price_eur, type_line")
+      .select("set_code, scryfall_id, name, image_url, quantity, foil, price_eur, price_eur_foil, type_line")
       .eq("user_id", user.id)
       .order("id")
   );
@@ -39,7 +41,17 @@ export default async function SetsPage() {
 
   // Set-Größe: Papier-Drucke laut eigenem Katalog (ohne reine Online-Drucke),
   // sonst Scryfalls Kartenzahl
-  const [allSets, printCounts] = await Promise.all([fetchSets(), catalogSetCounts(Array.from(cardsBySet.keys()))]);
+  const [allSets, printCounts, { data: base }] = await Promise.all([
+    fetchSets(),
+    catalogSetCounts(Array.from(cardsBySet.keys())),
+    // Preise vor 7 Tagen: Wertzuwachs/-verlust je Set
+    supabase.rpc("price_baseline", { p_since: dayString(7) }),
+  ]);
+  const baseline: Record<string, [number | null, number | null]> = {};
+  for (const r of (base ?? []) as Array<{ scryfall_id: string; price_eur: number | null; price_eur_foil: number | null }>) {
+    baseline[r.scryfall_id] = [r.price_eur == null ? null : Number(r.price_eur), r.price_eur_foil == null ? null : Number(r.price_eur_foil)];
+  }
+  const moves = setValueMoves(cards, baseline);
   const setInfo = new Map(allSets.map((s) => [s.code, s]));
 
   const rows = sortByPercent([...cardsBySet.entries()]
@@ -57,5 +69,5 @@ export default async function SetsPage() {
       };
     }));
 
-  return <SetsClient rows={rows} upcoming={upcomingSets(allSets)} />;
+  return <SetsClient rows={rows} upcoming={upcomingSets(allSets)} topUp={moves.up} topDown={moves.down} />;
 }

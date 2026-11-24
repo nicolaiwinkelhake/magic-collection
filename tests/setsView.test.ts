@@ -35,3 +35,25 @@ describe("upcomingSets", () => {
     expect(up[0].daysLeft).toBe(79);
   });
 });
+
+import { setValueMoves } from "@/lib/setsView";
+
+describe("Wertzuwachs/-verlust je Set (7 Tage)", () => {
+  const c = (set_code: string, scryfall_id: string, price_eur: number, quantity = 1, foil = false, price_eur_foil: number | null = null) => ({ set_code, scryfall_id, price_eur, price_eur_foil, quantity, foil });
+  it("rechnet je Set mit Menge und Foil, findet größten Zuwachs und Verlust", () => {
+    const { bySet, up, down } = setValueMoves(
+      [c("mbc", "a", 24.31), c("mbc", "b", 6.83, 2), c("tdm", "f", 1.5, 3), c("frf", "t", 3.87), c("mom", "x", 0, 1, true, 7.35), c("neu", "n", 5)],
+      { a: [21.32, null], b: [5.38, null], f: [1, null], t: [4.24, null], x: [1, 7.84] },
+    );
+    expect(bySet.get("mbc")!.delta).toBeCloseTo(2.99 + 2 * 1.45);
+    expect(up!.code).toBe("mbc");
+    expect(down!.code).toBe("mom");
+    expect(down!.delta).toBeCloseTo(-0.49);
+    expect(bySet.has("neu")).toBe(false);
+  });
+  it("ohne Bewegung kein Abzeichen", () => {
+    const r = setValueMoves([c("a", "1", 2)], { "1": [2, null] });
+    expect(r.up).toBeNull();
+    expect(r.down).toBeNull();
+  });
+});

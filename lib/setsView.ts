@@ -65,3 +65,42 @@ export function upcomingSets(all: ScryfallSet[], today = new Date().toISOString(
     }))
     .sort((a, b) => (a.released < b.released ? -1 : a.released > b.released ? 1 : a.name.localeCompare(b.name)));
 }
+
+export type SetValueCard = { set_code: string | null; scryfall_id: string; quantity: number; foil: boolean; price_eur: number | null; price_eur_foil?: number | null };
+export type SetMove = { code: string; delta: number; percent: number };
+
+/**
+ * Wertänderung je Set (dieselben Exemplare, nur durch Preise) gegenüber den
+ * Preisen am Stichtag; dazu das Set mit dem größten Zuwachs und das mit dem
+ * größten Verlust in Euro. Karten ohne Ausgangspreis zählen nicht (rein).
+ */
+export function setValueMoves(
+  cards: SetValueCard[],
+  baseline: Record<string, [number | null, number | null]>,
+): { bySet: Map<string, SetMove>; up: SetMove | null; down: SetMove | null } {
+  const acc = new Map<string, { before: number; now: number }>();
+  for (const c of cards) {
+    if (!c.set_code || c.quantity <= 0) continue;
+    const b = baseline[c.scryfall_id];
+    if (!b) continue;
+    const before = c.foil ? b[1] ?? b[0] : b[0];
+    const now = c.foil ? c.price_eur_foil ?? c.price_eur : c.price_eur;
+    if (before == null || now == null) continue;
+    const a = acc.get(c.set_code) ?? { before: 0, now: 0 };
+    a.before += before * c.quantity;
+    a.now += now * c.quantity;
+    acc.set(c.set_code, a);
+  }
+  const bySet = new Map<string, SetMove>();
+  for (const [code, a] of acc) {
+    const delta = Math.round((a.now - a.before) * 100) / 100;
+    bySet.set(code, { code, delta, percent: a.before > 0 ? ((a.now - a.before) / a.before) * 100 : 0 });
+  }
+  let up: SetMove | null = null;
+  let down: SetMove | null = null;
+  for (const m of bySet.values()) {
+    if (m.delta > 0 && (!up || m.delta > up.delta)) up = m;
+    if (m.delta < 0 && (!down || m.delta < down.delta)) down = m;
+  }
+  return { bySet, up, down };
+}
