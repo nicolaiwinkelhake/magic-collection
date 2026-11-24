@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/catalog",
       "schedule": "40 1 * * *"
+    },
+    {
+      "path": "/api/cron/alerts",
+      "schedule": "17 7 * * *"
     }
   ],
   "regions": [

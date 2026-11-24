@@ -28,7 +28,7 @@ export function PWAProvider() {
     void refreshPush();
     const onMessage = (e: MessageEvent) => {
       if (e.data?.type !== "push") return;
-      const kind = (["trades", "friends", "shares", "loans"].includes(e.data.kind) ? e.data.kind : "success") as Chime;
+      const kind = (["trades", "friends", "shares", "loans", "wishlist", "prices"].includes(e.data.kind) ? e.data.kind : "success") as Chime;
       chime(kind);
       haptic("success");
     };

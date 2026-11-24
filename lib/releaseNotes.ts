@@ -22,6 +22,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-25b",
+    date: "2026-11-25",
+    title: "Mitteilungen für Wunschliste & Preise",
+    items: [
+      {
+        icon: "🎁",
+        title: "Wunschkarte bei einem Freund",
+        text: "Legt ein Freund eine Karte von deiner Wunschliste in seine mit dir geteilte Sammlung, bekommst du morgens Bescheid – jede Karte nur einmal.",
+        href: "/wishlist",
+      },
+      {
+        icon: "📈",
+        title: "Preisbewegungen",
+        text: "Schwankt deine Sammlung an einem Tag um 5 € oder mehr oder springt eine Karte stark, gibt es morgens eine Mitteilung mit den größten Bewegungen. Beides einzeln abschaltbar unter Konto → Mitteilungen & Feedback.",
+        href: "/account",
+      },
+    ],
+  },
+  {
     id: "2026-11-25",
     date: "2026-11-25",
     title: "Mitteilungen, Töne & Vibration",

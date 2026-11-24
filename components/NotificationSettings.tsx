@@ -48,7 +48,7 @@ export function NotificationSettings({ userId }: { userId: string }) {
     currentSubscription().then((s) => setSubscribed(!!s)).catch(() => {});
     supabase
       .from("notification_prefs")
-      .select("trades, friends, shares, loans")
+      .select("trades, friends, shares, loans, wishlist, prices")
       .eq("user_id", userId)
       .maybeSingle()
       .then(({ data }) => data && setPrefs({ ...DEFAULT_PREFS, ...data }));

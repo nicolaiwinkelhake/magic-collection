@@ -25,6 +25,18 @@ export function chimeNotes(kind: Chime): { f: number; at: number; len: number }[
         { f: 1397, at: 0.07, len: 0.08 },
         { f: 1760, at: 0.14, len: 0.16 },
       ];
+    case "wishlist": // kleine Fanfare
+      return [
+        { f: 784, at: 0, len: 0.1 },
+        { f: 988, at: 0.09, len: 0.1 },
+        { f: 1175, at: 0.18, len: 0.1 },
+        { f: 1568, at: 0.27, len: 0.22 },
+      ];
+    case "prices": // Münzen
+      return [
+        { f: 1319, at: 0, len: 0.06 },
+        { f: 1976, at: 0.06, len: 0.18 },
+      ];
     case "loans":
       return [
         { f: 784, at: 0, len: 0.12 },
