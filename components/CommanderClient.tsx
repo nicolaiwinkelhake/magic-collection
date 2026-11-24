@@ -37,6 +37,68 @@ type Overview = {
 
 const COLOR_NAME: Record<string, string> = { W: "Weiß", U: "Blau", B: "Schwarz", R: "Rot", G: "Grün" };
 
+/** Was die einzelnen Listen bedeuten (kurz, für Einsteiger) */
+const LIST_HELP: Record<string, string> = {
+  newcards: "Gerade erst erschienene Karten, die schon in Decks mit diesem Commander auftauchen – Ideen für ein Upgrade.",
+  highsynergycards: "Werden mit diesem Commander deutlich häufiger gespielt als in anderen Decks seiner Farben – passen besonders gut zu seiner Strategie.",
+  topcards: "Die am häufigsten gespielten Karten in Decks mit diesem Commander – die Grundausstattung.",
+  highliftcards: "Insgesamt eher selten gespielt, mit diesem Commander aber auffällig oft – echte Geheimtipps.",
+  gamechangers: "Besonders starke Karten. Für entspannte Runden (Bracket 1–2) lieber weglassen.",
+  creatures: "Kreaturen, die Spieler mit diesem Commander am häufigsten nutzen.",
+  instants: "Spontanzauber, die mit diesem Commander am häufigsten gespielt werden.",
+  sorceries: "Hexereien, die mit diesem Commander am häufigsten gespielt werden.",
+  utilityartifacts: "Artefakte mit nützlichen Effekten (ohne Mana-Steine).",
+  enchantments: "Verzauberungen, die mit diesem Commander am häufigsten gespielt werden.",
+  planeswalkers: "Planeswalker, die mit diesem Commander gespielt werden.",
+  battles: "Schlachten, die mit diesem Commander gespielt werden.",
+  utilitylands: "Länder mit Zusatzeffekt.",
+  manaartifacts: "Mana-Steine und andere Artefakte für schnelleres Mana.",
+  lands: "Länder, die in Decks mit diesem Commander am häufigsten liegen.",
+};
+
+const HELP_KEY = "commander-help-closed";
+
+function HowTo({ name, decks }: { name: string; decks: number | null }) {
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(HELP_KEY) === "1") setOpen(false);
+    } catch {}
+  }, []);
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(HELP_KEY, next ? "0" : "1");
+    } catch {}
+  }
+  return (
+    <section className="rounded-2xl border border-indigo-400/25 bg-indigo-500/[0.08] p-4">
+      <button type="button" onClick={toggle} aria-expanded={open} className="w-full flex items-center justify-between gap-3 text-left">
+        <span className="font-medium">💡 So nutzt du diese Seite</span>
+        <span className="text-xs text-zinc-400 shrink-0">{open ? "ausblenden" : "anzeigen"}</span>
+      </button>
+      {open && (
+        <ol className="mt-3 space-y-2 text-sm text-zinc-300 list-decimal pl-5">
+          <li>
+            Die Listen zeigen, welche Karten andere Spieler in ihren Decks mit <b>{name}</b> spielen
+            {decks ? <> – ausgewertet aus {decks.toLocaleString("de-DE")} Decks bei EDHREC</> : null}. Die Prozentzahl an jeder Karte sagt, in wie vielen dieser Decks sie steckt.
+          </li>
+          <li>
+            Oben kannst du ein <b>Thema</b> wählen (z. B. Tokens) – dann zeigen die Listen nur Karten aus Decks mit diesem Schwerpunkt. „Budget“ zeigt, was günstige Decks spielen.
+          </li>
+          <li>
+            Mit den <b>Filtern</b> siehst du z. B. nur Karten, die dir noch fehlen, oder nur günstige.
+          </li>
+          <li>
+            Antippen öffnet eine Karte. <b>＋ Deck</b> legt eine Karte, die du hast, in dein gewähltes Deck. <b>＋ Wunschliste</b> merkt dir eine fehlende Karte vor. Noch kein Deck? „Neues Deck mit diesem Commander“ legt eins an.
+          </li>
+        </ol>
+      )}
+    </section>
+  );
+}
+
 export function CommanderClient({
   name,
   partner,
@@ -95,7 +157,7 @@ export function CommanderClient({
   }, [name, partner, sub]);
 
   const lists = useMemo(
-    () => (data?.lists ?? []).map((l) => ({ ...l, cards: filterCards(l.cards, filters) })),
+    () => (data?.lists ?? []).map((l) => ({ ...l, label: l.key === "highliftcards" ? "Geheimtipps" : l.label, cards: filterCards(l.cards, filters) })),
     [data, filters]
   );
 
@@ -204,12 +266,15 @@ export function CommanderClient({
         </div>
       </header>
 
+      <HowTo name={c.name} decks={data.edhrec?.numDecks ?? null} />
+
       {data.edhrec && <CommanderStats stats={data.edhrec} />}
 
       {data.edhrec && (
         <section className="space-y-3" aria-label="Auswahl">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-zinc-400">Decks</span>
+          <div className="space-y-1.5">
+            <h2 className="font-medium">Empfehlungen aus</h2>
+            <div className="flex flex-wrap items-center gap-2">
             {[
               { k: "", label: "Alle" },
               { k: "budget", label: "Budget" },
@@ -220,10 +285,13 @@ export function CommanderClient({
               </button>
             ))}
             {subLoading && <span className="text-xs text-zinc-500" aria-live="polite">Lade Auswahl…</span>}
+            </div>
+            <p className="text-xs text-zinc-500">Alle Decks, nur günstige oder nur teure Decks mit diesem Commander.</p>
           </div>
           {data.edhrec.themes.length > 0 && (
             <div className="space-y-1.5">
               <h2 className="font-medium">Themen</h2>
+              <p className="text-xs text-zinc-500 -mt-1">Antippen zeigt nur Empfehlungen aus Decks mit diesem Schwerpunkt (Zahl = Anzahl Decks). Nochmal antippen hebt es auf.</p>
               <div className="flex flex-wrap gap-2">
                 {data.edhrec.themes.map((t) => (
                   <button
@@ -238,14 +306,17 @@ export function CommanderClient({
               </div>
             </div>
           )}
-          <nav aria-label="Springe zu" className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-            {lists
-              .filter((l) => l.cards.length > 0)
-              .map((l) => (
-                <a key={l.key} href={`#${l.key}`} className="shrink-0 rounded-full bg-zinc-800 hover:bg-zinc-700 px-3 py-1 text-sm">
-                  {l.label}
-                </a>
-              ))}
+          <nav aria-label="Springe zu" className="space-y-1.5">
+            <h2 className="font-medium">Springe zu</h2>
+            <div className="flex flex-wrap gap-2">
+              {lists
+                .filter((l) => l.cards.length > 0)
+                .map((l) => (
+                  <a key={l.key} href={`#${l.key}`} className="chip h-9 text-sm">
+                    {l.label}
+                  </a>
+                ))}
+            </div>
           </nav>
         </section>
       )}
@@ -269,44 +340,53 @@ export function CommanderClient({
         </section>
       )}
 
-      <section className="sticky top-14 z-10 bg-zinc-950 border-y border-zinc-800 py-3 flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-2">
-          Budget je Karte
-          <select
-            value={filters.maxPrice ?? ""}
-            onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? Number(e.target.value) : null })}
-            className="rounded bg-zinc-800 px-2 py-1"
-          >
-            <option value="">egal</option>
-            <option value="1">bis 1 €</option>
-            <option value="5">bis 5 €</option>
-            <option value="15">bis 15 €</option>
-            <option value="40">bis 40 €</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={filters.noGameChangers}
-            onChange={(e) => setFilters({ ...filters, noGameChangers: e.target.checked })}
-          />
-          Ohne Game Changer (Bracket 1–2)
-        </label>
-        <div className="flex rounded overflow-hidden border border-zinc-700" role="group" aria-label="Besitz">
-          {(["all", "owned", "missing"] as const).map((o) => (
-            <button
-              key={o}
-              onClick={() => setFilters({ ...filters, ownership: o })}
-              className={`px-2 py-1 ${filters.ownership === o ? "bg-indigo-600" : "bg-zinc-800 hover:bg-zinc-700"}`}
+      <section aria-label="Filter" className="surface p-3 space-y-3 text-sm sm:sticky sm:top-14 sm:z-10">
+        <div className="space-y-1.5">
+          <span className="text-xs text-zinc-400">Karten anzeigen</span>
+          <div className="segmented" role="group" aria-label="Besitz">
+            {(["all", "owned", "missing"] as const).map((o) => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => setFilters({ ...filters, ownership: o })}
+                aria-pressed={filters.ownership === o}
+                className={`segment ${filters.ownership === o ? "segment-active" : ""}`}
+              >
+                {o === "all" ? "Alle" : o === "owned" ? "Habe ich" : "Fehlen mir"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className="relative chip h-9 text-sm pr-7">
+            <span className="sr-only">Höchstpreis je Karte</span>
+            <select
+              value={filters.maxPrice ?? ""}
+              onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? Number(e.target.value) : null })}
+              className="appearance-none bg-transparent outline-none"
             >
-              {o === "all" ? "Alle" : o === "owned" ? "Besitze ich" : "Fehlen mir"}
-            </button>
-          ))}
+              <option value="">Preis: egal</option>
+              <option value="1">bis 1 € je Karte</option>
+              <option value="5">bis 5 € je Karte</option>
+              <option value="15">bis 15 € je Karte</option>
+              <option value="40">bis 40 € je Karte</option>
+            </select>
+            <span className="pointer-events-none absolute right-2.5 text-[10px] text-zinc-500">▼</span>
+          </label>
+          <button
+            type="button"
+            onClick={() => setFilters({ ...filters, noGameChangers: !filters.noGameChangers })}
+            aria-pressed={filters.noGameChangers}
+            className={`chip h-9 text-sm ${filters.noGameChangers ? "chip-active" : ""}`}
+            title="Game Changer sind besonders starke Karten – für entspannte Runden (Bracket 1–2) weglassen"
+          >
+            {filters.noGameChangers ? "✓ " : ""}Ohne Game Changer
+          </button>
         </div>
         {decks.length > 0 && (
-          <label className="flex items-center gap-2 ml-auto">
-            Ziel-Deck
-            <select value={targetDeck} onChange={(e) => setTargetDeck(e.target.value)} className="rounded bg-zinc-800 px-2 py-1">
+          <label className="flex items-center gap-2">
+            <span className="shrink-0 text-xs text-zinc-400">＋ Deck legt Karten in</span>
+            <select value={targetDeck} onChange={(e) => setTargetDeck(e.target.value)} className="input h-10 min-w-0 flex-1 py-0">
               {decks.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -326,12 +406,18 @@ export function CommanderClient({
       {lists.map((list) => (
         <section key={list.key} id={list.key} className="space-y-2 scroll-mt-20">
           <div className="flex items-baseline justify-between gap-2">
-            <h2 className="font-medium text-lg">{list.label}</h2>
-            <span className="text-xs text-zinc-500">
-              {list.cards.filter((x) => x.owned > 0).length} von {list.cards.length} in deiner Sammlung
+            <h2 className="font-medium text-lg min-w-0">{list.label}</h2>
+            <span className="text-xs text-zinc-500 shrink-0">
+              {list.cards.filter((x) => x.owned > 0).length} von {list.cards.length} hast du
             </span>
           </div>
-          {list.description && <p className="text-sm text-zinc-400">{list.description}</p>}
+          {(LIST_HELP[list.key] || list.description) && (
+            <p className="text-sm text-zinc-400">
+              {LIST_HELP[list.key]}
+              {LIST_HELP[list.key] && list.description ? " " : ""}
+              {list.description && <span className="text-zinc-500">({list.description})</span>}
+            </p>
+          )}
           {list.cards.length === 0 ? (
             <p className="text-sm text-zinc-500">Keine Karten für die aktuellen Filter.</p>
           ) : (
@@ -520,7 +606,7 @@ function CardTile({
         </div>
         {card.inclusion !== undefined && (
           <p className="text-zinc-300 tabular-nums">
-            {Math.round(card.inclusion * 100)} % der Decks
+            in {Math.round(card.inclusion * 100)} % der Decks
             {card.synergy !== undefined && Math.abs(card.synergy) >= 0.005 && (
               <span className={`ml-1.5 ${card.synergy > 0 ? "text-emerald-400" : "text-rose-400"}`} title="Synergie: Anteil bei diesem Commander minus Anteil in allen Decks dieser Farben">
                 {card.synergy > 0 ? "+" : "−"}
@@ -541,15 +627,15 @@ function CardTile({
           </p>
         )}
         {card.groupDecks > 0 && <p className="text-zinc-400">in {card.groupDecks} Gruppen-Deck(s)</p>}
-        <div className="mt-auto flex gap-2 pt-1">
+        <div className="mt-auto pt-1.5">
           {canAddToDeck && card.owned > 0 && (
-            <button onClick={onDeck} disabled={busy} className="text-indigo-400 hover:underline disabled:opacity-50">
-              + Deck
+            <button onClick={onDeck} disabled={busy} className="press w-full h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-100 font-medium disabled:opacity-50">
+              ＋ Deck
             </button>
           )}
           {card.owned === 0 && (
-            <button onClick={onWishlist} disabled={busy} className="text-indigo-400 hover:underline disabled:opacity-50">
-              + Wunschliste
+            <button onClick={onWishlist} disabled={busy} className="press w-full h-8 rounded-lg bg-white/[0.06] border border-white/10 text-zinc-200 font-medium disabled:opacity-50">
+              ＋ Wunschliste
             </button>
           )}
         </div>
