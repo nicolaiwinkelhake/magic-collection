@@ -91,8 +91,13 @@ export function withPrint(card: Card, p: ScanMatch): Card {
 }
 
 /** Eine Seite Treffer laden (Browser). */
-export async function fetchCatalogPage(f: FilterState, offset: number): Promise<{ cards: Card[]; total: number } | null> {
-  const { data, error } = await createClient().rpc("catalog_browse", browseParams(f, offset));
+export async function fetchCatalogPage(f: FilterState, offset: number, attempts = 2): Promise<{ cards: Card[]; total: number } | null> {
+  let { data, error } = await createClient().rpc("catalog_browse", browseParams(f, offset));
+  // Mobilnetz: eine abgebrochene Anfrage einmal wiederholen
+  for (let i = 1; error && i < attempts; i++) {
+    await new Promise((r) => setTimeout(r, 800 * i));
+    ({ data, error } = await createClient().rpc("catalog_browse", browseParams(f, offset)));
+  }
   if (error) return null;
   const rows = (data ?? []) as CatalogRow[];
   return { cards: rows.map(rowToCard), total: rows.length ? Number(rows[0].total) : 0 };

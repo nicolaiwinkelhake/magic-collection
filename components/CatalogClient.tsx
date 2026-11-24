@@ -31,6 +31,7 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
   // gerade hinzugefügt (Name → Anzahl), damit „hast du“ sofort stimmt
   const [added, setAdded] = useState<Record<string, number>>({});
   const seq = useRef(0);
+  const [retry, setRetry] = useState(0);
 
   // Erste Seite bei jeder Filteränderung (beim Tippen kurz warten)
   useEffect(() => {
@@ -42,14 +43,14 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
       if (mine !== seq.current) return;
       setLoading(false);
       if (!page) {
-        setError("Der Katalog konnte nicht geladen werden. Bitte später erneut versuchen.");
+        setError("Der Katalog konnte nicht geladen werden – vielleicht war die Verbindung kurz weg.");
         return;
       }
       setCards(page.cards);
       setTotal(page.total);
     }, filters.search ? 300 : 0);
     return () => clearTimeout(t);
-  }, [filters]);
+  }, [filters, retry]);
 
   const loadMore = useCallback(async () => {
     if (loading || total == null || cards.length >= total) return;
@@ -130,7 +131,14 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
       <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-30 -mx-4 px-4 py-3 bg-[#0b0b10]">
         <Filters state={filters} onChange={setFilters} sets={setCodes} setLabels={setLabels} popularSort />
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <div className="surface p-4 space-y-3">
+          <p className="text-sm text-red-400">{error}</p>
+          <button type="button" onClick={() => setRetry((n) => n + 1)} className="btn-secondary">
+            Erneut versuchen
+          </button>
+        </div>
+      )}
       {!error && total === 0 && !loading && <p className="surface p-4 text-sm text-zinc-400">Keine Karte passt zu dieser Suche.</p>}
 
       {cards.length > 0 && (
