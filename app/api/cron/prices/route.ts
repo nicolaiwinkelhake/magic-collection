@@ -62,8 +62,25 @@ export async function GET(request: Request) {
       selectAll<{ scryfall_id: string | null }>(supabase, "deck_cards", "id, scryfall_id"),
       selectAll<{ scryfall_id: string | null }>(supabase, "wishlist", "id, scryfall_id"),
     ]);
+    // … und Karten in offenen Trades (deren Wert soll tagesaktuell sein)
+    const tradeIds: string[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("trade_items")
+        .select("id, scryfall_id, trades!inner(status)")
+        .eq("trades.status", "pending")
+        .order("id")
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(`trade_items konnte nicht gelesen werden: ${error.message}`);
+      tradeIds.push(...(data ?? []).map((r) => r.scryfall_id as string));
+      if (!data || data.length < PAGE) break;
+    }
     const uniqueIds = Array.from(
-      new Set([...cards.map((c) => c.scryfall_id), ...deckIds.map((d) => d.scryfall_id), ...wishIds.map((w) => w.scryfall_id)].filter((x): x is string => !!x)),
+      new Set(
+        [...cards.map((c) => c.scryfall_id), ...deckIds.map((d) => d.scryfall_id), ...wishIds.map((w) => w.scryfall_id), ...tradeIds].filter(
+          (x): x is string => !!x,
+        ),
+      ),
     );
 
     // 2) Preise: Cardmarket-Trendpreise direkt aus Cardmarkets Preisliste
