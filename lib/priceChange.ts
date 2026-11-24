@@ -63,3 +63,68 @@ export function dayString(days: number, now = new Date()): string {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days));
   return d.toISOString().slice(0, 10);
 }
+
+/** Zeiträume auf der Seite „Wertverlauf“ */
+export const STATS_RANGES = [
+  { key: "1d", label: "1 Tag", days: 1 },
+  { key: "1w", label: "1 Woche", days: 7 },
+  { key: "1m", label: "1 Monat", days: 30 },
+  { key: "1y", label: "1 Jahr", days: 365 },
+  { key: "3y", label: "3 Jahre", days: 1095 },
+] as const;
+export type StatsRangeKey = (typeof STATS_RANGES)[number]["key"];
+
+export type MoverCard = Card & { name: string; set_code?: string | null; image_url?: string | null };
+export type Mover = {
+  name: string;
+  scryfall_id: string;
+  foil: boolean;
+  set_code: string | null;
+  image_url: string | null;
+  quantity: number;
+  /** Preis je Exemplar damals/heute (Marktpreis, ohne Zustand) */
+  before: number;
+  now: number;
+  /** Euro-Änderung für die eigenen Exemplare (mit Menge und Zustand) */
+  delta: number;
+  percent: number;
+};
+
+/**
+ * Größte Gewinner und Verlierer: je Druck (+ Foil) dieselben Exemplare heute
+ * gegenüber dem Preis zu Beginn des Zeitraums. Sortiert nach Euro-Änderung
+ * der eigenen Exemplare; unveränderte Karten fehlen (rein).
+ */
+export function topMovers(cards: MoverCard[], baseline: Baseline | undefined, limit = 5): { gainers: Mover[]; losers: Mover[] } {
+  if (!baseline) return { gainers: [], losers: [] };
+  const byPrint = new Map<string, Mover>();
+  for (const c of cards) {
+    if (!c.scryfall_id || c.quantity <= 0) continue;
+    const b = baseline[c.scryfall_id];
+    if (!b) continue;
+    const before = c.foil ? b[1] ?? b[0] : b[0];
+    const now = basePrice(c);
+    if (before == null || !before || !now) continue;
+    const key = `${c.scryfall_id}|${c.foil ? 1 : 0}`;
+    const m = byPrint.get(key) ?? {
+      name: c.name,
+      scryfall_id: c.scryfall_id,
+      foil: !!c.foil,
+      set_code: c.set_code ?? null,
+      image_url: c.image_url ?? null,
+      quantity: 0,
+      before,
+      now,
+      delta: 0,
+      percent: ((now - before) / before) * 100,
+    };
+    m.quantity += c.quantity;
+    m.delta += (now - before) * conditionFactor(c.condition) * c.quantity;
+    byPrint.set(key, m);
+  }
+  const all = Array.from(byPrint.values()).map((m) => ({ ...m, delta: Math.round(m.delta * 100) / 100 }));
+  return {
+    gainers: all.filter((m) => m.delta > 0).sort((a, b) => b.delta - a.delta || b.percent - a.percent).slice(0, limit),
+    losers: all.filter((m) => m.delta < 0).sort((a, b) => a.delta - b.delta || a.percent - b.percent).slice(0, limit),
+  };
+}

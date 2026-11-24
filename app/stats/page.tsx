@@ -16,9 +16,23 @@ export default async function StatsPage() {
     .select("captured_on, total_value_eur")
     .order("captured_on", { ascending: true });
 
-  // Distinkte Karten für die Einzelkarten-Auswahl
-  const cards = await selectAll<{ scryfall_id: string; name: string }>(() =>
-    supabase.from("cards").select("scryfall_id, name").order("name", { ascending: true }).order("id")
+  // Karten für Gewinner/Verlierer und die Einzelkarten-Auswahl
+  const cards = await selectAll<{
+    scryfall_id: string;
+    name: string;
+    set_code: string | null;
+    image_url: string | null;
+    quantity: number;
+    foil: boolean;
+    condition: string | null;
+    price_eur: number | null;
+    price_eur_foil: number | null;
+  }>(() =>
+    supabase
+      .from("cards")
+      .select("scryfall_id, name, set_code, image_url, quantity, foil, condition, price_eur, price_eur_foil")
+      .order("name", { ascending: true })
+      .order("id")
   );
 
   const uniqueCards = Array.from(
@@ -29,6 +43,7 @@ export default async function StatsPage() {
     <StatsClient
       totalHistory={history ?? []}
       cards={uniqueCards}
+      owned={cards}
     />
   );
 }
