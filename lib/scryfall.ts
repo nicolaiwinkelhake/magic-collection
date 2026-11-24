@@ -18,6 +18,8 @@ export type ScryfallCard = {
   produced_mana?: string[];
   rarity: string;
   oracle_text?: string;
+  // Cardmarket-Produktnummer (für die Trendpreise aus Cardmarkets Preisliste)
+  cardmarket_id?: number;
   // Cardmarket-Preise (in EUR) – von Scryfall mitgeliefert, kein eigener Cardmarket-Zugang nötig
   prices?: {
     eur?: string | null;

@@ -209,6 +209,20 @@ export async function catalogPrices(ids: string[], maxHours = 30): Promise<Map<s
   return out;
 }
 
+/** Cardmarket-Produktnummer je Druck laut Katalog (unabhängig davon, wie frisch die Preise sind). */
+export async function catalogCardmarketIds(ids: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const db = await catalogDb().catch(() => null);
+  if (!db || !ids.length) return out;
+  const unique = Array.from(new Set(ids.map((x) => x.toLowerCase())));
+  for (let i = 0; i < unique.length; i += 300) {
+    const { data, error } = await db.from("catalog_cards").select("id, cardmarket_id").in("id", unique.slice(i, i + 300)).not("cardmarket_id", "is", null);
+    if (error) return new Map();
+    for (const r of (data ?? []) as Array<{ id: string; cardmarket_id: number }>) out.set(r.id.toLowerCase(), Number(r.cardmarket_id));
+  }
+  return out;
+}
+
 /** Drucke je Set laut Katalog (nur Papier). Leer, wenn der Katalog nicht bereit ist. */
 export async function catalogSetCounts(sets: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
