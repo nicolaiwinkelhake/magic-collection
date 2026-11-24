@@ -41,6 +41,7 @@ const LABELS: Record<string, string> = {
   newcards: "Neue Karten",
   highsynergycards: "Hohe Synergie",
   topcards: "Top-Karten",
+  highliftcards: "Geheimtipps",
   gamechangers: "Game Changer",
   creatures: "Kreaturen",
   instants: "Spontanzauber",
