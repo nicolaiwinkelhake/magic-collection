@@ -87,15 +87,15 @@ export type Mover<T extends MoverCard = MoverCard> = {
   /** Preis je Exemplar damals/heute (Marktpreis, ohne Zustand) */
   before: number;
   now: number;
-  /** Euro-Änderung für die eigenen Exemplare (mit Menge und Zustand) */
+  /** Euro-Änderung je Exemplar (Marktpreis heute − damals) */
   delta: number;
   percent: number;
 };
 
 /**
- * Größte Gewinner und Verlierer: je Druck (+ Foil) dieselben Exemplare heute
- * gegenüber dem Preis zu Beginn des Zeitraums. Sortiert nach Euro-Änderung
- * der eigenen Exemplare; unveränderte Karten fehlen (rein).
+ * Größte Gewinner und Verlierer: je Druck (+ Foil) der Marktpreis heute
+ * gegenüber dem Preis zu Beginn des Zeitraums – je Exemplar, unabhängig von
+ * der Menge. Sortiert nach Euro-Änderung; unveränderte Karten fehlen (rein).
  */
 export function topMovers<T extends MoverCard>(cards: T[], baseline: Baseline | undefined, limit = 5): { gainers: Mover<T>[]; losers: Mover<T>[] } {
   if (!baseline) return { gainers: [], losers: [] };
@@ -118,11 +118,10 @@ export function topMovers<T extends MoverCard>(cards: T[], baseline: Baseline | 
       quantity: 0,
       before,
       now,
-      delta: 0,
+      delta: now - before,
       percent: ((now - before) / before) * 100,
     };
     m.quantity += c.quantity;
-    m.delta += (now - before) * conditionFactor(c.condition) * c.quantity;
     byPrint.set(key, m);
   }
   const all = Array.from(byPrint.values()).map((m) => ({ ...m, delta: Math.round(m.delta * 100) / 100 }));
