@@ -54,6 +54,8 @@ export type CardMarks = {
   inDecks: string[];
   friends: Array<{ friendEmail: string; quantity: number }>;
   groupDecks: number;
+  /** in offenen Trades bei diesen Freunden angefragt (Anzeigenamen) */
+  requestedFrom?: string[];
 };
 
 /** Anteil/Synergie nur bei EDHREC-Listen: inclusion 0–1 (Anteil der Decks), synergy −1…1 */
