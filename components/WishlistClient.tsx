@@ -11,6 +11,7 @@ import { SelectCheck, SelectionBar } from "@/components/ui/SelectionBar";
 import { toggle, toggleAll } from "@/lib/selection";
 import type { Folder } from "@/lib/types";
 import { FolderBar } from "@/components/FolderBar";
+import { WishlistExport } from "@/components/WishlistExport";
 import { FolderPicker } from "@/components/ui/FolderPicker";
 import { ALL, UNSORTED, folderStats, inFolder, wishlistMeasure, withFolder, type FolderFilter } from "@/lib/folders";
 import { deleteFolder, promptCreateFolder, renameFolder } from "@/lib/folderApi";
@@ -218,6 +219,7 @@ export function WishlistClient({
         .map((i) => i.name)
     : [];
   const [removing, setRemoving] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const total = items.reduce((s, i) => s + (i.price_eur ?? 0), 0);
 
@@ -309,11 +311,19 @@ export function WishlistClient({
       )}
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-zinc-500">
+        <p className="min-w-0 text-sm text-zinc-500">
           {items.length} {items.length === 1 ? "Karte" : "Karten"} · {folder === ALL ? "Gesamtwert" : "Wert"}{" "}
           <span className="text-emerald-400 font-medium">{formatEur(total)}</span>
         </p>
         {items.length > 0 && (
+          <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            className="rounded-lg px-3 h-8 text-xs font-medium border transition bg-white/5 border-white/10 text-zinc-300 hover:border-white/20"
+          >
+            Exportieren
+          </button>
           <button
             onClick={() => {
               setSelectMode((v) => !v);
@@ -325,8 +335,10 @@ export function WishlistClient({
           >
             {selectMode ? "Fertig" : "Auswählen"}
           </button>
+          </div>
         )}
       </div>
+      {exportOpen && <WishlistExport items={allItems} folders={folders} onClose={() => setExportOpen(false)} />}
 
       {items.length === 0 ? (
         <p className="text-zinc-500 text-center py-12">
