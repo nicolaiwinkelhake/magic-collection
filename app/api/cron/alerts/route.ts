@@ -25,12 +25,18 @@ export async function GET(request: Request) {
   // Wunschliste: Treffer immer abgleichen (auch ohne Gerät), damit später
   // angemeldete Geräte nicht alte Treffer als neu gemeldet bekommen.
   try {
-    const { data: matches, error } = await supabase.rpc("wishlist_friend_matches");
-    if (error) throw new Error(error.message);
+    // seitenweise: PostgREST liefert je Abfrage höchstens 1000 Zeilen
+    const matches: WishMatch[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase.rpc("wishlist_friend_matches").range(from, from + 999);
+      if (error) throw new Error(error.message);
+      matches.push(...((data ?? []) as WishMatch[]));
+      if (!data || data.length < 1000) break;
+    }
     const sent = await selectAll<WishSent>(() =>
       supabase.from("wishlist_alerts").select("user_id, owner_id, card_name").order("user_id").order("owner_id").order("card_name"),
     );
-    const { byUser, remember, forget } = diffWishlistMatches((matches ?? []) as WishMatch[], sent);
+    const { byUser, remember, forget } = diffWishlistMatches(matches, sent);
     for (const [userId, hits] of byUser) {
       summary.wishlistUsers++;
       summary.wishlistHits += hits.length;
