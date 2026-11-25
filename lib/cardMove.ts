@@ -1,5 +1,6 @@
 // Sammlungseintrag auf einen anderen Druck bzw. Foil-Status umstellen
-// (rein, getestet). Eine Zeile ist eindeutig je (Nutzer, Scryfall-ID, Foil).
+// (rein, getestet). Eine Zeile ist eindeutig je (Nutzer, Scryfall-ID, Foil,
+// Sprache) – Migration 041.
 // Gibt es das Ziel schon, werden die Mengen zusammengelegt statt eine
 // doppelte Zeile (oder einen Fehler) zu erzeugen.
 
@@ -9,11 +10,12 @@ export type MovePlan =
   | { kind: "merge"; targetId: string; quantity: number }; // in vorhandene Zeile einbuchen, alte löschen
 
 export function planMove(
-  row: { id: string; scryfall_id: string; foil: boolean; quantity: number },
-  target: { scryfall_id: string; foil: boolean },
+  row: { id: string; scryfall_id: string; foil: boolean; quantity: number; language?: string | null },
+  target: { scryfall_id: string; foil: boolean; language?: string | null },
   existing: { id: string; quantity: number } | null,
 ): MovePlan {
-  if (row.scryfall_id === target.scryfall_id && row.foil === target.foil) return { kind: "noop" };
+  const sameLang = (row.language ?? "EN") === (target.language ?? row.language ?? "EN");
+  if (row.scryfall_id === target.scryfall_id && row.foil === target.foil && sameLang) return { kind: "noop" };
   if (existing && existing.id !== row.id) {
     return { kind: "merge", targetId: existing.id, quantity: existing.quantity + row.quantity };
   }

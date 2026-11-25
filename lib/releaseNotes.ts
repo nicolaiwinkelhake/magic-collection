@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-25c",
+    date: "2026-11-25",
+    title: "Scanner erkennt deutsche Karten",
+    items: [
+      {
+        icon: "🇩🇪",
+        title: "Sprache beim Scannen",
+        text: "Erkennt der Scanner eine Karte über den deutschen Text (oder liest „DE“ unten auf der Karte), speichert er sie als deutsch. An jeder gescannten Karte kannst du EN/DE per Tipp umstellen. Deutsche und englische Exemplare derselben Version sind jetzt eigene Einträge.",
+        href: "/scan",
+      },
+    ],
+  },
+  {
     id: "2026-11-25b",
     date: "2026-11-25",
     title: "Mitteilungen für Wunschliste & Preise",

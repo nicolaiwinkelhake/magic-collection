@@ -69,6 +69,6 @@ export async function addCommanderToCollection(supabase: SupabaseClient, userId:
       price_eur_foil: eurFoil,
       price_updated_at: new Date().toISOString(),
     },
-    { onConflict: "user_id,scryfall_id,foil" }
+    { onConflict: "user_id,scryfall_id,foil,language" }
   );
 }

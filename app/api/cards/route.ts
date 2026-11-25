@@ -32,7 +32,9 @@ export async function PATCH(request: Request) {
     updates.quantity = q;
   }
   if (condition !== undefined) updates.condition = condition;
-  if (language !== undefined) updates.language = language;
+  const targetLanguage =
+    language !== undefined && typeof language === "string" && /^[a-z]{2,3}$/i.test(language) ? language.toUpperCase() : ((row.language as string) ?? "EN");
+  if (language !== undefined) updates.language = targetLanguage;
 
   // Druck wechseln: neuen Druck bei Scryfall holen und prüfen, dass er zur
   // selben Karte gehört (kein versehentliches Umbuchen auf eine andere Karte).
@@ -74,18 +76,19 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Nichts zu ändern" }, { status: 400 });
   }
 
-  // Gibt es (Druck + Foil) schon als eigene Zeile? Dann zusammenlegen.
+  // Gibt es (Druck + Foil + Sprache) schon als eigene Zeile? Dann zusammenlegen.
   const { data: existing } = await supabase
     .from("cards")
     .select("id, quantity")
     .eq("user_id", user.id)
     .eq("scryfall_id", targetId)
     .eq("foil", targetFoil)
+    .eq("language", targetLanguage)
     .neq("id", id)
     .maybeSingle();
   const plan = planMove(
-    { id, scryfall_id: row.scryfall_id, foil: row.foil, quantity: (updates.quantity as number) ?? row.quantity },
-    { scryfall_id: targetId, foil: targetFoil },
+    { id, scryfall_id: row.scryfall_id, foil: row.foil, quantity: (updates.quantity as number) ?? row.quantity, language: row.language as string },
+    { scryfall_id: targetId, foil: targetFoil, language: targetLanguage },
     existing ?? null,
   );
 

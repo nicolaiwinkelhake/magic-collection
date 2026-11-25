@@ -30,6 +30,8 @@ export type ScanItem = ScanMatch & {
   failed?: boolean;
   /** Anderer Druck mit gleichem Aufdruck: „The List“ ↔ Original (ein Tipp tauscht) */
   alt?: ScanMatch;
+  /** Sprache der Karte (z. B. „DE“, wenn über deutschen Text erkannt); fehlt = Englisch */
+  language?: string;
 };
 
 /** Eindeutiger Schlüssel je Scan */
@@ -79,11 +81,13 @@ export function setQuantity(stack: ScanItem[], key: string, quantity: number): S
 export function updateItem(
   stack: ScanItem[],
   key: string,
-  change: { foil?: boolean; print?: ScanMatch },
+  change: { foil?: boolean; print?: ScanMatch; language?: string },
 ): ScanItem[] {
   // Druck von Hand gewählt: der Vorschlag „The List / Original“ ist dann erledigt
   return stack.map((s) =>
-    s.key === key ? { ...s, ...(change.print ?? {}), ...(change.print ? { alt: undefined } : {}), key: s.key, foil: change.foil ?? s.foil } : s,
+    s.key === key
+      ? { ...s, ...(change.print ?? {}), ...(change.print ? { alt: undefined } : {}), key: s.key, foil: change.foil ?? s.foil, language: change.language ?? s.language }
+      : s,
   );
 }
 
