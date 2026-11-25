@@ -13,7 +13,7 @@ export function basketFromFriendCopies(rows: BasketCard[], wanted: string[]): { 
     if (r.quantity < 1) continue;
     (byName.get(r.name) ?? byName.set(r.name, []).get(r.name)!).push(r);
   }
-  const price = (c: BasketCard) => (c.foil ? c.price_eur_foil ?? c.price_eur : c.price_eur) ?? Infinity;
+  const price = (c: BasketCard) => (c.foil ? c.price_eur_foil ?? c.price_eur : c.price_eur ?? c.price_eur_foil) ?? Infinity;
   const picks: BasketCard[] = [];
   const missing: string[] = [];
   for (const name of Array.from(new Set(wanted))) {

@@ -13,6 +13,9 @@ describe("basePrice", () => {
   it("fällt bei fehlendem Foil-Preis auf den Normalpreis zurück", () => {
     expect(basePrice({ quantity: 1, foil: true, price_eur: 2, price_eur_foil: null })).toBe(2);
   });
+  it("fällt bei fehlendem Normalpreis auf den Foil-Preis zurück (nur Foil gedruckt)", () => {
+    expect(basePrice({ quantity: 1, foil: false, price_eur: null, price_eur_foil: 0.54 })).toBe(0.54);
+  });
   it("gibt 0 bei fehlenden Preisen", () => {
     expect(basePrice({ quantity: 1, foil: false, price_eur: null, price_eur_foil: null })).toBe(0);
   });

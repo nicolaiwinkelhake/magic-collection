@@ -11,7 +11,9 @@ describe("Preise", () => {
     expect(marketPrice(card())).toBe(1);
     expect(marketPrice(card({ foil: true }))).toBe(4);
     expect(marketPrice(card({ condition: "MP" }))).toBe(0.75);
-    expect(marketPrice(card({ price_eur: null }))).toBeNull();
+    // nur als Foil gedruckt: ohne Normalpreis gilt der Foil-Preis
+    expect(marketPrice(card({ price_eur: null }))).toBe(4);
+    expect(marketPrice(card({ price_eur: null, price_eur_foil: null }))).toBeNull();
   });
   it("Cardmarket-Vorschlag mindestens 0,02 €", () => {
     expect(cardmarketSuggestion(card({ price_eur: 0.01 }))).toBe(0.02);

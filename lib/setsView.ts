@@ -83,8 +83,8 @@ export function setValueMoves(
     if (!c.set_code || c.quantity <= 0) continue;
     const b = baseline[c.scryfall_id];
     if (!b) continue;
-    const before = c.foil ? b[1] ?? b[0] : b[0];
-    const now = c.foil ? c.price_eur_foil ?? c.price_eur : c.price_eur;
+    const before = c.foil ? b[1] ?? b[0] : b[0] ?? b[1];
+    const now = c.foil ? c.price_eur_foil ?? c.price_eur : c.price_eur ?? c.price_eur_foil ?? null;
     if (before == null || now == null) continue;
     const a = acc.get(c.set_code) ?? { before: 0, now: 0 };
     a.before += before * c.quantity;
