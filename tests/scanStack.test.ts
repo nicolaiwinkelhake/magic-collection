@@ -140,3 +140,18 @@ describe("The List ↔ Original", () => {
     expect(upd(setAlternative(base, "k", list, false), "k", { foil: false })[0].alt).toBeDefined();
   });
 });
+
+
+describe("Sprache im Scan-Stapel", () => {
+  it("setzt und schaltet die Sprache nur für diesen Eintrag", () => {
+    const base = [
+      { key: "a", id: "1", name: "Sol Ring", imageUrl: null, eur: 1, eurFoil: null, foil: false, quantity: 1, scannedAt: 1 },
+      { key: "b", id: "2", name: "Opt", imageUrl: null, eur: 1, eurFoil: null, foil: false, quantity: 1, scannedAt: 2 },
+    ];
+    const de = updateItem(base, "a", { language: "DE" });
+    expect(de.map((x) => x.language)).toEqual(["DE", undefined]);
+    // Druck- oder Foil-Wechsel behält die Sprache
+    expect(updateItem(de, "a", { foil: true })[0].language).toBe("DE");
+    expect(updateItem(de, "a", { language: "EN" })[0].language).toBe("EN");
+  });
+});

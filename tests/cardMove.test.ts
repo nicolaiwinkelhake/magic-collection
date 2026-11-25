@@ -33,3 +33,12 @@ describe("samePrintFamily", () => {
     expect(samePrintFamily({ name: "Sol Ring" }, { name: "sol ring" })).toBe(true);
   });
 });
+
+describe("Sprache (Migration 041)", () => {
+  it("Sprachwechsel legt mit vorhandenem Eintrag derselben Sprache zusammen", () => {
+    const row = { id: "a", scryfall_id: "x", foil: false, quantity: 1, language: "EN" };
+    expect(planMove(row, { scryfall_id: "x", foil: false, language: "DE" }, { id: "b", quantity: 2 })).toEqual({ kind: "merge", targetId: "b", quantity: 3 });
+    expect(planMove(row, { scryfall_id: "x", foil: false, language: "DE" }, null)).toEqual({ kind: "update" });
+    expect(planMove(row, { scryfall_id: "x", foil: false, language: "EN" }, null)).toEqual({ kind: "noop" });
+  });
+});

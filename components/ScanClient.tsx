@@ -456,10 +456,16 @@ export function ScanClient({
   }
 
   // Name sicher erkannt: sofort auf den Stapel, Druck/Preis im Hintergrund.
-  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null, listRegion: SearchRegion | null = null): string {
+  // Über deutschen Text erkannt (oder „DE“ auf der Karte gelesen) → als deutsch speichern
+  function markGerman(key: string) {
+    setStack((s) => updateItem(s, key, { language: "DE" }));
+  }
+
+  function acceptPending(name: string, info: Promise<CardInfo | null>, readNames: string[], camHash: CardHash | null, listRegion: SearchRegion | null = null, german = false): string {
     const foil = prefsRef.current.foil;
     const key = pendingKey();
     setStack((s) => addPending(s, name, foil, Date.now(), key).stack);
+    if (german) markGerman(key);
     feedbackOk();
     void finishPending(key, name, info, readNames, camHash, foil, listRegion);
     return key;
@@ -468,6 +474,7 @@ export function ScanClient({
   // Druck/Preis nachtragen; die Infozeile (Set/Nummer) wird evtl. noch gelesen.
   async function finishPending(key: string, name: string, infoRead: Promise<CardInfo | null> | null, readNames: string[], camHash: CardHash | null, foil: boolean, listRegion: SearchRegion | null = null) {
     const info = infoRead ? await infoRead.catch(() => null) : null;
+    if (info?.lang === "DE") markGerman(key);
     let match: ScanMatch | null = null;
     try {
       if (info?.set && info.number) match = await directPrint(info.set, info.number, info.lang, [name, ...readNames]);
@@ -566,7 +573,7 @@ export function ScanClient({
         : null;
       lastAttemptRef.current = attempt;
       if (attempt) void read.info.then((i) => (attempt.read.info = i)).catch(() => {});
-      const { names, sure, corrected, german } = await read.name;
+      const { names, sure, corrected, german, germanName } = await read.name;
       if (attempt) attempt.read.names = names;
       scanLog(`name_done names=${JSON.stringify(names)} sure=${sure?.name ?? "-"}`);
       const dimNow = auto && lightRef.current < DIM_LEVEL;
@@ -579,7 +586,7 @@ export function ScanClient({
           return false;
         }
         if (blockedRepeat(sure.name, auto, read.info, listRegion)) return true;
-        const pk = acceptPending(sure.name, read.info, names, camHash, listRegion);
+        const pk = acceptPending(sure.name, read.info, names, camHash, listRegion, !!germanName);
         if (attempt) rememberAttempt(attemptsRef.current, pk, attempt);
         return true;
       }
@@ -617,6 +624,7 @@ export function ScanClient({
         if (match) {
           if (blockedRepeat(match.name, auto, info, listRegion)) return true;
           const scanned = accept(match, prefsRef.current.foil, camHash);
+          markGerman(scanned);
           if (attempt) rememberAttempt(attemptsRef.current, scanned, attempt);
           if (!match.exact) void refinePrint(match, camHash, scanned, info);
           else void checkList(scanned, match, info, listRegion);
@@ -630,6 +638,7 @@ export function ScanClient({
       if (match) {
         if (blockedRepeat(match.name, auto, info, listRegion)) return true;
         const scanned = accept(match, prefsRef.current.foil, camHash);
+        if (info?.lang === "DE" || (readName && german?.includes(readName))) markGerman(scanned);
           if (attempt) rememberAttempt(attemptsRef.current, scanned, attempt);
         if (!match.exact) void refinePrint(match, camHash, scanned, info);
         else void checkList(scanned, match, info, listRegion);
@@ -873,7 +882,7 @@ export function ScanClient({
           batchKey: crypto.randomUUID(),
           allowDuplicates: true,
           folderId: target.kind === "collection" ? target.folderId ?? null : undefined,
-          items: chunk.map((s, i) => ({ i, name: s.name, scryfallId: s.id, quantity: s.quantity, foil: s.foil })),
+          items: chunk.map((s, i) => ({ i, name: s.name, scryfallId: s.id, quantity: s.quantity, foil: s.foil, language: s.language ?? "EN" })),
         };
         const ok = await post(target.kind === "collection" ? "/api/import/batch" : "/api/wishlist/import", body);
         if (ok) chunk.forEach((s) => saved.add(s.key));
@@ -1001,6 +1010,7 @@ export function ScanClient({
       stack={stack}
       onQty={(k, q) => setStack((s) => setQuantity(s, k, q))}
       onFoil={(k, f) => setStack((s) => updateItem(s, k, { foil: f }))}
+      onLanguage={(k, l) => setStack((s) => updateItem(s, k, { language: l }))}
       onSwap={(k) => {
         const it = stack.find((x) => x.key === k);
         if (it?.alt) learnFix("list_swap", k, it, it.alt);
@@ -1299,6 +1309,7 @@ export function ScanClient({
                     <span className="uppercase">{last.set}</span> #{last.collectorNumber}
                     {last.exact ? "" : " · Druck geschätzt"}
                     {last.foil && <span className="text-fuchsia-300"> · Foil</span>}
+                    {last.language === "DE" && <span className="text-amber-300"> · Deutsch</span>}
                   </p>
                   {last.alt && (
                     <button
@@ -1431,6 +1442,7 @@ function StackList({
   stack,
   onQty,
   onFoil,
+  onLanguage,
   onSwap,
   onPrints,
   onFix,
@@ -1441,6 +1453,8 @@ function StackList({
   stack: ScanItem[];
   onQty: (key: string, q: number) => void;
   onFoil: (key: string, foil: boolean) => void;
+  /** Sprache umschalten (Englisch ↔ Deutsch) */
+  onLanguage: (key: string, language: string) => void;
   /** The List ↔ Original tauschen */
   onSwap: (key: string) => void;
   onPrints: (item: ScanItem) => void;
@@ -1497,6 +1511,14 @@ function StackList({
                 className={`rounded-full px-2 h-6 text-[11px] border ${s.foil ? "bg-fuchsia-500/20 border-fuchsia-400/60 text-fuchsia-200" : "border-white/10 text-zinc-400"}`}
               >
                 Foil
+              </button>
+              <button
+                onClick={() => onLanguage(s.key, s.language === "DE" ? "EN" : "DE")}
+                aria-pressed={s.language === "DE"}
+                aria-label={s.language === "DE" ? "Deutsch – auf Englisch umstellen" : "Englisch – auf Deutsch umstellen"}
+                className={`rounded-full px-2 h-6 text-[11px] border ${s.language === "DE" ? "bg-amber-500/20 border-amber-400/60 text-amber-100" : "border-white/10 text-zinc-400"}`}
+              >
+                {s.language === "DE" ? "DE" : "EN"}
               </button>
               {s.alt && (
                 <button

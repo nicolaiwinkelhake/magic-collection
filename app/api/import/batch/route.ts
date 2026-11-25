@@ -9,7 +9,10 @@ export const maxDuration = 60;
 
 const MAX_ITEMS = 150;
 
-type BatchItem = ResolveInput & { quantity: number; foil: boolean };
+type BatchItem = ResolveInput & { quantity: number; foil: boolean; language?: string };
+
+/** Sprachkürzel säubern (z. B. "de" → "DE"); unbekannt → EN */
+const lang = (v: unknown) => (typeof v === "string" && /^[a-z]{2,3}$/i.test(v) ? v.toUpperCase() : "EN");
 
 function imageUrl(card: ScryfallCard): string | null {
   return card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal ?? null;
@@ -60,7 +63,8 @@ export async function POST(request: Request) {
   for (const it of items) {
     const card = resolved.get(it.i);
     if (!card) continue;
-    const key = `${card.id}|${it.foil ? 1 : 0}`;
+    const language = lang(it.language);
+    const key = `${card.id}|${it.foil ? 1 : 0}|${language}`;
     const qty = Math.max(1, Math.floor(Number(it.quantity) || 1));
     const existing = rows.get(key);
     if (existing) {
@@ -87,6 +91,7 @@ export async function POST(request: Request) {
         oracle_text: card.oracle_text ?? null,
         quantity: qty,
         foil: Boolean(it.foil),
+        language,
         price_eur: eur,
         price_eur_foil: eurFoil,
       },

@@ -235,7 +235,7 @@ export async function POST(
     });
     const { data: upserted, error: upsertError } = await supabase
       .from("cards")
-      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil" })
+      .upsert(collectionRows, { onConflict: "user_id,scryfall_id,foil,language" })
       .select("id");
     if (upsertError) console.error("Deck-Import: Sammlung nicht aktualisiert", upsertError);
     // Zusätzlich einem Ordner zuordnen (Migration 015)
