@@ -18,9 +18,10 @@ export type ValuableCard = {
   condition?: string | null;
 };
 
-// Basispreis einer Karte (Foil-abhängig), ohne Menge/Zustand.
+// Basispreis einer Karte (Foil-abhängig), ohne Menge/Zustand. Fehlt der
+// passende Preis, gilt der andere (z. B. Drucke, die es nur als Foil gibt).
 export function basePrice(card: ValuableCard): number {
-  const p = card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur;
+  const p = card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur ?? card.price_eur_foil;
   return p ?? 0;
 }
 

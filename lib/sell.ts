@@ -40,7 +40,7 @@ export function conditionLabel(code?: string | null): string {
 
 /** Marktpreis eines Exemplars: Trendpreis des Drucks (Foil getrennt) × Zustand. */
 export function marketPrice(card: SellCard): number | null {
-  const base = card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur;
+  const base = card.foil ? card.price_eur_foil ?? card.price_eur : card.price_eur ?? card.price_eur_foil;
   if (base == null) return null;
   return Math.round(base * conditionFactor(card.condition) * 100) / 100;
 }

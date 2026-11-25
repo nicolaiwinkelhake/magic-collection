@@ -50,7 +50,7 @@ export function basketCount(basket: Basket): number {
 
 /** Marktwert (Foil-Preis bei Foil, sonst normal; fehlender Preis = 0). */
 export function basketValue(basket: Basket): number {
-  const v = basket.reduce((s, b) => s + ((b.card.foil ? b.card.price_eur_foil ?? b.card.price_eur : b.card.price_eur) ?? 0) * b.qty, 0);
+  const v = basket.reduce((s, b) => s + ((b.card.foil ? b.card.price_eur_foil ?? b.card.price_eur : b.card.price_eur ?? b.card.price_eur_foil) ?? 0) * b.qty, 0);
   return Math.round(v * 100) / 100;
 }
 

@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { COLLECTION_PACE_MS, fetchCollectionWithRetry, getPrices, sleep } from "@/lib/scryfall";
 import { cardValue } from "@/lib/valuation";
-import { catalogCardmarketIds, catalogPrices } from "@/lib/catalogLookup";
+import { catalogCardmarketIds, catalogEnglishPrints, catalogPrices } from "@/lib/catalogLookup";
 import { applyTrendPrices, fetchPriceGuide } from "@/lib/cardmarket";
 
 export const maxDuration = 300;
@@ -56,10 +56,12 @@ export async function GET(request: Request) {
       condition: string;
       price_eur: number | null;
       price_eur_foil: number | null;
-    }>(supabase, "cards", "id, user_id, scryfall_id, quantity, foil, condition, price_eur, price_eur_foil");
+      set_code: string | null;
+      collector_number: string | null;
+    }>(supabase, "cards", "id, user_id, scryfall_id, quantity, foil, condition, price_eur, price_eur_foil, set_code, collector_number");
     // auch Deck-Karten und Wunschliste (nicht nur, was in Sammlungen liegt)
     const [deckIds, wishIds] = await Promise.all([
-      selectAll<{ scryfall_id: string | null }>(supabase, "deck_cards", "id, scryfall_id"),
+      selectAll<{ scryfall_id: string | null; set_code: string | null; collector_number: string | null }>(supabase, "deck_cards", "id, scryfall_id, set_code, collector_number"),
       selectAll<{ scryfall_id: string | null }>(supabase, "wishlist", "id, scryfall_id"),
     ]);
     // … und Karten in offenen Trades (deren Wert soll tagesaktuell sein)
@@ -131,6 +133,34 @@ export async function GET(request: Request) {
     if (guide instanceof Error) cardmarketError = guide.message;
     else fromCardmarket = applyTrendPrices(prices, cardmarketIds, guide.prices);
 
+    // Drucke ohne Preis (meist in anderer Sprache gespeichert – Scryfall
+    // führt Preise nur beim englischen Druck): Preis des englischen Drucks
+    // mit gleichem Set und gleicher Sammlernummer, Trendpreis bevorzugt.
+    const noPrice = (id: string) => {
+      const p = prices.get(id);
+      return !p || (p.eur == null && p.eurFoil == null);
+    };
+    const printOf = new Map<string, { set: string; collector_number: string }>();
+    for (const r of [...cards, ...deckIds]) {
+      if (r.scryfall_id && r.set_code && r.collector_number && noPrice(r.scryfall_id)) {
+        printOf.set(r.scryfall_id, { set: r.set_code, collector_number: r.collector_number });
+      }
+    }
+    let fromEnglishPrint = 0;
+    if (printOf.size) {
+      const english = await catalogEnglishPrints(Array.from(printOf.values()));
+      for (const [id, k] of printOf) {
+        const e = english.get(`${k.set.toLowerCase()}|${k.collector_number}`);
+        if (!e) continue;
+        const t = e.cardmarketId != null && !(guide instanceof Error) ? guide.prices.get(e.cardmarketId) : undefined;
+        const eur = t?.eur ?? e.eur;
+        const eurFoil = t?.eurFoil ?? e.eurFoil;
+        if (eur == null && eurFoil == null) continue;
+        prices.set(id, { eur, eurFoil });
+        fromEnglishPrint++;
+      }
+    }
+
     // 3) Gesammelt schreiben (Preisverlauf, cards, deck_cards)
     const updates = Array.from(prices, ([id, p]) => ({ id, eur: p.eur, eur_foil: p.eurFoil }));
     for (let i = 0; i < updates.length; i += APPLY_CHUNK) {
@@ -177,6 +207,7 @@ export async function GET(request: Request) {
       fromCatalog: uniqueIds.length - restIds.length,
       fromScryfall: restIds.length,
       fromCardmarket,
+      fromEnglishPrint,
       cardmarketError,
       updatedPrints: updates.length,
       scryfallFailures,

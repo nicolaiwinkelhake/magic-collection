@@ -37,7 +37,7 @@ export function priceChange(cards: Card[], baseline: Baseline | undefined): Pric
   for (const c of cards) {
     const b = c.scryfall_id ? baseline[c.scryfall_id] : undefined;
     if (!b) continue;
-    const old = c.foil ? b[1] ?? b[0] : b[0];
+    const old = c.foil ? b[1] ?? b[0] : b[0] ?? b[1];
     if (old == null) continue;
     const factor = conditionFactor(c.condition) * c.quantity;
     past += old * factor;
@@ -104,7 +104,7 @@ export function topMovers<T extends MoverCard>(cards: T[], baseline: Baseline | 
     if (!c.scryfall_id || c.quantity <= 0) continue;
     const b = baseline[c.scryfall_id];
     if (!b) continue;
-    const before = c.foil ? b[1] ?? b[0] : b[0];
+    const before = c.foil ? b[1] ?? b[0] : b[0] ?? b[1];
     const now = basePrice(c);
     if (before == null || !before || !now) continue;
     const key = `${c.scryfall_id}|${c.foil ? 1 : 0}`;

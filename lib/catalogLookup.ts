@@ -209,6 +209,47 @@ export async function catalogPrices(ids: string[], maxHours = 30): Promise<Map<s
   return out;
 }
 
+/**
+ * Englischer Druck zu Set + Sammlernummer (für Karten, die als Druck in
+ * anderer Sprache gespeichert sind – die haben bei Scryfall keinen Preis).
+ * Schlüssel "set|nummer" → Preise und Cardmarket-Nummer des englischen Drucks.
+ */
+export async function catalogEnglishPrints(
+  keys: Array<{ set: string; collector_number: string }>,
+): Promise<Map<string, { eur: number | null; eurFoil: number | null; cardmarketId: number | null }>> {
+  const out = new Map<string, { eur: number | null; eurFoil: number | null; cardmarketId: number | null }>();
+  const db = await catalogDb().catch(() => null);
+  if (!db || !keys.length) return out;
+  const wanted = new Set(keys.map((k) => `${k.set.toLowerCase()}|${k.collector_number}`));
+  const bySet = new Map<string, Set<string>>();
+  for (const k of keys) {
+    const set = k.set.toLowerCase();
+    if (!bySet.has(set)) bySet.set(set, new Set());
+    bySet.get(set)!.add(k.collector_number);
+  }
+  for (const [set, nums] of bySet) {
+    const list = Array.from(nums);
+    for (let i = 0; i < list.length; i += 200) {
+      const { data, error } = await db
+        .from("catalog_cards")
+        .select("set, collector_number, eur, eur_foil, cardmarket_id, lang")
+        .eq("set", set)
+        .in("collector_number", list.slice(i, i + 200));
+      if (error) return out;
+      for (const r of (data ?? []) as Array<{ set: string; collector_number: string; eur: number | string | null; eur_foil: number | string | null; cardmarket_id: number | null; lang: string | null }>) {
+        const key = `${r.set}|${r.collector_number}`;
+        if (!wanted.has(key) || (r.lang && r.lang !== "en" && out.has(key))) continue;
+        out.set(key, {
+          eur: r.eur == null ? null : Number(r.eur),
+          eurFoil: r.eur_foil == null ? null : Number(r.eur_foil),
+          cardmarketId: r.cardmarket_id == null ? null : Number(r.cardmarket_id),
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /** Cardmarket-Produktnummer je Druck laut Katalog (unabhängig davon, wie frisch die Preise sind). */
 export async function catalogCardmarketIds(ids: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
