@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatEur, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CardGrid } from "@/components/CardGrid";
+import { loadBaseline } from "@/lib/priceBaseline";
 import type { Card } from "@/lib/types";
 import {
   STATS_RANGES,
@@ -97,20 +98,14 @@ export function StatsClient({
     if (baselines[range]) return;
     let cancelled = false;
     setMoversLoading(true);
-    supabase
-      .rpc("price_baseline", { p_since: since })
-      .then(({ data }) => {
+    loadBaseline(supabase, since)
+      .then(({ baseline: b, earliest }) => {
         if (cancelled) return;
-        const b: Baseline = {};
-        let earliest: string | null = null;
-        for (const r of (data ?? []) as Array<{ scryfall_id: string; captured_on: string; price_eur: number | null; price_eur_foil: number | null }>) {
-          b[r.scryfall_id] = [r.price_eur == null ? null : Number(r.price_eur), r.price_eur_foil == null ? null : Number(r.price_eur_foil)];
-          if (!earliest || r.captured_on < earliest) earliest = r.captured_on;
-        }
         setBaselines((x) => ({ ...x, [range]: b }));
-        if (earliest) setBaselineFrom((x) => ({ ...x, [range]: earliest! }));
+        if (earliest) setBaselineFrom((x) => ({ ...x, [range]: earliest }));
         setMoversLoading(false);
-      });
+      })
+      .catch(() => !cancelled && setMoversLoading(false));
     return () => {
       cancelled = true;
     };
@@ -190,7 +185,7 @@ export function StatsClient({
             <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-2.5">
               <dt className="text-xs text-zinc-500">Gesamtwert {sinceLabel}</dt>
               <dd className="font-semibold tabular-nums">{signedEur(totalDelta)}</dd>
-              <dd className="text-[11px] text-zinc-500">inkl. neu hinzugefügter Karten</dd>
+              <dd className="text-[11px] text-zinc-500">inkl. neuer Karten und Karten, die erst jetzt einen Preis haben</dd>
             </div>
           )}
           {change && (
