@@ -141,7 +141,6 @@ describe("The List ↔ Original", () => {
   });
 });
 
-import { updateItem as upd } from "@/lib/scanStack";
 
 describe("Sprache im Scan-Stapel", () => {
   it("setzt und schaltet die Sprache nur für diesen Eintrag", () => {
@@ -149,10 +148,10 @@ describe("Sprache im Scan-Stapel", () => {
       { key: "a", id: "1", name: "Sol Ring", imageUrl: null, eur: 1, eurFoil: null, foil: false, quantity: 1, scannedAt: 1 },
       { key: "b", id: "2", name: "Opt", imageUrl: null, eur: 1, eurFoil: null, foil: false, quantity: 1, scannedAt: 2 },
     ];
-    const de = upd(base, "a", { language: "DE" });
+    const de = updateItem(base, "a", { language: "DE" });
     expect(de.map((x) => x.language)).toEqual(["DE", undefined]);
     // Druck- oder Foil-Wechsel behält die Sprache
-    expect(upd(de, "a", { foil: true })[0].language).toBe("DE");
-    expect(upd(de, "a", { language: "EN" })[0].language).toBe("EN");
+    expect(updateItem(de, "a", { foil: true })[0].language).toBe("DE");
+    expect(updateItem(de, "a", { language: "EN" })[0].language).toBe("EN");
   });
 });
