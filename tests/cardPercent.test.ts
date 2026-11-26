@@ -27,10 +27,11 @@ describe("cardPercent", () => {
 });
 
 describe("formatPercentShort", () => {
-  it("rundet auf ganze Prozent und blendet ±0 aus", () => {
+  it("rundet auf ganze Prozent, unter 0,5 % ~0", () => {
     expect(formatPercentShort(11.4)).toBe("+11 %");
     expect(formatPercentShort(-8.6)).toBe("−9 %");
-    expect(formatPercentShort(0.3)).toBeNull();
+    expect(formatPercentShort(0.3)).toBe("~0 %");
+    expect(formatPercentShort(-0.4)).toBe("~0 %");
     expect(formatPercentShort(1234)).toBe("+1.234 %");
   });
 });
