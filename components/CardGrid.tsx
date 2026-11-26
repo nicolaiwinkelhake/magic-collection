@@ -7,6 +7,7 @@ const FIRST_BATCH = 60;
 const NEXT_BATCH = 180;
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { formatPercentShort } from "@/lib/priceChange";
 import { formatEur, formatDate } from "@/lib/format";
 import { cardValue } from "@/lib/valuation";
 import { EmptyState } from "@/components/ui/States";
@@ -38,7 +39,10 @@ export function CardGrid({
   noStock = false,
   decks = [],
   renderList,
+  percentOf,
 }: {
+  /** Preisänderung je Exemplar in Prozent (Sammlung), null = keine Angabe */
+  percentOf?: (card: Card) => number | null;
   /** eigene Darstellung statt Raster (z. B. Gewinner/Verlierer); Antippen öffnet das gewohnte Kartendetail */
   renderList?: (open: (card: Card) => void) => ReactNode;
   cards: Card[];
@@ -339,14 +343,32 @@ export function CardGrid({
               {/* Infozeile unter dem Bild statt Beschriftungen auf der Karte */}
               {view === "details" && (
                 <span className="flex items-center justify-between gap-1 px-0.5 pt-1.5 text-[11px]">
-                  <span className="tabular-nums font-medium text-emerald-400">{formatEur(cardValue({ ...card, quantity: 1 }))}</span>
-                  <span className="flex items-center gap-1.5 min-w-0 text-zinc-500">
-                    {card.foil && <span className="text-fuchsia-300" title="Foil">Foil</span>}
+                  {(() => {
+                    const price = formatEur(cardValue({ ...card, quantity: 1 }));
+                    const pct = percentOf?.(card);
+                    const pctText = pct == null ? null : formatPercentShort(pct);
+                    // Wenig Platz (3 Kacheln nebeneinander): bei langem Preis + Prozent "Foil" als ✦
+                    const tight = !!pctText && price.length + pctText.length > 12;
+                    return (
+                      <>
+                        <span className="flex items-baseline gap-1 shrink-0">
+                          <span className="tabular-nums font-medium text-emerald-400">{price}</span>
+                          {pctText && (
+                            <span className={`tabular-nums text-[10px] font-semibold ${pct! > 0 ? "text-emerald-300" : "text-rose-400"}`} title="Preisänderung je Exemplar">
+                              {pctText.replace(" %", "%")}
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-1.5 min-w-0 overflow-hidden text-zinc-500">
+                          {card.foil && <span className="shrink-0 text-fuchsia-300" title="Foil">{tight ? "✦" : "Foil"}</span>}
                     {card.condition && card.condition !== "NM" && (
                       <span className="text-amber-400" title="Zustand">{card.condition}</span>
                     )}
-                    <span className="uppercase">{card.set_code}</span>
-                  </span>
+                          <span className="uppercase truncate">{card.set_code}</span>
+                        </span>
+                      </>
+                    );
+                  })()}
                 </span>
               )}
             </button>
@@ -427,7 +449,7 @@ export function CardGrid({
           ))}
         </div>
       )
-  ), [shown, groupBy, view, selectMode, selected, deckUses, owned, ownerLabels]);
+  ), [shown, groupBy, view, selectMode, selected, deckUses, owned, ownerLabels, percentOf]);
 
   if (!local.length) {
     return (
@@ -923,3 +945,4 @@ function DeckBadge({ uses }: { uses: DeckUse[] }) {
     </span>
   );
 }
+

@@ -130,3 +130,25 @@ export function topMovers<T extends MoverCard>(cards: T[], baseline: Baseline | 
     losers: all.filter((m) => m.delta < 0).sort((a, b) => a.delta - b.delta || a.percent - b.percent).slice(0, limit),
   };
 }
+
+/**
+ * Preisänderung eines einzelnen Eintrags in Prozent (je Exemplar, Foil- und
+ * Zustand-bereinigt). null, wenn es keinen früheren Preis gibt oder die Karte
+ * damals so billig war, dass Prozente nichts aussagen.
+ */
+export function cardPercent(card: Card, baseline: Baseline | undefined): number | null {
+  const b = baseline && card.scryfall_id ? baseline[card.scryfall_id] : undefined;
+  if (!b) return null;
+  const old = card.foil ? b[1] ?? b[0] : b[0] ?? b[1];
+  if (old == null || old < 0.05) return null;
+  const now = basePrice(card);
+  if (!now) return null;
+  return ((now - old) / old) * 100;
+}
+
+/** Kurzform für die Kachel: "+12 %", "−3 %"; null bei unter 0,5 %. */
+export function formatPercentShort(p: number): string | null {
+  const r = Math.round(p);
+  if (r === 0) return null;
+  return `${r > 0 ? "+" : "−"}${Math.abs(r).toLocaleString("de-DE")} %`;
+}
