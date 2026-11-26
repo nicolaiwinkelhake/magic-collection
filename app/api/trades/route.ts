@@ -112,7 +112,7 @@ export async function POST(request: Request) {
         image_url: r.imageUrl,
         foil: e.foil,
         quantity: e.quantity,
-        price_eur_at_trade: e.foil ? eurFoil ?? eur : eur,
+        price_eur_at_trade: e.foil ? eurFoil ?? eur : eur ?? eurFoil,
       });
     }
     return items;
@@ -245,7 +245,7 @@ async function buildFromCollections(
     image_url: row.image_url,
     foil: row.foil,
     quantity: Math.min(qty, row.quantity),
-    price_eur_at_trade: row.foil ? row.price_eur_foil ?? row.price_eur : row.price_eur,
+    price_eur_at_trade: row.foil ? row.price_eur_foil ?? row.price_eur : row.price_eur ?? row.price_eur_foil,
   });
   const items: TradeItemRow[] = [];
   for (const g of give) {
