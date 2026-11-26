@@ -146,9 +146,9 @@ export function cardPercent(card: Card, baseline: Baseline | undefined): number 
   return ((now - old) / old) * 100;
 }
 
-/** Kurzform für die Kachel: "+12 %", "−3 %"; null bei unter 0,5 %. */
-export function formatPercentShort(p: number): string | null {
+/** Kurzform für die Kachel: "+12 %", "−3 %", "~0 %" bei unter 0,5 %. */
+export function formatPercentShort(p: number): string {
   const r = Math.round(p);
-  if (r === 0) return null;
+  if (r === 0) return "~0 %";
   return `${r > 0 ? "+" : "−"}${Math.abs(r).toLocaleString("de-DE")} %`;
 }

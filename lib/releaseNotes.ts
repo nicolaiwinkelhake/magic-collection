@@ -29,7 +29,7 @@ export const RELEASES: Release[] = [
       {
         icon: "📈",
         title: "Prozent auf jeder Kachel",
-        text: "In der Sammlung steht neben dem Preis jetzt, wie viel die Karte gewonnen (grün) oder verloren (rot) hat – je Exemplar. Der Zeitraum richtet sich nach der Anzeige unter dem Gesamtwert: Antippen wechselt zwischen gestern, 7 und 30 Tagen.",
+        text: "In der Sammlung steht neben dem Preis jetzt, wie viel die Karte gewonnen (grün) oder verloren (rot) hat – je Exemplar; „~0%“ heißt kaum verändert. Der Zeitraum richtet sich nach der Anzeige unter dem Gesamtwert: Antippen wechselt zwischen gestern, 7 und 30 Tagen.",
         href: "/collection",
       },
     ],

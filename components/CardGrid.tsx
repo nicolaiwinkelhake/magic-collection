@@ -354,7 +354,7 @@ export function CardGrid({
                         <span className="flex items-baseline gap-1 shrink-0">
                           <span className="tabular-nums font-medium text-emerald-400">{price}</span>
                           {pctText && (
-                            <span className={`tabular-nums text-[10px] font-semibold ${pct! > 0 ? "text-emerald-300" : "text-rose-400"}`} title="Preisänderung je Exemplar">
+                            <span className={`tabular-nums text-[10px] font-semibold ${pctText === "~0 %" ? "text-zinc-500" : pct! > 0 ? "text-emerald-300" : "text-rose-400"}`} title="Preisänderung je Exemplar">
                               {pctText.replace(" %", "%")}
                             </span>
                           )}
