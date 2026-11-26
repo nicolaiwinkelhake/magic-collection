@@ -23,14 +23,33 @@ export function usePriceBaselines(): Record<number, Baseline> | null {
 
 // Gewinn/Verlust in Prozent unter dem Gesamtwert. Antippen wechselt den
 // Zeitraum (seit gestern → 7 Tage → 30 Tage); die Wahl merkt sich der Browser.
-export function PriceTrend({ cards, baselines }: { cards: Card[]; baselines: Record<number, Baseline> | null }) {
-  const [days, setDays] = useState<PeriodDays>(7);
+/** Gewählter Zeitraum (merkt sich der Browser) – geteilt von Gesamtwert und Kacheln. */
+export function usePriceTrendPeriod(): [PeriodDays, (d: PeriodDays) => void] {
+  const [days, setDaysState] = useState<PeriodDays>(7);
   useEffect(() => {
     try {
       const v = Number(localStorage.getItem(KEY));
-      if (PERIODS.some((p) => p.days === v)) setDays(v as PeriodDays);
+      if (PERIODS.some((p) => p.days === v)) setDaysState(v as PeriodDays);
     } catch {}
   }, []);
+  const setDays = (d: PeriodDays) => {
+    setDaysState(d);
+    try { localStorage.setItem(KEY, String(d)); } catch {}
+  };
+  return [days, setDays];
+}
+
+export function PriceTrend({
+  cards,
+  baselines,
+  days,
+  onDaysChange,
+}: {
+  cards: Card[];
+  baselines: Record<number, Baseline> | null;
+  days: PeriodDays;
+  onDaysChange: (d: PeriodDays) => void;
+}) {
 
   const change = useMemo(() => priceChange(cards, baselines?.[days]), [cards, baselines, days]);
   if (!baselines) return <p className="mt-2 h-6" aria-hidden />;
@@ -40,9 +59,7 @@ export function PriceTrend({ cards, baselines }: { cards: Card[]; baselines: Rec
   const period = PERIODS.find((p) => p.days === days)!;
   const next = () => {
     const i = PERIODS.findIndex((p) => p.days === days);
-    const n = PERIODS[(i + 1) % PERIODS.length].days;
-    setDays(n);
-    try { localStorage.setItem(KEY, String(n)); } catch {}
+    onDaysChange(PERIODS[(i + 1) % PERIODS.length].days);
   };
 
   const up = change ? change.percent >= 0.05 : false;

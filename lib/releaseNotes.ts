@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-26",
+    date: "2026-11-26",
+    title: "Gewinn und Verlust je Karte",
+    items: [
+      {
+        icon: "📈",
+        title: "Prozent auf jeder Kachel",
+        text: "In der Sammlung steht neben dem Preis jetzt, wie viel die Karte gewonnen (grün) oder verloren (rot) hat – je Exemplar. Der Zeitraum richtet sich nach der Anzeige unter dem Gesamtwert: Antippen wechselt zwischen gestern, 7 und 30 Tagen.",
+        href: "/collection",
+      },
+    ],
+  },
+  {
     id: "2026-11-25c",
     date: "2026-11-25",
     title: "Scanner erkennt deutsche Karten",
