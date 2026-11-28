@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { WishlistCleanup } from "@/components/WishlistCleanup";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { Worker } from "tesseract.js";
@@ -157,6 +158,8 @@ export function ScanClient({
   // Helligkeit im Rahmen (Automatik misst laufend); wenig Licht → strenger annehmen
   const lightRef = useRef(255);
   const [dim, setDim] = useState(false);
+  // nach dem Speichern in die Sammlung: gleiche Karten auf der Wunschliste? → fragen
+  const [cleanupNames, setCleanupNames] = useState<string[] | null>(null);
   const confirmRef = useRef<Pending>(null);
   const scanningRef = useRef(false);
   // Standbild fürs Lesen (gelesen wird in mehreren Schritten, das Video läuft weiter)
@@ -907,7 +910,10 @@ export function ScanClient({
         ? `${savedCards} Karten ${where} gespeichert, ${failed} Einträge nicht – sie bleiben im Stapel, bitte erneut speichern.`
         : `✓ ${savedCards} Karten ${where} gespeichert.`,
     );
-    router.refresh();
+    // Neu laden erst nach der Wunschlisten-Frage – das Neuladen setzt die Seite zurück
+    const names = target.kind === "collection" ? items.filter((s) => saved.has(s.key)).map((s) => s.name) : [];
+    if (names.length) setCleanupNames(names);
+    else router.refresh();
   }
 
   const totals = stackTotals(stack);
@@ -1086,6 +1092,7 @@ export function ScanClient({
 
   return (
     <main className="page max-w-lg">
+      {cleanupNames && <WishlistCleanup names={cleanupNames} onDone={() => { setCleanupNames(null); router.refresh(); }} />}
       <PageHeader
         title="Scannen"
         subtitle="Karte ins Bild legen und kurz ruhig halten – Name, Set, Nummer und Druck werden automatisch erkannt. Deutsche und englische Karten."

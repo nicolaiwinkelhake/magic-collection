@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { WishlistCleanup } from "@/components/WishlistCleanup";
 import { useRouter } from "next/navigation";
 import { fileToEntries, textToEntries } from "@/lib/importSource";
 import type { Folder } from "@/lib/types";
@@ -133,6 +134,8 @@ export function ImportForm({
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
+  // nach dem Import in die Sammlung: gleiche Karten auf der Wunschliste? → fragen
+  const [cleanupNames, setCleanupNames] = useState<string[] | null>(null);
   const [open, setOpen] = useState(defaultOpen);
   const [activeBatch, setActiveBatch] = useState<number | null>(null);
   // Zielordner (Sammlung); folgt dem gerade geöffneten Ordner
@@ -185,7 +188,15 @@ export function ImportForm({
     } finally {
       setActiveBatch(null);
       setRunning(false);
-      router.refresh();
+      const names =
+        target === "collection" && jobRef.current
+          ? jobRef.current.batches.flatMap((b) =>
+              b.items.filter((it) => ["imported", "updated"].includes(b.results[it.i]?.status ?? "")).map((it) => b.results[it.i]?.cardName ?? it.name),
+            )
+          : [];
+      // Neu laden erst nach der Wunschlisten-Frage – das Neuladen setzt die Seite zurück
+      if (names.length) setCleanupNames(Array.from(new Set(names)));
+      else router.refresh();
     }
   }
 
@@ -259,6 +270,7 @@ export function ImportForm({
 
   return (
     <div className={`rounded-xl border border-white/10 ${open ? "bg-zinc-900/80 p-4" : "bg-white/5"}`}>
+      {cleanupNames && <WishlistCleanup names={cleanupNames} onDone={() => { setCleanupNames(null); router.refresh(); }} />}
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
