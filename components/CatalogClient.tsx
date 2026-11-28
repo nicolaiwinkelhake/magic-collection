@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Card } from "@/lib/types";
 import { Filters, type FilterState } from "@/components/Filters";
 import { CardGrid } from "@/components/CardGrid";
+import { WishlistCleanup } from "@/components/WishlistCleanup";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PrintPicker } from "@/components/ui/PrintPicker";
 import { DEFAULT_FILTERS } from "@/lib/cardFilters";
@@ -28,6 +29,8 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
   const [error, setError] = useState<string | null>(null);
   const [versionsFor, setVersionsFor] = useState<Card | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // nach "+ Sammlung": gleiche Karten auf der Wunschliste? → fragen
+  const [cleanupNames, setCleanupNames] = useState<string[] | null>(null);
   // gerade hinzugefügt (Name → Anzahl), damit „hast du“ sofort stimmt
   const [added, setAdded] = useState<Record<string, number>>({});
   const seq = useRef(0);
@@ -113,6 +116,7 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
       });
       haptic("success");
       setToast(`${what} zur Sammlung hinzugefügt`);
+      setCleanupNames(list.map((c) => c.name));
     } else {
       haptic("success");
       setToast(`${what} auf die Wunschliste gesetzt`);
@@ -124,6 +128,7 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
 
   return (
     <main className="page max-w-7xl space-y-4">
+      {cleanupNames && <WishlistCleanup names={cleanupNames} onDone={() => setCleanupNames(null)} />}
       <PageHeader
         title="Katalog"
         subtitle={total == null ? "Alle Magic-Karten" : `${total.toLocaleString("de-DE")} ${total === 1 ? "Karte" : "Karten"}${filters === START ? " · beliebteste zuerst" : ""}`}
@@ -200,7 +205,7 @@ export function CatalogClient({ sets }: { sets: Array<{ code: string; name: stri
           onClose={() => setVersionsFor(null)}
         />
       )}
-      {toast && (
+      {toast && !cleanupNames && (
         <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] lg:bottom-8 z-[80] flex justify-center px-4 pointer-events-none" role="status">
           <span className="rounded-full bg-zinc-800 border border-white/10 px-4 py-2 text-sm shadow-lg animate-fade-up">{toast}</span>
         </div>

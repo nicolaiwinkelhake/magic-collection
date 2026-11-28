@@ -22,6 +22,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    id: "2026-11-28",
+    date: "2026-11-28",
+    title: "Wunschliste räumt mit auf",
+    items: [
+      {
+        icon: "🧹",
+        title: "Von der Wunschliste nehmen?",
+        text: "Legst du eine Karte in die Sammlung (Katalog, Scanner oder Import), die noch auf deiner Wunschliste steht – auch in einer anderen Version –, fragt die App, ob sie dort entfernt werden soll. Antippen wählt einzelne Karten ab.",
+        href: "/wishlist",
+      },
+    ],
+  },
+  {
     id: "2026-11-26",
     date: "2026-11-26",
     title: "Gewinn und Verlust je Karte",
